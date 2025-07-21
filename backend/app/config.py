@@ -8,8 +8,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # Zerodha API Configuration - these will be read from environment or use defaults
-    ZERODHA_API_KEY: str = "kaq2bcjtvdzfeqa1"  # Your current API key
-    ZERODHA_API_SECRET: str = "u0ceeteyncz3iio90junf27c4v2f01uv"  # Your current secret
+    ZERODHA_API_KEY: str = "femohcxeam7tjt1p"  # Your current API key
+    ZERODHA_API_SECRET: str = "xjudlehzrnblhs1wznjvb95uhgtny54f"  # Your current secret
     ZERODHA_USER_ID: str = "MSC739"  # Your current user ID
     ZERODHA_PASSWORD: str = "Pranjal@1006"  # Your current password
     ZERODHA_TOTP_KEY: str = "PHHXNLG7ZPS3C4GCOF7HLGCM7DV6HRAB"  # Your current TOTP

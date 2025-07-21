@@ -1,0 +1,111 @@
+{
+  "holdings": {
+    "AIIL": {
+      "shares": 2,
+      "avg_price": 2067.1,
+      "total_investment": 4134.2
+    },
+    "LAURUSLABS": {
+      "shares": 2,
+      "avg_price": 2328.76,
+      "total_investment": 4657.52
+    },
+    "MCX": {
+      "shares": 4,
+      "avg_price": 979.74,
+      "total_investment": 3918.96
+    },
+    "KIMS": {
+      "shares": 2,
+      "avg_price": 1896.5,
+      "total_investment": 3793.0
+    },
+    "ASTERDM": {
+      "shares": 6,
+      "avg_price": 611.13,
+      "total_investment": 3666.7799999999997
+    },
+    "NH": {
+      "shares": 2,
+      "avg_price": 2246.21,
+      "total_investment": 4492.42
+    },
+    "WOCKPHARMA": {
+      "shares": 2,
+      "avg_price": 1688.13,
+      "total_investment": 3376.26
+    },
+    "RADICO": {
+      "shares": 2,
+      "avg_price": 1812.15,
+      "total_investment": 3624.3
+    },
+    "GODFRYPHLP": {
+      "shares": 6,
+      "avg_price": 577.11,
+      "total_investment": 3462.66
+    },
+    "RAMCOCEM": {
+      "shares": 11,
+      "avg_price": 343.27,
+      "total_investment": 3775.97
+    },
+    "ERIS": {
+      "shares": 2,
+      "avg_price": 1758.47,
+      "total_investment": 3516.94
+    },
+    "AMBER": {
+      "shares": 2,
+      "avg_price": 2999.49,
+      "total_investment": 5998.98
+    },
+    "JMFINANCIL": {
+      "shares": 2,
+      "avg_price": 1871.02,
+      "total_investment": 3742.04
+    },
+    "SARDAEN": {
+      "shares": 2,
+      "avg_price": 2757.9,
+      "total_investment": 5515.8
+    },
+    "PGEL": {
+      "shares": 2,
+      "avg_price": 2424.85,
+      "total_investment": 4849.7
+    },
+    "CEATLTD": {
+      "shares": 3,
+      "avg_price": 1221.6,
+      "total_investment": 3664.7999999999997
+    },
+    "DEEPAKFERT": {
+      "shares": 2,
+      "avg_price": 1594.6,
+      "total_investment": 3189.2
+    },
+    "EIDPARRY": {
+      "shares": 3,
+      "avg_price": 1431.46,
+      "total_investment": 4294.38
+    },
+    "LTFOODS": {
+      "shares": 2,
+      "avg_price": 1991.88,
+      "total_investment": 3983.76
+    },
+    "ECLERX": {
+      "shares": 4,
+      "avg_price": 1001.48,
+      "total_investment": 4005.92
+    }
+  },
+  "last_updated": "2025-07-21T13:23:49.091613",
+  "csv_info": {
+    "fetch_time": "2025-07-21T13:23:48.304339",
+    "csv_hash": "4e58c23c",
+    "source_url": "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv"
+  },
+  "type": "INITIAL_INVESTMENT"
+}
