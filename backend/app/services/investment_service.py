@@ -1,27 +1,32 @@
-# backend/app/services/investment_service.py
+# backend/app/services/investment_service.py - Updated to use separate services
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import os
+import math
 from .csv_service import CSVService
 from .investment_calculator import InvestmentCalculator
+from .portfolio_construction_service import PortfolioConstructionService
+from .portfolio_metrics_service import PortfolioMetricsService
 
 class InvestmentService:
     def __init__(self, zerodha_auth):
         self.zerodha_auth = zerodha_auth
         self.csv_service = CSVService(zerodha_auth)
         self.calculator = InvestmentCalculator()
+        self.portfolio_constructor = PortfolioConstructionService()
+        self.metrics_calculator = PortfolioMetricsService()
         
         # File paths for storing system state
         self.orders_file = "system_orders.json"
         self.portfolio_state_file = "system_portfolio_state.json"
         self.csv_history_file = "csv_history.json"
     
+    # ... (keep all existing methods: get_investment_requirements, calculate_initial_investment_plan, 
+    # execute_initial_investment, check_rebalancing_needed, calculate_rebalancing_plan, execute_rebalancing)
+    
     def get_investment_requirements(self) -> Dict:
-        """
-        Get minimum investment requirements based on current CSV
-        This is for first-time setup
-        """
+        """Get minimum investment requirements based on current CSV"""
         try:
             print("📋 Getting investment requirements...")
             
@@ -52,9 +57,7 @@ class InvestmentService:
             raise Exception(f"Failed to get investment requirements: {str(e)}")
     
     def calculate_initial_investment_plan(self, investment_amount: float) -> Dict:
-        """
-        Calculate initial investment plan for given amount
-        """
+        """Calculate initial investment plan for given amount"""
         try:
             print(f"💰 Calculating initial investment plan for ₹{investment_amount:,.0f}")
             
@@ -115,9 +118,7 @@ class InvestmentService:
             raise Exception(f"Failed to calculate investment plan: {str(e)}")
     
     def execute_initial_investment(self, investment_plan: Dict) -> Dict:
-        """
-        Execute initial investment (store orders, don't place on Zerodha yet)
-        """
+        """Execute initial investment (store orders, don't place on Zerodha yet)"""
         try:
             print(f"🚀 Executing initial investment...")
             
@@ -170,9 +171,7 @@ class InvestmentService:
             raise Exception(f"Failed to execute initial investment: {str(e)}")
     
     def check_rebalancing_needed(self) -> Dict:
-        """
-        Check if rebalancing is needed by comparing current CSV with system portfolio
-        """
+        """Check if rebalancing is needed by comparing current CSV with system portfolio"""
         try:
             print("🔍 Checking if rebalancing is needed...")
             
@@ -224,59 +223,126 @@ class InvestmentService:
             print(f"❌ Error checking rebalancing: {e}")
             raise Exception(f"Failed to check rebalancing: {str(e)}")
     
-    def calculate_rebalancing_plan(self, additional_investment: float = 0.0) -> Dict:
+    def get_system_portfolio_status(self) -> Dict:
         """
-        Calculate rebalancing plan for portfolio transition
+        Get comprehensive system portfolio status with advanced metrics
+        NOW USES SEPARATE SERVICES FOR CONSTRUCTION AND METRICS
         """
         try:
-            print(f"⚖️ Calculating rebalancing plan...")
-            print(f"   Additional investment: ₹{additional_investment:,.0f}")
+            print("📊 Getting comprehensive system portfolio status...")
             
-            # Get current portfolio state and value
-            portfolio_state = self._get_current_portfolio_state()
-            current_portfolio_value = self._calculate_current_portfolio_value(portfolio_state)
+            # Load all system orders
+            all_orders = self._load_system_orders()
             
-            # Total value for rebalancing
-            total_investment = current_portfolio_value + additional_investment
+            if not all_orders:
+                return {
+                    'status': 'empty',
+                    'message': 'No orders found. Please complete initial investment.',
+                    'holdings': {},
+                    'portfolio_summary': {'total_investment': 0, 'current_value': 0},
+                    'performance_metrics': {},
+                    'allocation_analysis': {},
+                    'timeline': {}
+                }
             
-            print(f"   Current portfolio: ₹{current_portfolio_value:,.0f}")
-            print(f"   Total for rebalancing: ₹{total_investment:,.0f}")
+            # Step 1: Construct portfolio from orders using dedicated service
+            print("🔧 Step 1: Constructing portfolio from orders...")
+            portfolio_construction = self.portfolio_constructor.construct_portfolio_from_orders(all_orders)
             
-            # Get new CSV stocks with prices
-            stocks_data = self.csv_service.get_stocks_with_prices()
+            # Validate construction
+            validation = self.portfolio_constructor.validate_portfolio_construction(portfolio_construction)
+            if not validation['is_valid']:
+                print(f"❌ Portfolio construction validation failed: {validation['errors']}")
+                # Continue with warnings, but note the issues
             
-            # Calculate new optimal allocation
-            new_allocation = self.calculator.calculate_optimal_allocation(
-                total_investment, stocks_data['stocks']
+            if not portfolio_construction['holdings']:
+                return {
+                    'status': 'empty',
+                    'message': 'No current holdings after processing all orders.',
+                    'holdings': {},
+                    'portfolio_summary': {'total_investment': 0, 'current_value': 0},
+                    'performance_metrics': {},
+                    'allocation_analysis': {},
+                    'timeline': {}
+                }
+            
+            # Step 2: Get current prices for all portfolio stocks
+            print("🔧 Step 2: Getting current market prices...")
+            holdings = portfolio_construction['holdings']
+            symbols = list(holdings.keys())
+            
+            try:
+                current_prices = self.csv_service.get_live_prices(symbols)
+                print(f"   ✅ Got prices for {len(current_prices)}/{len(symbols)} stocks")
+            except Exception as e:
+                print(f"⚠️ Could not get live prices: {e}, using average prices")
+                current_prices = {symbol: holding['avg_price'] for symbol, holding in holdings.items()}
+            
+            # Step 3: Calculate comprehensive metrics using dedicated service
+            print("🔧 Step 3: Calculating comprehensive metrics...")
+            portfolio_metrics = self.metrics_calculator.calculate_comprehensive_metrics(
+                holdings, current_prices, portfolio_construction
             )
             
-            # Generate transition orders
-            transition_orders = self._calculate_transition_orders(
-                portfolio_state, new_allocation, stocks_data['stocks']
-            )
-            
-            rebalancing_plan = {
-                'current_portfolio_value': current_portfolio_value,
-                'additional_investment': additional_investment,
-                'total_investment': total_investment,
-                'new_allocation': new_allocation,
-                'transition_orders': transition_orders,
-                'csv_info': stocks_data['csv_info'],
-                'rebalancing_summary': self._summarize_rebalancing(transition_orders)
+            # Step 4: Format response for frontend
+            status_info = {
+                'status': 'active',
+                'holdings': portfolio_metrics['holdings_with_metrics'],
+                'portfolio_summary': {
+                    'total_investment': portfolio_metrics['total_investment'],
+                    'current_value': portfolio_metrics['current_value'],
+                    'total_returns': portfolio_metrics['total_returns'],
+                    'returns_percentage': portfolio_metrics['returns_percentage'],
+                    'cagr': portfolio_metrics['cagr'],
+                    'stock_count': len(portfolio_metrics['holdings_with_metrics']),
+                    'investment_period_days': portfolio_metrics['investment_period_days'],
+                    'investment_period_years': portfolio_metrics['investment_period_years']
+                },
+                'performance_metrics': {
+                    'best_performer': portfolio_metrics['best_performer'],
+                    'worst_performer': portfolio_metrics['worst_performer'],
+                    'avg_return': portfolio_metrics['avg_return'],
+                    'volatility_score': portfolio_metrics['volatility_score'],
+                    'sharpe_ratio': portfolio_metrics['sharpe_ratio']
+                },
+                'allocation_analysis': {
+                    'allocation_stats': portfolio_metrics['allocation_stats'],
+                    'rebalancing_needed': portfolio_metrics['rebalancing_needed'],
+                    'allocation_deviation': portfolio_metrics['allocation_deviation']
+                },
+                'timeline': {
+                    'first_investment': portfolio_construction['first_order_date'],
+                    'last_investment': portfolio_construction['last_order_date'],
+                    'total_orders': len(all_orders),
+                    'last_updated': datetime.now().isoformat()
+                },
+                'validation': validation  # Include validation results for debugging
             }
             
-            print(f"✅ Rebalancing plan calculated:")
-            print(f"   Buy orders: {rebalancing_plan['rebalancing_summary']['buy_orders']}")
-            print(f"   Sell orders: {rebalancing_plan['rebalancing_summary']['sell_orders']}")
-            print(f"   Net cash required: ₹{rebalancing_plan['rebalancing_summary']['net_cash_required']:,.0f}")
+            print(f"✅ Comprehensive portfolio status calculated:")
+            print(f"   Holdings: {len(portfolio_metrics['holdings_with_metrics'])}")
+            print(f"   Total investment: ₹{portfolio_metrics['total_investment']:,.2f}")
+            print(f"   Current value: ₹{portfolio_metrics['current_value']:,.2f}")
+            print(f"   CAGR: {portfolio_metrics['cagr']:.2f}%")
+            print(f"   Investment period: {portfolio_metrics['investment_period_days']} days")
             
-            return rebalancing_plan
+            return status_info
             
         except Exception as e:
-            print(f"❌ Error calculating rebalancing plan: {e}")
-            raise Exception(f"Failed to calculate rebalancing plan: {str(e)}")
+            print(f"❌ Error getting portfolio status: {e}")
+            import traceback
+            print(f"❌ Full traceback: {traceback.format_exc()}")
+            return {
+                'status': 'error',
+                'error': str(e),
+                'holdings': {},
+                'portfolio_summary': {'total_investment': 0, 'current_value': 0},
+                'performance_metrics': {},
+                'allocation_analysis': {},
+                'timeline': {}
+            }
     
-    # Helper methods continue below...
+    # Helper methods (keep all existing helper methods)
     def _is_first_time_setup(self) -> bool:
         """Check if this is first time setup"""
         return not os.path.exists(self.portfolio_state_file)
@@ -362,66 +428,6 @@ class InvestmentService:
         except:
             # Fallback to investment value if can't get live prices
             return sum(holding['total_investment'] for holding in holdings.values())
-    
-    def _calculate_transition_orders(self, current_portfolio: Dict, new_allocation: Dict, stocks_data: List[Dict]) -> List[Dict]:
-        """Calculate orders needed to transition from current to new portfolio"""
-        orders = []
-        current_holdings = current_portfolio.get('holdings', {}) if current_portfolio else {}
-        
-        # Create price lookup
-        price_lookup = {stock['symbol']: stock['price'] for stock in stocks_data}
-        
-        # Track all symbols (current + new)
-        all_symbols = set(current_holdings.keys())
-        new_symbols = {alloc['symbol'] for alloc in new_allocation['allocations']}
-        all_symbols.update(new_symbols)
-        
-        for symbol in all_symbols:
-            current_shares = current_holdings.get(symbol, {}).get('shares', 0)
-            
-            # Find target shares from new allocation
-            target_shares = 0
-            for alloc in new_allocation['allocations']:
-                if alloc['symbol'] == symbol:
-                    target_shares = alloc['shares']
-                    break
-            
-            shares_diff = target_shares - current_shares
-            
-            if shares_diff != 0 and symbol in price_lookup:
-                price = price_lookup[symbol]
-                
-                order = {
-                    'symbol': symbol,
-                    'action': 'BUY' if shares_diff > 0 else 'SELL',
-                    'current_shares': current_shares,
-                    'target_shares': target_shares,
-                    'shares': abs(shares_diff),
-                    'price': price,
-                    'value': abs(shares_diff) * price
-                }
-                orders.append(order)
-        
-        return orders
-    
-    def _summarize_rebalancing(self, transition_orders: List[Dict]) -> Dict:
-        """Summarize rebalancing orders"""
-        buy_orders = [o for o in transition_orders if o['action'] == 'BUY']
-        sell_orders = [o for o in transition_orders if o['action'] == 'SELL']
-        
-        total_buy_value = sum(o['value'] for o in buy_orders)
-        total_sell_value = sum(o['value'] for o in sell_orders)
-        
-        return {
-            'total_orders': len(transition_orders),
-            'buy_orders': len(buy_orders),
-            'sell_orders': len(sell_orders),
-            'total_buy_value': total_buy_value,
-            'total_sell_value': total_sell_value,
-            'net_cash_required': total_buy_value - total_sell_value,
-            'buy_order_details': buy_orders,
-            'sell_order_details': sell_orders
-        }
     
     def _save_csv_snapshot(self, csv_info: Dict):
         """Save CSV snapshot for history tracking"""

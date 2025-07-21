@@ -128,25 +128,17 @@ def show_initial_investment_page():
     # Display investment requirements
     st.subheader("📋 Investment Requirements")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
     with col1:
-        min_investment = requirements['minimum_investment']['minimum_investment']
         recommended = requirements['minimum_investment']['recommended_minimum']
         st.metric(
-            "💸 Minimum Investment",
-            f"₹{min_investment:,.0f}",
-            help="Absolute minimum based on stock prices and 4% allocation"
+            "💡 Recommended Investment",
+            f"₹{recommended:,.0f}",
+            help="Recommended amount for optimal allocation across all stocks"
         )
     
     with col2:
-        st.metric(
-            "💡 Recommended",
-            f"₹{recommended:,.0f}",
-            help="Recommended amount for better allocation (20% buffer)"
-        )
-    
-    with col3:
         total_stocks = requirements['minimum_investment']['total_stocks']
         st.metric(
             "📊 Total Stocks",
@@ -158,15 +150,13 @@ def show_initial_investment_page():
     st.subheader("📈 Current CSV Stocks")
     
     stocks_df = pd.DataFrame(requirements['stocks_data']['stocks'])
-    stocks_df['price_formatted'] = stocks_df['price'].apply(lambda x: f"₹{x:,.2f}")
-    stocks_df['min_investment'] = stocks_df['price'] * 25  # For 4% allocation
-    stocks_df['min_investment_formatted'] = stocks_df['min_investment'].apply(lambda x: f"₹{x:,.0f}")
     
-    display_df = stocks_df[['symbol', 'price_formatted', 'min_investment_formatted', 'score']].rename(columns={
-        'symbol': 'Stock Symbol',
-        'price_formatted': 'Current Price',
-        'min_investment_formatted': 'Min Investment (4%)',
-        'score': 'Momentum Score'
+    # Format the display - use actual data from API
+    display_df = pd.DataFrame({
+        'Stock Symbol': stocks_df['symbol'],
+        'Current Price': stocks_df['price'].apply(lambda x: f"₹{x:,.2f}"),
+        'Min Investment (4%)': (stocks_df['price'] * 25).apply(lambda x: f"₹{x:,.0f}"),
+        'Momentum Score': stocks_df['score'].apply(lambda x: f"{x:.2f}")
     })
     
     st.dataframe(display_df, use_container_width=True, hide_index=True)
@@ -174,48 +164,24 @@ def show_initial_investment_page():
     # Investment amount input
     st.subheader("💰 Enter Investment Amount")
     
-    col1, col2 = st.columns([2, 1])
+    min_investment = requirements['minimum_investment']['minimum_investment']
+    recommended = requirements['minimum_investment']['recommended_minimum']
     
-    with col1:
-        investment_amount = st.number_input(
-            "Investment Amount (₹)",
-            min_value=float(min_investment),
-            value=float(recommended),
-            step=10000.0,
-            help=f"Minimum: ₹{min_investment:,.0f}"
-        )
-        
-        # Quick amount buttons
-        st.write("Quick amounts:")
-        col1a, col1b, col1c, col1d = st.columns(4)
-        
-        with col1a:
-            if st.button("₹2L"):
-                investment_amount = 200000
-        with col1b:
-            if st.button("₹5L"):
-                investment_amount = 500000
-        with col1c:
-            if st.button("₹10L"):
-                investment_amount = 1000000
-        with col1d:
-            if st.button("₹20L"):
-                investment_amount = 2000000
+    investment_amount = st.number_input(
+        "Investment Amount (₹)",
+        min_value=float(min_investment),
+        value=float(recommended),
+        step=10000.0,
+        help=f"Minimum required: ₹{min_investment:,.0f}"
+    )
     
-    with col2:
-        # Investment summary
-        utilization = (investment_amount / recommended) * 100 if recommended > 0 else 0
-        avg_per_stock = investment_amount / total_stocks
-        
-        st.metric("📊 Utilization", f"{utilization:.1f}%")
-        st.metric("📈 Avg per Stock", f"₹{avg_per_stock:,.0f}")
-        
-        if investment_amount < min_investment:
-            st.markdown('<div class="error-box">❌ Amount below minimum!</div>', unsafe_allow_html=True)
-        elif investment_amount < recommended:
-            st.markdown('<div class="warning-box">⚠️ Consider recommended amount</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="success-box">✅ Good investment amount</div>', unsafe_allow_html=True)
+    # Show status message
+    if investment_amount < min_investment:
+        st.markdown('<div class="error-box">❌ Amount below minimum required!</div>', unsafe_allow_html=True)
+    elif investment_amount < recommended:
+        st.markdown('<div class="warning-box">⚠️ Consider recommended amount for better allocation</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="success-box">✅ Good investment amount</div>', unsafe_allow_html=True)
     
     # Calculate investment plan
     if st.button("🧮 Calculate Investment Plan", type="primary", use_container_width=True):
@@ -349,7 +315,7 @@ def show_investment_plan():
     # Execution buttons
     st.subheader("🚀 Execute Investment")
     
-    col1, col2, col3 = st.columns([1, 1, 1])
+    col1, col2 = st.columns([1, 1])
     
     with col1:
         if st.button("🔄 Recalculate Plan", use_container_width=True):
@@ -357,10 +323,6 @@ def show_investment_plan():
             st.rerun()
     
     with col2:
-        if st.button("💾 Save Plan", use_container_width=True):
-            st.info("Plan saved for future reference")
-    
-    with col3:
         if st.button("🚀 Execute Investment", type="primary", use_container_width=True):
             execute_initial_investment()
 
@@ -442,36 +404,90 @@ def show_rebalancing_page():
         st.error(f"Error checking rebalancing: {e}")
 
 def show_rebalancing_interface(rebalancing_info):
-    """Show rebalancing interface"""
-    st.subheader("📊 Rebalancing Required")
-    
+    """Show improved rebalancing interface"""
     comparison = rebalancing_info['comparison']
     
-    col1, col2 = st.columns(2)
+    # Main rebalancing status
+    st.markdown('<div class="warning-box">⚖️ <strong>Rebalancing Required</strong><br>Your portfolio needs adjustment due to CSV changes.</div>', unsafe_allow_html=True)
+    
+    # Portfolio transition summary
+    st.subheader("📊 Portfolio Transition")
+    
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.write("📈 **New Stocks to Add:**")
-        for stock in comparison['new_stocks']:
-            st.write(f"• {stock}")
+        current_stocks = len(comparison['portfolio_stocks'])
+        st.metric("📊 Current Stocks", current_stocks)
     
     with col2:
-        st.write("📉 **Stocks to Remove:**")
-        for stock in comparison['removed_stocks']:
-            st.write(f"• {stock}")
+        new_stocks_count = len(comparison['new_stocks'])
+        st.metric("📈 New Stocks", new_stocks_count, delta=f"+{new_stocks_count}")
     
-    # Additional investment input
+    with col3:
+        removed_stocks_count = len(comparison['removed_stocks'])
+        st.metric("📉 Stocks to Exit", removed_stocks_count, delta=f"-{removed_stocks_count}")
+    
+    # Stock changes in a cleaner format
+    if comparison['new_stocks'] or comparison['removed_stocks']:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if comparison['new_stocks']:
+                st.write("### 🟢 **Stocks to ADD**")
+                for stock in comparison['new_stocks']:
+                    st.write(f"• **{stock}**")
+            else:
+                st.write("### ✅ **No new stocks to add**")
+        
+        with col2:
+            if comparison['removed_stocks']:
+                st.write("### 🔴 **Stocks to SELL**")
+                for stock in comparison['removed_stocks']:
+                    st.write(f"• **{stock}**")
+            else:
+                st.write("### ✅ **No stocks to remove**")
+    
+    # Current portfolio value
+    if 'current_portfolio_value' in rebalancing_info:
+        current_value = rebalancing_info['current_portfolio_value']
+        st.subheader("💰 Current Portfolio Value")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("💼 Portfolio Value", f"₹{current_value:,.0f}")
+        with col2:
+            st.info("This will be rebalanced across the new stock list")
+    
+    # Additional investment section
     st.subheader("💰 Additional Investment (Optional)")
     
-    additional_investment = st.number_input(
-        "Additional Amount (₹)",
-        min_value=0,
-        value=0,
-        step=10000,
-        help="Enter additional amount to invest during rebalancing"
-    )
+    col1, col2 = st.columns([3, 2])
     
-    # Calculate rebalancing plan
-    if st.button("🧮 Calculate Rebalancing Plan", type="primary"):
+    with col1:
+        additional_investment = st.number_input(
+            "Add more funds during rebalancing (₹)",
+            min_value=0,
+            value=0,
+            step=25000,
+            help="Optional: Add more money to invest along with rebalancing"
+        )
+    
+    with col2:
+        if additional_investment > 0:
+            total_after = current_value + additional_investment if 'current_portfolio_value' in rebalancing_info else additional_investment
+            st.metric("💼 Total After", f"₹{total_after:,.0f}")
+        
+        st.markdown("**Common amounts:**")
+        col2a, col2b = st.columns(2)
+        with col2a:
+            if st.button("+ ₹1L", key="add_1l"):
+                additional_investment = 100000
+        with col2b:
+            if st.button("+ ₹2L", key="add_2l"):
+                additional_investment = 200000
+    
+    # Calculate button
+    if st.button("🧮 Calculate Rebalancing Plan", type="primary", use_container_width=True):
         calculate_rebalancing_plan(additional_investment)
 
 def calculate_rebalancing_plan(additional_investment):
@@ -497,52 +513,410 @@ def calculate_rebalancing_plan(additional_investment):
         st.error(f"Error calculating rebalancing: {e}")
 
 def show_portfolio_status():
-    """Show current portfolio status"""
+    """Enhanced portfolio status with beautiful visualizations"""
     st.header("📊 Portfolio Status")
     
     try:
-        response = requests.get(f"{API_BASE_URL}/investment/portfolio-status")
+        response = requests.get(f"{API_BASE_URL}/investment/portfolio-status", timeout=30)
         if response.status_code == 200:
             status_data = response.json()
             if status_data['success']:
                 status = status_data['data']
                 
-                if status:
-                    # Display portfolio metrics
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        total_value = sum(holding['total_investment'] for holding in status['holdings'].values())
-                        st.metric("💰 Total Investment", f"₹{total_value:,.0f}")
-                    
-                    with col2:
-                        stock_count = len(status['holdings'])
-                        st.metric("📊 Holdings", f"{stock_count} stocks")
-                    
-                    with col3:
-                        last_updated = status['last_updated']
-                        st.metric("🕒 Last Updated", last_updated[:10])
-                    
-                    # Holdings table
-                    holdings_data = []
-                    for symbol, holding in status['holdings'].items():
-                        holdings_data.append({
-                            'Stock': symbol,
-                            'Shares': holding['shares'],
-                            'Avg Price': f"₹{holding['avg_price']:.2f}",
-                            'Investment': f"₹{holding['total_investment']:,.0f}"
-                        })
-                    
-                    holdings_df = pd.DataFrame(holdings_data)
-                    st.dataframe(holdings_df, use_container_width=True, hide_index=True)
-                else:
-                    st.info("📭 No portfolio found. Please complete initial investment.")
+                if status['status'] == 'empty':
+                    st.info("📭 No portfolio found. Please complete initial investment first.")
+                    if st.button("🚀 Go to Initial Investment"):
+                        st.rerun()
+                    return
+                elif status['status'] == 'error':
+                    st.error(f"❌ Error loading portfolio: {status.get('error', 'Unknown error')}")
+                    return
+                
+                # Extract data
+                portfolio_summary = status['portfolio_summary']
+                performance_metrics = status['performance_metrics']
+                allocation_analysis = status['allocation_analysis']
+                holdings = status['holdings']
+                timeline = status['timeline']
+                
+                # Portfolio Header with Key Metrics
+                show_portfolio_header(portfolio_summary, performance_metrics, timeline)
+                
+                # Portfolio Performance Charts
+                show_performance_section(holdings, portfolio_summary, performance_metrics)
+                
+                # Holdings Heatmap
+                show_holdings_heatmap(holdings)
+                
+                # Detailed Holdings Table
+                show_detailed_holdings_table(holdings)
+                
+                # Advanced Analytics
+                show_advanced_analytics(allocation_analysis, performance_metrics, timeline)
+                
             else:
                 st.error("Failed to get portfolio status")
         else:
             st.error(f"API Error: {response.status_code}")
+            
     except Exception as e:
         st.error(f"Error fetching portfolio status: {e}")
+
+def show_portfolio_header(portfolio_summary, performance_metrics, timeline):
+    """Show portfolio header with key metrics"""
+    
+    # Main metrics row
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    with col1:
+        current_value = portfolio_summary['current_value']
+        st.metric(
+            "💰 Portfolio Value",
+            f"₹{current_value:,.0f}",
+            help="Current market value of all holdings"
+        )
+    
+    with col2:
+        total_investment = portfolio_summary['total_investment']
+        total_returns = portfolio_summary['total_returns']
+        st.metric(
+            "📈 Total Returns",
+            f"₹{total_returns:,.0f}",
+            delta=f"{portfolio_summary['returns_percentage']:.2f}%",
+            help="Absolute returns since inception"
+        )
+    
+    with col3:
+        cagr = portfolio_summary['cagr']
+        delta_color = "normal" if cagr >= 0 else "inverse"
+        st.metric(
+            "🎯 CAGR",
+            f"{cagr:.2f}%",
+            delta=f"vs 6% risk-free",
+            delta_color=delta_color,
+            help="Compound Annual Growth Rate"
+        )
+    
+    with col4:
+        investment_period = portfolio_summary['investment_period_days']
+        st.metric(
+            "⏱️ Investment Period",
+            f"{investment_period} days",
+            delta=f"{portfolio_summary['investment_period_years']:.1f} years",
+            help="Time since first investment"
+        )
+    
+    with col5:
+        sharpe_ratio = performance_metrics['sharpe_ratio']
+        st.metric(
+            "📊 Sharpe Ratio",
+            f"{sharpe_ratio:.2f}",
+            help="Risk-adjusted returns"
+        )
+    
+    # Performance summary
+    best_performer = performance_metrics['best_performer']
+    worst_performer = performance_metrics['worst_performer']
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if best_performer:
+            st.success(f"🏆 **Best Performer**: {best_performer['symbol']} (+{best_performer['percentage_return']:.2f}%)")
+        else:
+            st.info("🏆 **Best Performer**: N/A")
+    
+    with col2:
+        if worst_performer:
+            if worst_performer['percentage_return'] < 0:
+                st.error(f"📉 **Worst Performer**: {worst_performer['symbol']} ({worst_performer['percentage_return']:.2f}%)")
+            else:
+                st.info(f"📉 **Worst Performer**: {worst_performer['symbol']} (+{worst_performer['percentage_return']:.2f}%)")
+        else:
+            st.info("📉 **Worst Performer**: N/A")
+    
+    with col3:
+        volatility = performance_metrics['volatility_score']
+        volatility_status = "Low" if volatility < 10 else "Medium" if volatility < 20 else "High"
+        st.info(f"📊 **Volatility**: {volatility:.1f}% ({volatility_status})")
+
+def show_performance_section(holdings, portfolio_summary, performance_metrics):
+    """Show performance charts and analysis"""
+    
+    st.subheader("📈 Performance Analysis")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Returns comparison chart
+        holdings_data = []
+        for symbol, holding in holdings.items():
+            holdings_data.append({
+                'Stock': symbol,
+                'Current Value': holding['current_value'],
+                'Investment': holding['investment_value'],
+                'Return %': holding['percentage_return'],
+                'CAGR %': holding['annualized_return'],
+                'Days Held': holding['days_held']
+            })
+        
+        holdings_df = pd.DataFrame(holdings_data)
+        
+        # Performance bar chart
+        fig = px.bar(
+            holdings_df,
+            x='Stock',
+            y='Return %',
+            title='Individual Stock Returns (%)',
+            color='Return %',
+            color_continuous_scale='RdYlGn',
+            text='Return %'
+        )
+        fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+        fig.update_layout(
+            height=400,
+            xaxis_title="Stocks",
+            yaxis_title="Returns (%)",
+            showlegend=False
+        )
+        fig.add_hline(y=0, line_dash="dash", line_color="gray", annotation_text="Break-even")
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Portfolio composition pie chart
+        fig = px.pie(
+            holdings_df,
+            values='Current Value',
+            names='Stock',
+            title='Portfolio Composition',
+            color_discrete_sequence=px.colors.qualitative.Set3
+        )
+        fig.update_traces(
+            textposition='inside',
+            textinfo='percent+label',
+            hovertemplate='<b>%{label}</b><br>Value: ₹%{value:,.0f}<br>Percentage: %{percent}<extra></extra>'
+        )
+        fig.update_layout(height=400)
+        st.plotly_chart(fig, use_container_width=True)
+
+def show_holdings_heatmap(holdings):
+    """Show beautiful holdings heatmap"""
+    
+    st.subheader("🔥 Holdings Heatmap")
+    
+    # Prepare data for heatmap
+    heatmap_data = []
+    for symbol, holding in holdings.items():
+        heatmap_data.append({
+            'Stock': symbol,
+            'Value': holding['current_value'],
+            'Return %': holding['percentage_return'],
+            'CAGR %': holding['annualized_return'],
+            'Days Held': holding['days_held'],
+            'Allocation %': holding['allocation_percent']
+        })
+    
+    heatmap_df = pd.DataFrame(heatmap_data)
+    
+    # Create treemap for holdings
+    fig = px.treemap(
+        heatmap_df,
+        path=['Stock'],
+        values='Value',
+        color='Return %',
+        color_continuous_scale='RdYlGn',
+        color_continuous_midpoint=0,
+        title='Holdings Treemap (Size = Value, Color = Returns)',
+        hover_data={
+            'Value': ':,.0f',
+            'Return %': ':.2f',
+            'CAGR %': ':.2f',
+            'Days Held': True,
+            'Allocation %': ':.2f'
+        }
+    )
+    
+    fig.update_traces(
+        texttemplate="<b>%{label}</b><br>₹%{value:,.0f}<br>%{color:.1f}%",
+        textposition="middle center",
+        textfont_size=12
+    )
+    
+    fig.update_layout(
+        height=500,
+        font=dict(size=14),
+        coloraxis_colorbar=dict(
+            title="Returns (%)",
+            titleside="right"
+        )
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Additional performance matrix
+    if len(heatmap_df) > 1:
+        st.subheader("📊 Performance Matrix")
+        
+        # Create scatter plot matrix
+        fig = px.scatter(
+            heatmap_df,
+            x='Days Held',
+            y='Return %',
+            size='Value',
+            color='CAGR %',
+            hover_name='Stock',
+            title='Risk-Return Analysis (Bubble Size = Investment Value)',
+            color_continuous_scale='RdYlGn',
+            size_max=60
+        )
+        
+        fig.update_layout(
+            height=400,
+            xaxis_title="Days Held",
+            yaxis_title="Total Return (%)"
+        )
+        
+        fig.add_hline(y=0, line_dash="dash", line_color="gray", annotation_text="Break-even")
+        st.plotly_chart(fig, use_container_width=True)
+
+def show_detailed_holdings_table(holdings):
+    """Show detailed holdings table with enhanced formatting"""
+    
+    st.subheader("📋 Detailed Holdings")
+    
+    # Prepare detailed table data
+    table_data = []
+    for symbol, holding in holdings.items():
+        
+        # Determine return color
+        return_pct = holding['percentage_return']
+        cagr_pct = holding['annualized_return']
+        
+        table_data.append({
+            'Stock': symbol,
+            'Shares': f"{holding['shares']:,}",
+            'Avg Price': f"₹{holding['avg_price']:,.2f}",
+            'Current Price': f"₹{holding['current_price']:,.2f}",
+            'Investment': f"₹{holding['investment_value']:,.0f}",
+            'Current Value': f"₹{holding['current_value']:,.0f}",
+            'Absolute P&L': f"₹{holding['absolute_return']:,.0f}",
+            'Return %': f"{return_pct:.2f}%",
+            'CAGR %': f"{cagr_pct:.2f}%",
+            'Allocation %': f"{holding['allocation_percent']:.2f}%",
+            'Days Held': holding['days_held'],
+            'First Purchase': holding['first_purchase_date'][:10],
+            'Transactions': holding['transaction_count']
+        })
+    
+    table_df = pd.DataFrame(table_data)
+    
+    # Display table
+    st.dataframe(table_df, use_container_width=True, hide_index=True)
+    
+    # Summary statistics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        avg_return = sum(float(data['Return %'].replace('%', '')) for data in table_data) / len(table_data)
+        st.metric("📊 Average Return", f"{avg_return:.2f}%")
+    
+    with col2:
+        avg_cagr = sum(float(data['CAGR %'].replace('%', '')) for data in table_data) / len(table_data)
+        st.metric("🎯 Average CAGR", f"{avg_cagr:.2f}%")
+    
+    with col3:
+        positive_returns = sum(1 for data in table_data if float(data['Return %'].replace('%', '')) > 0)
+        win_rate = (positive_returns / len(table_data)) * 100
+        st.metric("🏆 Win Rate", f"{win_rate:.1f}%")
+    
+    with col4:
+        avg_holding_period = sum(holding['days_held'] for holding in holdings.values()) / len(holdings)
+        st.metric("⏱️ Avg Holding Period", f"{avg_holding_period:.0f} days")
+
+def show_advanced_analytics(allocation_analysis, performance_metrics, timeline):
+    """Show advanced analytics section"""
+    
+    st.subheader("🧠 Advanced Analytics")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("### ⚖️ Allocation Analysis")
+        
+        allocation_stats = allocation_analysis['allocation_stats']
+        st.write(f"**Target Allocation**: {allocation_stats['target_allocation']:.2f}%")
+        st.write(f"**Current Range**: {allocation_stats['min_allocation']:.2f}% - {allocation_stats['max_allocation']:.2f}%")
+        st.write(f"**Average Allocation**: {allocation_stats['avg_allocation']:.2f}%")
+        st.write(f"**Deviation Score**: {allocation_analysis['allocation_deviation']:.2f}%")
+        
+        if allocation_analysis['rebalancing_needed']:
+            st.warning("⚠️ Portfolio may need rebalancing")
+        else:
+            st.success("✅ Portfolio allocation is balanced")
+        
+        st.write("### 📊 Risk Metrics")
+        st.write(f"**Volatility**: {performance_metrics['volatility_score']:.2f}%")
+        st.write(f"**Sharpe Ratio**: {performance_metrics['sharpe_ratio']:.2f}")
+        
+        # Risk assessment
+        volatility = performance_metrics['volatility_score']
+        if volatility < 10:
+            risk_level = "🟢 Low Risk"
+        elif volatility < 20:
+            risk_level = "🟡 Medium Risk"
+        else:
+            risk_level = "🔴 High Risk"
+        
+        st.write(f"**Risk Level**: {risk_level}")
+    
+    with col2:
+        st.write("### 📅 Investment Timeline")
+        
+        st.write(f"**First Investment**: {timeline['first_investment'][:10]}")
+        st.write(f"**Last Investment**: {timeline['last_investment'][:10]}")
+        st.write(f"**Total Orders**: {timeline['total_orders']}")
+        st.write(f"**Last Updated**: {timeline['last_updated'][:10]}")
+        
+        st.write("### 🎯 Performance Benchmarks")
+        
+        # Get CAGR from portfolio summary
+        portfolio_cagr = performance_metrics.get('avg_return', 0)
+        
+        # Benchmark comparisons
+        benchmarks = {
+            "Fixed Deposit": 6.5,
+            "Nifty 50 (Est.)": 12.0,
+            "Small Cap Index": 15.0
+        }
+        
+        for benchmark, rate in benchmarks.items():
+            if portfolio_cagr > rate:
+                st.success(f"✅ Outperforming {benchmark} ({rate}%)")
+            else:
+                st.error(f"❌ Underperforming {benchmark} ({rate}%)")
+        
+        st.write("### 💡 Insights")
+        
+        # Generate insights
+        best_performer = performance_metrics.get('best_performer')
+        worst_performer = performance_metrics.get('worst_performer')
+        
+        if best_performer and worst_performer:
+            performance_spread = best_performer['percentage_return'] - worst_performer['percentage_return']
+            st.write(f"**Performance Spread**: {performance_spread:.2f}%")
+            
+            if performance_spread > 20:
+                st.info("💡 High performance variation suggests selective stock picking")
+            else:
+                st.info("💡 Consistent performance across holdings")
+        
+        # Investment frequency
+        total_orders = timeline['total_orders']
+        first_investment_date = datetime.fromisoformat(timeline['first_investment'])
+        days_active = (datetime.now() - first_investment_date).days
+        avg_orders_per_month = (total_orders / max(days_active, 1)) * 30
+        
+        st.write(f"**Investment Frequency**: {avg_orders_per_month:.1f} orders/month")
 
 def show_order_history():
     """Show order history"""
