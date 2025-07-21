@@ -1,5 +1,5 @@
 # backend/app/config.py
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
@@ -7,12 +7,12 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/investment_db"
     REDIS_URL: str = "redis://localhost:6379/0"
     
-    # Zerodha API Configuration
-    ZERODHA_API_KEY: str = "kaq2bcjtvdzfeqa1"
-    ZERODHA_API_SECRET: str = "u0ceeteyncz3iio90junf27c4v2f01uv"
-    ZERODHA_USER_ID: str = "MSC739"
-    ZERODHA_PASSWORD: str = "Pranjal@1006"
-    ZERODHA_TOTP_KEY: str = "PHHXNLG7ZPS3C4GCOF7HLGCM7DV6HRAB"
+    # Zerodha API Configuration - these will be read from environment or use defaults
+    ZERODHA_API_KEY: str = "kaq2bcjtvdzfeqa1"  # Your current API key
+    ZERODHA_API_SECRET: str = "u0ceeteyncz3iio90junf27c4v2f01uv"  # Your current secret
+    ZERODHA_USER_ID: str = "MSC739"  # Your current user ID
+    ZERODHA_PASSWORD: str = "Pranjal@1006"  # Your current password
+    ZERODHA_TOTP_KEY: str = "PHHXNLG7ZPS3C4GCOF7HLGCM7DV6HRAB"  # Your current TOTP
     ZERODHA_ACCESS_TOKEN_FILE: str = "zerodha_access_token.txt"
     
     # Security Configuration
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     
     # Application Settings
     ENVIRONMENT: str = "development"
-    DEBUG: bool = False
+    DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
     
     # Portfolio Configuration
@@ -35,6 +35,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
-        case_sensitive = True
+        case_sensitive = False  # This allows lowercase env vars
 
 settings = Settings()
