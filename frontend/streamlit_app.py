@@ -4,7 +4,9 @@ import requests
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, date
+import time
+from typing import Dict, List
 import json
 
 st.set_page_config(
@@ -13,18 +15,24 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS
+# Custom CSS for professional styling
 st.markdown("""
 <style>
     .metric-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1rem;
-        border-radius: 10px;
+        padding: 1.5rem;
+        border-radius: 15px;
         color: white;
         margin: 0.5rem 0;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s ease;
     }
-    .success-box {
+    
+    .metric-card:hover {
+        transform: translateY(-5px);
+    }
+    
+    .success-alert {
         background-color: #d4edda;
         border: 1px solid #c3e6cb;
         border-radius: 8px;
@@ -32,7 +40,8 @@ st.markdown("""
         margin: 1rem 0;
         color: #155724;
     }
-    .warning-box {
+    
+    .warning-alert {
         background-color: #fff3cd;
         border: 1px solid #ffeaa7;
         border-radius: 8px;
@@ -40,15 +49,8 @@ st.markdown("""
         margin: 1rem 0;
         color: #856404;
     }
-    .info-box {
-        background-color: #d1ecf1;
-        border: 1px solid #bee5eb;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 1rem 0;
-        color: #0c5460;
-    }
-    .error-box {
+    
+    .error-alert {
         background-color: #f8d7da;
         border: 1px solid #f5c6cb;
         border-radius: 8px;
@@ -56,9 +58,19 @@ st.markdown("""
         margin: 1rem 0;
         color: #721c24;
     }
+    
+    .info-alert {
+        background-color: #d1ecf1;
+        border: 1px solid #bee5eb;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 1rem 0;
+        color: #0c5460;
+    }
 </style>
 """, unsafe_allow_html=True)
 
+# API Configuration
 API_BASE_URL = "http://127.0.0.1:8000"
 
 # Initialize session state
@@ -76,9 +88,9 @@ def main():
         if response.status_code == 200:
             health_data = response.json()
             if health_data.get('zerodha_connected'):
-                st.markdown('<div class="success-box">✅ Backend connected! 🔗 Zerodha Connected</div>', unsafe_allow_html=True)
+                st.markdown('<div class="success-alert">✅ Backend connected! 🔗 Zerodha Connected</div>', unsafe_allow_html=True)
             else:
-                st.markdown('<div class="info-box">✅ Backend connected! ⚠️ Zerodha using sample data</div>', unsafe_allow_html=True)
+                st.markdown('<div class="info-alert">✅ Backend connected! ⚠️ Zerodha using sample data</div>', unsafe_allow_html=True)
         else:
             st.error("❌ Backend connection failed")
             return
@@ -177,11 +189,11 @@ def show_initial_investment_page():
     
     # Show status message
     if investment_amount < min_investment:
-        st.markdown('<div class="error-box">❌ Amount below minimum required!</div>', unsafe_allow_html=True)
+        st.markdown('<div class="error-alert">❌ Amount below minimum required!</div>', unsafe_allow_html=True)
     elif investment_amount < recommended:
-        st.markdown('<div class="warning-box">⚠️ Consider recommended amount for better allocation</div>', unsafe_allow_html=True)
+        st.markdown('<div class="warning-alert">⚠️ Consider recommended amount for better allocation</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="success-box">✅ Good investment amount</div>', unsafe_allow_html=True)
+        st.markdown('<div class="success-alert">✅ Good investment amount</div>', unsafe_allow_html=True)
     
     # Calculate investment plan
     if st.button("🧮 Calculate Investment Plan", type="primary", use_container_width=True):
@@ -356,7 +368,7 @@ def execute_initial_investment():
                     with col3:
                         st.metric("💵 Remaining Cash", f"₹{result['remaining_cash']:,.0f}")
                     
-                    st.markdown('<div class="success-box">✅ <strong>Investment Complete!</strong><br>Your orders have been recorded in the system. You can now monitor your portfolio and check for rebalancing needs.</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="success-alert">✅ <strong>Investment Complete!</strong><br>Your orders have been recorded in the system. You can now monitor your portfolio and check for rebalancing needs.</div>', unsafe_allow_html=True)
                     
                     # Clear the plan
                     st.session_state.investment_plan = None
@@ -387,15 +399,15 @@ def show_rebalancing_page():
                 rebalancing_info = rebalancing_data['data']
                 
                 if rebalancing_info['rebalancing_needed']:
-                    st.markdown('<div class="warning-box">⚖️ <strong>Rebalancing Needed!</strong><br>Your portfolio needs rebalancing due to CSV changes.</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="warning-alert">⚖️ <strong>Rebalancing Needed!</strong><br>Your portfolio needs rebalancing due to CSV changes.</div>', unsafe_allow_html=True)
                     
                     # Show rebalancing interface
                     show_rebalancing_interface(rebalancing_info)
                 else:
                     if rebalancing_info.get('is_first_time'):
-                        st.markdown('<div class="info-box">💡 <strong>First Time Setup</strong><br>Please complete your initial investment first.</div>', unsafe_allow_html=True)
+                        st.markdown('<div class="info-alert">💡 <strong>First Time Setup</strong><br>Please complete your initial investment first.</div>', unsafe_allow_html=True)
                     else:
-                        st.markdown('<div class="success-box">✅ <strong>Portfolio Balanced</strong><br>No rebalancing needed at this time.</div>', unsafe_allow_html=True)
+                        st.markdown('<div class="success-alert">✅ <strong>Portfolio Balanced</strong><br>No rebalancing needed at this time.</div>', unsafe_allow_html=True)
             else:
                 st.error("Failed to check rebalancing status")
         else:
@@ -404,11 +416,8 @@ def show_rebalancing_page():
         st.error(f"Error checking rebalancing: {e}")
 
 def show_rebalancing_interface(rebalancing_info):
-    """Show improved rebalancing interface"""
+    """Show rebalancing interface"""
     comparison = rebalancing_info['comparison']
-    
-    # Main rebalancing status
-    st.markdown('<div class="warning-box">⚖️ <strong>Rebalancing Required</strong><br>Your portfolio needs adjustment due to CSV changes.</div>', unsafe_allow_html=True)
     
     # Portfolio transition summary
     st.subheader("📊 Portfolio Transition")
@@ -427,7 +436,7 @@ def show_rebalancing_interface(rebalancing_info):
         removed_stocks_count = len(comparison['removed_stocks'])
         st.metric("📉 Stocks to Exit", removed_stocks_count, delta=f"-{removed_stocks_count}")
     
-    # Stock changes in a cleaner format
+    # Stock changes
     if comparison['new_stocks'] or comparison['removed_stocks']:
         col1, col2 = st.columns(2)
         
@@ -436,55 +445,23 @@ def show_rebalancing_interface(rebalancing_info):
                 st.write("### 🟢 **Stocks to ADD**")
                 for stock in comparison['new_stocks']:
                     st.write(f"• **{stock}**")
-            else:
-                st.write("### ✅ **No new stocks to add**")
         
         with col2:
             if comparison['removed_stocks']:
                 st.write("### 🔴 **Stocks to SELL**")
                 for stock in comparison['removed_stocks']:
                     st.write(f"• **{stock}**")
-            else:
-                st.write("### ✅ **No stocks to remove**")
-    
-    # Current portfolio value
-    if 'current_portfolio_value' in rebalancing_info:
-        current_value = rebalancing_info['current_portfolio_value']
-        st.subheader("💰 Current Portfolio Value")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("💼 Portfolio Value", f"₹{current_value:,.0f}")
-        with col2:
-            st.info("This will be rebalanced across the new stock list")
     
     # Additional investment section
     st.subheader("💰 Additional Investment (Optional)")
     
-    col1, col2 = st.columns([3, 2])
-    
-    with col1:
-        additional_investment = st.number_input(
-            "Add more funds during rebalancing (₹)",
-            min_value=0,
-            value=0,
-            step=25000,
-            help="Optional: Add more money to invest along with rebalancing"
-        )
-    
-    with col2:
-        if additional_investment > 0:
-            total_after = current_value + additional_investment if 'current_portfolio_value' in rebalancing_info else additional_investment
-            st.metric("💼 Total After", f"₹{total_after:,.0f}")
-        
-        st.markdown("**Common amounts:**")
-        col2a, col2b = st.columns(2)
-        with col2a:
-            if st.button("+ ₹1L", key="add_1l"):
-                additional_investment = 100000
-        with col2b:
-            if st.button("+ ₹2L", key="add_2l"):
-                additional_investment = 200000
+    additional_investment = st.number_input(
+        "Add more funds during rebalancing (₹)",
+        min_value=0,
+        value=0,
+        step=25000,
+        help="Optional: Add more money to invest along with rebalancing"
+    )
     
     # Calculate button
     if st.button("🧮 Calculate Rebalancing Plan", type="primary", use_container_width=True):
@@ -503,7 +480,6 @@ def calculate_rebalancing_plan(additional_investment):
             plan_data = response.json()
             if plan_data['success']:
                 st.success("✅ Rebalancing plan calculated!")
-                # Store and display plan (similar to initial investment)
                 # Implementation would be similar to show_investment_plan()
             else:
                 st.error(f"Calculation failed: {plan_data.get('detail', 'Unknown error')}")
@@ -513,7 +489,7 @@ def calculate_rebalancing_plan(additional_investment):
         st.error(f"Error calculating rebalancing: {e}")
 
 def show_portfolio_status():
-    """Enhanced portfolio status with beautiful visualizations"""
+    """Enhanced portfolio status with beautiful visualizations - FIXED VERSION"""
     st.header("📊 Portfolio Status")
     
     try:
@@ -532,12 +508,12 @@ def show_portfolio_status():
                     st.error(f"❌ Error loading portfolio: {status.get('error', 'Unknown error')}")
                     return
                 
-                # Extract data
-                portfolio_summary = status['portfolio_summary']
-                performance_metrics = status['performance_metrics']
-                allocation_analysis = status['allocation_analysis']
-                holdings = status['holdings']
-                timeline = status['timeline']
+                # Extract data with better error handling
+                portfolio_summary = status.get('portfolio_summary', {})
+                performance_metrics = status.get('performance_metrics', {})
+                allocation_analysis = status.get('allocation_analysis', {})
+                holdings = status.get('holdings', {})
+                timeline = status.get('timeline', {})
                 
                 # Portfolio Header with Key Metrics
                 show_portfolio_header(portfolio_summary, performance_metrics, timeline)
@@ -545,11 +521,11 @@ def show_portfolio_status():
                 # Portfolio Performance Charts
                 show_performance_section(holdings, portfolio_summary, performance_metrics)
                 
-                # Holdings Heatmap
-                show_holdings_heatmap(holdings)
+                # Holdings Heatmap - FIXED VERSION
+                show_holdings_heatmap_fixed(holdings)
                 
                 # Detailed Holdings Table
-                show_detailed_holdings_table(holdings)
+                show_detailed_holdings_table_fixed(holdings)
                 
                 # Advanced Analytics
                 show_advanced_analytics(allocation_analysis, performance_metrics, timeline)
@@ -569,7 +545,7 @@ def show_portfolio_header(portfolio_summary, performance_metrics, timeline):
     col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        current_value = portfolio_summary['current_value']
+        current_value = portfolio_summary.get('current_value', 0)
         st.metric(
             "💰 Portfolio Value",
             f"₹{current_value:,.0f}",
@@ -577,17 +553,17 @@ def show_portfolio_header(portfolio_summary, performance_metrics, timeline):
         )
     
     with col2:
-        total_investment = portfolio_summary['total_investment']
-        total_returns = portfolio_summary['total_returns']
+        total_returns = portfolio_summary.get('total_returns', 0)
+        returns_percentage = portfolio_summary.get('returns_percentage', 0)
         st.metric(
             "📈 Total Returns",
             f"₹{total_returns:,.0f}",
-            delta=f"{portfolio_summary['returns_percentage']:.2f}%",
+            delta=f"{returns_percentage:.2f}%",
             help="Absolute returns since inception"
         )
     
     with col3:
-        cagr = portfolio_summary['cagr']
+        cagr = portfolio_summary.get('cagr', 0)
         delta_color = "normal" if cagr >= 0 else "inverse"
         st.metric(
             "🎯 CAGR",
@@ -598,52 +574,31 @@ def show_portfolio_header(portfolio_summary, performance_metrics, timeline):
         )
     
     with col4:
-        investment_period = portfolio_summary['investment_period_days']
+        investment_period = portfolio_summary.get('investment_period_days', 0)
+        investment_years = portfolio_summary.get('investment_period_years', 0)
         st.metric(
             "⏱️ Investment Period",
             f"{investment_period} days",
-            delta=f"{portfolio_summary['investment_period_years']:.1f} years",
+            delta=f"{investment_years:.1f} years",
             help="Time since first investment"
         )
     
     with col5:
-        sharpe_ratio = performance_metrics['sharpe_ratio']
+        sharpe_ratio = performance_metrics.get('sharpe_ratio', 0)
         st.metric(
             "📊 Sharpe Ratio",
             f"{sharpe_ratio:.2f}",
             help="Risk-adjusted returns"
         )
-    
-    # Performance summary
-    best_performer = performance_metrics['best_performer']
-    worst_performer = performance_metrics['worst_performer']
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if best_performer:
-            st.success(f"🏆 **Best Performer**: {best_performer['symbol']} (+{best_performer['percentage_return']:.2f}%)")
-        else:
-            st.info("🏆 **Best Performer**: N/A")
-    
-    with col2:
-        if worst_performer:
-            if worst_performer['percentage_return'] < 0:
-                st.error(f"📉 **Worst Performer**: {worst_performer['symbol']} ({worst_performer['percentage_return']:.2f}%)")
-            else:
-                st.info(f"📉 **Worst Performer**: {worst_performer['symbol']} (+{worst_performer['percentage_return']:.2f}%)")
-        else:
-            st.info("📉 **Worst Performer**: N/A")
-    
-    with col3:
-        volatility = performance_metrics['volatility_score']
-        volatility_status = "Low" if volatility < 10 else "Medium" if volatility < 20 else "High"
-        st.info(f"📊 **Volatility**: {volatility:.1f}% ({volatility_status})")
 
 def show_performance_section(holdings, portfolio_summary, performance_metrics):
     """Show performance charts and analysis"""
     
     st.subheader("📈 Performance Analysis")
+    
+    if not holdings:
+        st.info("No holdings data available for performance analysis")
+        return
     
     col1, col2 = st.columns([2, 1])
     
@@ -651,187 +606,328 @@ def show_performance_section(holdings, portfolio_summary, performance_metrics):
         # Returns comparison chart
         holdings_data = []
         for symbol, holding in holdings.items():
-            holdings_data.append({
-                'Stock': symbol,
-                'Current Value': holding['current_value'],
-                'Investment': holding['investment_value'],
-                'Return %': holding['percentage_return'],
-                'CAGR %': holding['annualized_return'],
-                'Days Held': holding['days_held']
-            })
+            try:
+                holdings_data.append({
+                    'Stock': str(symbol),
+                    'Current Value': float(holding.get('current_value', 0)),
+                    'Investment': float(holding.get('investment_value', 0)),
+                    'Return %': float(holding.get('percentage_return', 0)),
+                    'CAGR %': float(holding.get('annualized_return', 0)),
+                    'Days Held': int(holding.get('days_held', 1))
+                })
+            except (ValueError, TypeError):
+                continue
         
-        holdings_df = pd.DataFrame(holdings_data)
-        
-        # Performance bar chart
-        fig = px.bar(
-            holdings_df,
-            x='Stock',
-            y='Return %',
-            title='Individual Stock Returns (%)',
-            color='Return %',
-            color_continuous_scale='RdYlGn',
-            text='Return %'
-        )
-        fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-        fig.update_layout(
-            height=400,
-            xaxis_title="Stocks",
-            yaxis_title="Returns (%)",
-            showlegend=False
-        )
-        fig.add_hline(y=0, line_dash="dash", line_color="gray", annotation_text="Break-even")
-        st.plotly_chart(fig, use_container_width=True)
+        if holdings_data:
+            holdings_df = pd.DataFrame(holdings_data)
+            
+            # Performance bar chart
+            fig = px.bar(
+                holdings_df,
+                x='Stock',
+                y='Return %',
+                title='Individual Stock Returns (%)',
+                color='Return %',
+                color_continuous_scale='RdYlGn',
+                text='Return %'
+            )
+            fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+            fig.update_layout(
+                height=400,
+                xaxis_title="Stocks",
+                yaxis_title="Returns (%)",
+                showlegend=False
+            )
+            fig.add_hline(y=0, line_dash="dash", line_color="gray", annotation_text="Break-even")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No valid performance data available")
     
     with col2:
-        # Portfolio composition pie chart
-        fig = px.pie(
-            holdings_df,
-            values='Current Value',
-            names='Stock',
-            title='Portfolio Composition',
-            color_discrete_sequence=px.colors.qualitative.Set3
-        )
-        fig.update_traces(
-            textposition='inside',
-            textinfo='percent+label',
-            hovertemplate='<b>%{label}</b><br>Value: ₹%{value:,.0f}<br>Percentage: %{percent}<extra></extra>'
-        )
-        fig.update_layout(height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.subheader("🥧 Asset Allocation")
+        
+        if holdings_data:
+            # Portfolio composition pie chart
+            fig = px.pie(
+                holdings_df,
+                values='Current Value',
+                names='Stock',
+                title='Portfolio Composition'
+            )
+            fig.update_traces(
+                textposition='inside',
+                textinfo='percent+label',
+                hovertemplate='<b>%{label}</b><br>Value: ₹%{value:,.0f}<br>Percentage: %{percent}<extra></extra>'
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No allocation data available")
 
-def show_holdings_heatmap(holdings):
-    """Show beautiful holdings heatmap"""
+def show_holdings_heatmap_fixed(holdings):
+    """Show beautiful holdings heatmap - COMPLETELY FIXED VERSION"""
     
     st.subheader("🔥 Holdings Heatmap")
+    
+    if not holdings:
+        st.info("No holdings data available for heatmap")
+        return
     
     # Prepare data for heatmap
     heatmap_data = []
     for symbol, holding in holdings.items():
-        heatmap_data.append({
-            'Stock': symbol,
-            'Value': holding['current_value'],
-            'Return %': holding['percentage_return'],
-            'CAGR %': holding['annualized_return'],
-            'Days Held': holding['days_held'],
-            'Allocation %': holding['allocation_percent']
-        })
+        try:
+            heatmap_data.append({
+                'Stock': str(symbol),
+                'Value': float(holding.get('current_value', 0)),
+                'Return %': float(holding.get('percentage_return', 0)),
+                'CAGR %': float(holding.get('annualized_return', 0)),
+                'Days Held': int(holding.get('days_held', 1)),
+                'Allocation %': float(holding.get('allocation_percent', 0))
+            })
+        except (ValueError, TypeError) as e:
+            print(f"Error processing holding {symbol}: {e}")
+            continue
+    
+    if not heatmap_data:
+        st.info("No valid holdings data for heatmap visualization")
+        return
     
     heatmap_df = pd.DataFrame(heatmap_data)
     
-    # Create treemap for holdings
-    fig = px.treemap(
-        heatmap_df,
-        path=['Stock'],
-        values='Value',
-        color='Return %',
-        color_continuous_scale='RdYlGn',
-        color_continuous_midpoint=0,
-        title='Holdings Treemap (Size = Value, Color = Returns)',
-        hover_data={
-            'Value': ':,.0f',
-            'Return %': ':.2f',
-            'CAGR %': ':.2f',
-            'Days Held': True,
-            'Allocation %': ':.2f'
-        }
-    )
-    
-    fig.update_traces(
-        texttemplate="<b>%{label}</b><br>₹%{value:,.0f}<br>%{color:.1f}%",
-        textposition="middle center",
-        textfont_size=12
-    )
-    
-    fig.update_layout(
-        height=500,
-        font=dict(size=14),
-        coloraxis_colorbar=dict(
-            title="Returns (%)",
-            titleside="right"
+    # Create treemap for holdings with error handling
+    try:
+        fig = px.treemap(
+            heatmap_df,
+            path=['Stock'],
+            values='Value',
+            color='Return %',
+            color_continuous_scale='RdYlGn',
+            color_continuous_midpoint=0,
+            hover_data={
+                'Value': ':,.0f',
+                'Return %': ':.2f',
+                'CAGR %': ':.2f',
+                'Days Held': True,
+                'Allocation %': ':.2f'
+            }
         )
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
+        
+        fig.update_traces(
+            texttemplate="<b>%{label}</b><br>₹%{value:,.0f}<br>%{color:.1f}%",
+            textposition="middle center",
+            textfont_size=12
+        )
+        
+        # COMPLETELY FIXED: Use only basic layout without colorbar customization
+        fig.update_layout(
+            title="Holdings Treemap (Size = Value, Color = Returns)",
+            height=500,
+            font=dict(size=14)
+            # Removed all coloraxis_colorbar configurations
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"Error creating treemap: {e}")
+        # Show alternative visualization
+        show_alternative_holdings_chart(heatmap_df)
     
     # Additional performance matrix
     if len(heatmap_df) > 1:
         st.subheader("📊 Performance Matrix")
         
-        # Create scatter plot matrix
-        fig = px.scatter(
+        try:
+            # Create scatter plot matrix
+            fig = px.scatter(
+                heatmap_df,
+                x='Days Held',
+                y='Return %',
+                size='Value',
+                color='CAGR %',
+                hover_name='Stock',
+                color_continuous_scale='RdYlGn',
+                size_max=60
+            )
+            
+            fig.update_layout(
+                title='Risk-Return Analysis (Bubble Size = Investment Value)',
+                height=400,
+                xaxis_title="Days Held",
+                yaxis_title="Total Return (%)"
+                # Removed coloraxis_colorbar configuration
+            )
+            
+            fig.add_hline(y=0, line_dash="dash", line_color="gray", annotation_text="Break-even")
+            st.plotly_chart(fig, use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"Error creating performance matrix: {e}")
+            # Show simple bar chart as fallback
+            fig = px.bar(
+                heatmap_df,
+                x='Stock',
+                y='Return %',
+                title='Stock Returns (%)',
+                color='Return %',
+                color_continuous_scale='RdYlGn'
+            )
+            # No colorbar customization for bar chart either
+            st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Need at least 2 holdings for performance matrix visualization")
+
+def show_alternative_holdings_chart(heatmap_df):
+    """Alternative chart when treemap fails - SIMPLIFIED VERSION"""
+    st.subheader("📊 Holdings Overview")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Simple pie chart
+        fig = px.pie(
             heatmap_df,
-            x='Days Held',
+            values='Value',
+            names='Stock',
+            title='Portfolio Allocation by Value'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Bar chart of returns - simplified without colorbar customization
+        fig = px.bar(
+            heatmap_df,
+            x='Stock',
             y='Return %',
-            size='Value',
-            color='CAGR %',
-            hover_name='Stock',
-            title='Risk-Return Analysis (Bubble Size = Investment Value)',
-            color_continuous_scale='RdYlGn',
-            size_max=60
+            title='Returns by Stock',
+            color='Return %',
+            color_continuous_scale='RdYlGn'
         )
-        
-        fig.update_layout(
-            height=400,
-            xaxis_title="Days Held",
-            yaxis_title="Total Return (%)"
-        )
-        
-        fig.add_hline(y=0, line_dash="dash", line_color="gray", annotation_text="Break-even")
+        fig.update_layout(xaxis_tickangle=-45)
         st.plotly_chart(fig, use_container_width=True)
 
-def show_detailed_holdings_table(holdings):
-    """Show detailed holdings table with enhanced formatting"""
+def show_detailed_holdings_table_fixed(holdings):
+    """Show detailed holdings table with enhanced formatting - FIXED VERSION"""
     
     st.subheader("📋 Detailed Holdings")
     
-    # Prepare detailed table data
+    if not holdings:
+        st.info("No holdings data available")
+        return
+    
+    # Prepare detailed table data with better error handling
     table_data = []
     for symbol, holding in holdings.items():
-        
-        # Determine return color
-        return_pct = holding['percentage_return']
-        cagr_pct = holding['annualized_return']
-        
-        table_data.append({
-            'Stock': symbol,
-            'Shares': f"{holding['shares']:,}",
-            'Avg Price': f"₹{holding['avg_price']:,.2f}",
-            'Current Price': f"₹{holding['current_price']:,.2f}",
-            'Investment': f"₹{holding['investment_value']:,.0f}",
-            'Current Value': f"₹{holding['current_value']:,.0f}",
-            'Absolute P&L': f"₹{holding['absolute_return']:,.0f}",
-            'Return %': f"{return_pct:.2f}%",
-            'CAGR %': f"{cagr_pct:.2f}%",
-            'Allocation %': f"{holding['allocation_percent']:.2f}%",
-            'Days Held': holding['days_held'],
-            'First Purchase': holding['first_purchase_date'][:10],
-            'Transactions': holding['transaction_count']
-        })
+        try:
+            # Safely extract values with defaults
+            shares = int(holding.get('shares', 0))
+            avg_price = float(holding.get('avg_price', 0))
+            current_price = float(holding.get('current_price', 0))
+            investment_value = float(holding.get('investment_value', 0))
+            current_value = float(holding.get('current_value', 0))
+            absolute_return = float(holding.get('absolute_return', 0))
+            percentage_return = float(holding.get('percentage_return', 0))
+            allocation_percent = float(holding.get('allocation_percent', 0))
+            days_held = int(holding.get('days_held', 1))
+            annualized_return = float(holding.get('annualized_return', 0))
+            first_purchase = str(holding.get('first_purchase_date', ''))[:10]
+            transaction_count = int(holding.get('transaction_count', 0))
+            
+            table_data.append({
+                'Stock': str(symbol),
+                'Shares': f"{shares:,}",
+                'Avg Price': f"₹{avg_price:,.2f}",
+                'Current Price': f"₹{current_price:,.2f}",
+                'Investment': f"₹{investment_value:,.0f}",
+                'Current Value': f"₹{current_value:,.0f}",
+                'Absolute P&L': f"₹{absolute_return:,.0f}",
+                'Return %': f"{percentage_return:.2f}%",
+                'CAGR %': f"{annualized_return:.2f}%",
+                'Allocation %': f"{allocation_percent:.2f}%",
+                'Days Held': days_held,
+                'First Purchase': first_purchase if first_purchase != '' else 'N/A',
+                'Transactions': transaction_count
+            })
+            
+        except (ValueError, TypeError, KeyError) as e:
+            print(f"Error processing holding {symbol} for table: {e}")
+            # Add a safe fallback row
+            table_data.append({
+                'Stock': str(symbol),
+                'Shares': 'Error',
+                'Avg Price': 'Error',
+                'Current Price': 'Error',
+                'Investment': 'Error',
+                'Current Value': 'Error',
+                'Absolute P&L': 'Error',
+                'Return %': 'Error',
+                'CAGR %': 'Error',
+                'Allocation %': 'Error',
+                'Days Held': 'Error',
+                'First Purchase': 'Error',
+                'Transactions': 'Error'
+            })
+    
+    if not table_data:
+        st.warning("No valid holdings data to display")
+        return
     
     table_df = pd.DataFrame(table_data)
     
-    # Display table
-    st.dataframe(table_df, use_container_width=True, hide_index=True)
+    # Display table with custom styling
+    st.dataframe(
+        table_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            'Return %': st.column_config.TextColumn('Return %', help="Total percentage return"),
+            'CAGR %': st.column_config.TextColumn('CAGR %', help="Compound Annual Growth Rate"),
+            'Allocation %': st.column_config.TextColumn('Allocation %', help="Portfolio allocation percentage")
+        }
+    )
     
-    # Summary statistics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        avg_return = sum(float(data['Return %'].replace('%', '')) for data in table_data) / len(table_data)
-        st.metric("📊 Average Return", f"{avg_return:.2f}%")
-    
-    with col2:
-        avg_cagr = sum(float(data['CAGR %'].replace('%', '')) for data in table_data) / len(table_data)
-        st.metric("🎯 Average CAGR", f"{avg_cagr:.2f}%")
-    
-    with col3:
-        positive_returns = sum(1 for data in table_data if float(data['Return %'].replace('%', '')) > 0)
-        win_rate = (positive_returns / len(table_data)) * 100
-        st.metric("🏆 Win Rate", f"{win_rate:.1f}%")
-    
-    with col4:
-        avg_holding_period = sum(holding['days_held'] for holding in holdings.values()) / len(holdings)
-        st.metric("⏱️ Avg Holding Period", f"{avg_holding_period:.0f} days")
+    # Summary statistics with error handling
+    try:
+        # Calculate summary stats from valid holdings only
+        valid_returns = []
+        valid_cagrs = []
+        valid_holding_periods = []
+        
+        for holding in holdings.values():
+            try:
+                ret = float(holding.get('percentage_return', 0))
+                cagr = float(holding.get('annualized_return', 0))
+                days = int(holding.get('days_held', 1))
+                
+                valid_returns.append(ret)
+                valid_cagrs.append(cagr)
+                valid_holding_periods.append(days)
+            except (ValueError, TypeError):
+                continue
+        
+        if valid_returns:
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                avg_return = sum(valid_returns) / len(valid_returns)
+                st.metric("📊 Average Return", f"{avg_return:.2f}%")
+            
+            with col2:
+                avg_cagr = sum(valid_cagrs) / len(valid_cagrs)
+                st.metric("🎯 Average CAGR", f"{avg_cagr:.2f}%")
+            
+            with col3:
+                positive_returns = sum(1 for ret in valid_returns if ret > 0)
+                win_rate = (positive_returns / len(valid_returns)) * 100
+                st.metric("🏆 Win Rate", f"{win_rate:.1f}%")
+            
+            with col4:
+                avg_holding_period = sum(valid_holding_periods) / len(valid_holding_periods)
+                st.metric("⏱️ Avg Holding Period", f"{avg_holding_period:.0f} days")
+        
+    except Exception as e:
+        st.warning(f"Could not calculate summary statistics: {e}")
 
 def show_advanced_analytics(allocation_analysis, performance_metrics, timeline):
     """Show advanced analytics section"""
@@ -843,23 +939,23 @@ def show_advanced_analytics(allocation_analysis, performance_metrics, timeline):
     with col1:
         st.write("### ⚖️ Allocation Analysis")
         
-        allocation_stats = allocation_analysis['allocation_stats']
-        st.write(f"**Target Allocation**: {allocation_stats['target_allocation']:.2f}%")
-        st.write(f"**Current Range**: {allocation_stats['min_allocation']:.2f}% - {allocation_stats['max_allocation']:.2f}%")
-        st.write(f"**Average Allocation**: {allocation_stats['avg_allocation']:.2f}%")
-        st.write(f"**Deviation Score**: {allocation_analysis['allocation_deviation']:.2f}%")
+        allocation_stats = allocation_analysis.get('allocation_stats', {})
+        st.write(f"**Target Allocation**: {allocation_stats.get('target_allocation', 0):.2f}%")
+        st.write(f"**Current Range**: {allocation_stats.get('min_allocation', 0):.2f}% - {allocation_stats.get('max_allocation', 0):.2f}%")
+        st.write(f"**Average Allocation**: {allocation_stats.get('avg_allocation', 0):.2f}%")
+        st.write(f"**Deviation Score**: {allocation_analysis.get('allocation_deviation', 0):.2f}%")
         
-        if allocation_analysis['rebalancing_needed']:
+        if allocation_analysis.get('rebalancing_needed', False):
             st.warning("⚠️ Portfolio may need rebalancing")
         else:
             st.success("✅ Portfolio allocation is balanced")
         
         st.write("### 📊 Risk Metrics")
-        st.write(f"**Volatility**: {performance_metrics['volatility_score']:.2f}%")
-        st.write(f"**Sharpe Ratio**: {performance_metrics['sharpe_ratio']:.2f}")
+        st.write(f"**Volatility**: {performance_metrics.get('volatility_score', 0):.2f}%")
+        st.write(f"**Sharpe Ratio**: {performance_metrics.get('sharpe_ratio', 0):.2f}")
         
         # Risk assessment
-        volatility = performance_metrics['volatility_score']
+        volatility = performance_metrics.get('volatility_score', 0)
         if volatility < 10:
             risk_level = "🟢 Low Risk"
         elif volatility < 20:
@@ -872,14 +968,19 @@ def show_advanced_analytics(allocation_analysis, performance_metrics, timeline):
     with col2:
         st.write("### 📅 Investment Timeline")
         
-        st.write(f"**First Investment**: {timeline['first_investment'][:10]}")
-        st.write(f"**Last Investment**: {timeline['last_investment'][:10]}")
-        st.write(f"**Total Orders**: {timeline['total_orders']}")
-        st.write(f"**Last Updated**: {timeline['last_updated'][:10]}")
+        first_investment = timeline.get('first_investment', 'N/A')
+        last_investment = timeline.get('last_investment', 'N/A')
+        total_orders = timeline.get('total_orders', 0)
+        last_updated = timeline.get('last_updated', 'N/A')
+        
+        st.write(f"**First Investment**: {first_investment[:10] if first_investment != 'N/A' else 'N/A'}")
+        st.write(f"**Last Investment**: {last_investment[:10] if last_investment != 'N/A' else 'N/A'}")
+        st.write(f"**Total Orders**: {total_orders}")
+        st.write(f"**Last Updated**: {last_updated[:10] if last_updated != 'N/A' else 'N/A'}")
         
         st.write("### 🎯 Performance Benchmarks")
         
-        # Get CAGR from portfolio summary
+        # Get CAGR from performance metrics
         portfolio_cagr = performance_metrics.get('avg_return', 0)
         
         # Benchmark comparisons
@@ -894,32 +995,9 @@ def show_advanced_analytics(allocation_analysis, performance_metrics, timeline):
                 st.success(f"✅ Outperforming {benchmark} ({rate}%)")
             else:
                 st.error(f"❌ Underperforming {benchmark} ({rate}%)")
-        
-        st.write("### 💡 Insights")
-        
-        # Generate insights
-        best_performer = performance_metrics.get('best_performer')
-        worst_performer = performance_metrics.get('worst_performer')
-        
-        if best_performer and worst_performer:
-            performance_spread = best_performer['percentage_return'] - worst_performer['percentage_return']
-            st.write(f"**Performance Spread**: {performance_spread:.2f}%")
-            
-            if performance_spread > 20:
-                st.info("💡 High performance variation suggests selective stock picking")
-            else:
-                st.info("💡 Consistent performance across holdings")
-        
-        # Investment frequency
-        total_orders = timeline['total_orders']
-        first_investment_date = datetime.fromisoformat(timeline['first_investment'])
-        days_active = (datetime.now() - first_investment_date).days
-        avg_orders_per_month = (total_orders / max(days_active, 1)) * 30
-        
-        st.write(f"**Investment Frequency**: {avg_orders_per_month:.1f} orders/month")
 
 def show_order_history():
-    """Show order history"""
+    """Order history page"""
     st.header("📋 Order History")
     
     try:
@@ -947,6 +1025,26 @@ def show_order_history():
                     })
                     
                     st.dataframe(display_orders, use_container_width=True, hide_index=True)
+                    
+                    # Order summary
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        total_orders = len(orders)
+                        st.metric("📝 Total Orders", total_orders)
+                    
+                    with col2:
+                        buy_orders = len([o for o in orders if o['action'] == 'BUY'])
+                        st.metric("📈 Buy Orders", buy_orders)
+                    
+                    with col3:
+                        total_value = sum(float(o['value']) for o in orders if o['action'] == 'BUY')
+                        st.metric("💰 Total Investment", f"₹{total_value:,.0f}")
+                    
+                    with col4:
+                        unique_stocks = len(set(o['symbol'] for o in orders))
+                        st.metric("🏢 Unique Stocks", unique_stocks)
+                    
                 else:
                     st.info("📭 No orders found.")
             else:

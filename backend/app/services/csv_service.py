@@ -10,7 +10,7 @@ class CSVService:
     def __init__(self, zerodha_auth):
         self.csv_url = "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv"
         self.zerodha_auth = zerodha_auth
-        self.kite = zerodha_auth.get_kite_instance()
+        self.kite = zerodha_auth.get_kite_instance() if zerodha_auth else None
         
     def fetch_csv_data(self) -> Dict:
         """Fetch and parse CSV data from GitHub"""
@@ -43,20 +43,30 @@ class CSVService:
             raise Exception(f"Failed to fetch CSV data: {str(e)}")
     
     def get_live_prices(self, symbols: List[str]) -> Dict[str, float]:
-        """Get live prices for all symbols from Zerodha"""
+        """Get live prices for all symbols from Zerodha - NO FAKE DATA"""
         try:
             print(f"💰 Fetching live prices for {len(symbols)} stocks...")
             print(f"   Symbols to fetch: {symbols}")
             
-            # Ensure authentication first
+            # Check authentication status
+            if not self.zerodha_auth:
+                print("❌ No Zerodha authentication service available")
+                raise Exception("Zerodha authentication service not available")
+            
             if not self.zerodha_auth.is_authenticated():
-                print("🔄 Authenticating with Zerodha...")
-                self.zerodha_auth.authenticate()
-                self.kite = self.zerodha_auth.get_kite_instance()
+                print("🔄 Attempting to authenticate with Zerodha...")
+                try:
+                    self.zerodha_auth.authenticate()
+                    self.kite = self.zerodha_auth.get_kite_instance()
+                except Exception as e:
+                    print(f"❌ Zerodha authentication failed: {e}")
+                    raise Exception(f"Zerodha authentication failed: {str(e)}")
             
             if not self.kite:
-                print("⚠️ Zerodha authentication failed, using sample prices...")
-                return self._get_sample_prices(symbols)
+                print("❌ Zerodha KiteConnect instance not available")
+                raise Exception("Zerodha API connection not available")
+            
+            print("✅ Zerodha authenticated, fetching live prices...")
             
             prices = {}
             failed_symbols = []
@@ -64,7 +74,7 @@ class CSVService:
             # Get quotes for all symbols
             for symbol in symbols:
                 try:
-                    print(f"   🔍 Trying to get price for {symbol}...")
+                    print(f"   🔍 Fetching price for {symbol}...")
                     
                     # Try NSE first
                     quote_symbol = f"NSE:{symbol}"
@@ -72,11 +82,15 @@ class CSVService:
                     quote_data = self.kite.quote(quote_symbol)
                     
                     if quote_data and quote_symbol in quote_data:
-                        prices[symbol] = quote_data[quote_symbol]['last_price']
-                        print(f"   ✅ {symbol}: ₹{prices[symbol]:.2f} (NSE)")
-                        continue
+                        price = quote_data[quote_symbol]['last_price']
+                        if price and price > 0:
+                            prices[symbol] = float(price)
+                            print(f"   ✅ {symbol}: ₹{prices[symbol]:.2f} (NSE)")
+                            continue
+                        else:
+                            print(f"      Invalid price from NSE for {symbol}: {price}")
                     else:
-                        print(f"      NSE failed for {symbol}")
+                        print(f"      NSE failed for {symbol} - no data returned")
                     
                     # Try BSE if NSE fails
                     quote_symbol = f"BSE:{symbol}"
@@ -84,52 +98,58 @@ class CSVService:
                     quote_data = self.kite.quote(quote_symbol)
                     
                     if quote_data and quote_symbol in quote_data:
-                        prices[symbol] = quote_data[quote_symbol]['last_price']
-                        print(f"   ✅ {symbol}: ₹{prices[symbol]:.2f} (BSE)")
-                        continue
+                        price = quote_data[quote_symbol]['last_price']
+                        if price and price > 0:
+                            prices[symbol] = float(price)
+                            print(f"   ✅ {symbol}: ₹{prices[symbol]:.2f} (BSE)")
+                            continue
+                        else:
+                            print(f"      Invalid price from BSE for {symbol}: {price}")
                     else:
-                        print(f"      BSE also failed for {symbol}")
+                        print(f"      BSE failed for {symbol} - no data returned")
                     
                     # If both fail, add to failed list
                     failed_symbols.append(symbol)
-                    print(f"   ❌ {symbol}: All attempts failed")
+                    print(f"   ❌ {symbol}: Could not fetch price from any exchange")
                             
                 except Exception as e:
                     failed_symbols.append(symbol)
-                    print(f"   ❌ {symbol}: Error - {str(e)}")
+                    print(f"   ❌ {symbol}: Error fetching price - {str(e)}")
             
-            # If we couldn't get any live prices, fall back to sample data
+            # Check if we got enough valid prices
+            success_rate = len(prices) / len(symbols) * 100 if symbols else 0
+            
+            print(f"📊 Price fetching results:")
+            print(f"   Successful: {len(prices)}/{len(symbols)} ({success_rate:.1f}%)")
+            print(f"   Failed: {len(failed_symbols)}")
+            
             if len(prices) == 0:
-                print("⚠️ No live prices available, using sample prices...")
-                return self._get_sample_prices(symbols)
+                print("❌ Could not fetch any live prices")
+                raise Exception("Unable to fetch live prices for any stocks. Please check Zerodha connection and market hours.")
             
-            # For failed symbols, use sample prices to complete the dataset
+            if success_rate < 50:
+                print(f"⚠️ Low success rate ({success_rate:.1f}%) for price fetching")
+                raise Exception(f"Could only fetch prices for {len(prices)}/{len(symbols)} stocks. Market may be closed or there are connectivity issues.")
+            
             if failed_symbols:
-                print(f"⚠️ Using sample prices for failed symbols: {', '.join(failed_symbols)}")
-                sample_prices = self._get_sample_prices(failed_symbols)
-                prices.update(sample_prices)
-            
-            print(f"✅ Price fetching complete: {len(prices)} prices obtained")
-            print(f"   Live prices: {len(symbols) - len(failed_symbols)}")
-            print(f"   Sample prices: {len(failed_symbols)}")
+                print(f"⚠️ Warning: Could not fetch prices for {len(failed_symbols)} symbols: {', '.join(failed_symbols)}")
             
             return prices
             
         except Exception as e:
             print(f"❌ Error fetching live prices: {e}")
-            print("🔄 Falling back to sample prices...")
-            return self._get_sample_prices(symbols)
+            raise Exception(f"Failed to fetch live market prices: {str(e)}")
     
     def get_stocks_with_prices(self) -> Dict:
-        """Get complete stock data with live prices"""
+        """Get complete stock data with live prices - NO FAKE DATA"""
         try:
             # Fetch CSV data
             csv_data = self.fetch_csv_data()
             
-            # Get prices (live or sample)
+            # Get live prices (will raise exception if fails)
             prices = self.get_live_prices(csv_data['symbols'])
             
-            # Combine data
+            # Combine data - only include stocks with valid prices
             stocks_data = []
             for stock_info in csv_data['data']:
                 symbol = stock_info['Symbol']
@@ -143,68 +163,40 @@ class CSVService:
                         'score': stock_info.get('Score', 0)
                     })
                 else:
-                    print(f"   ⚠️ {symbol}: No price data available, skipping")
+                    print(f"   ⚠️ {symbol}: Excluded - no valid price data")
+            
+            if len(stocks_data) == 0:
+                raise Exception("No stocks have valid price data. Cannot proceed with investment calculations.")
             
             result = {
                 'stocks': stocks_data,
                 'total_stocks': len(stocks_data),
                 'total_symbols_in_csv': len(csv_data['symbols']),
+                'excluded_symbols': len(csv_data['symbols']) - len(stocks_data),
                 'csv_info': {
                     'fetch_time': csv_data['fetch_time'],
                     'csv_hash': csv_data['csv_hash'],
                     'source_url': self.csv_url
+                },
+                'price_data_status': {
+                    'live_prices_used': True,
+                    'success_rate': (len(stocks_data) / len(csv_data['symbols'])) * 100,
+                    'last_updated': datetime.now().isoformat()
                 }
             }
             
             print(f"✅ Complete stock data prepared:")
             print(f"   CSV symbols: {len(csv_data['symbols'])}")
-            print(f"   With prices: {len(stocks_data)}")
-            print(f"   Success rate: {len(stocks_data)}/{len(csv_data['symbols'])} ({(len(stocks_data)/len(csv_data['symbols'])*100):.1f}%)")
-            
-            if len(stocks_data) == 0:
-                raise Exception("No stocks have valid price data")
+            print(f"   With valid prices: {len(stocks_data)}")
+            print(f"   Excluded: {result['excluded_symbols']}")
+            print(f"   Success rate: {result['price_data_status']['success_rate']:.1f}%")
             
             return result
             
         except Exception as e:
             print(f"❌ Error preparing stock data: {e}")
-            raise Exception(f"Failed to prepare stock data: {str(e)}")
-    
-    def _get_sample_prices(self, symbols: List[str]) -> Dict[str, float]:
-        """Generate sample prices based on symbol names for consistency"""
-        print(f"🎯 Generating consistent sample prices for {len(symbols)} symbols...")
-        
-        # Use hash of symbol name to generate consistent prices
-        sample_prices = {}
-        
-        # Predefined price ranges for better realism
-        price_ranges = {
-            'high': (2000, 3000),    # High-priced stocks
-            'medium': (800, 2000),   # Medium-priced stocks  
-            'low': (150, 800)        # Lower-priced stocks
-        }
-        
-        for symbol in symbols:
-            # Use hash of symbol to determine price range and value consistently
-            symbol_hash = hash(symbol)
-            
-            # Determine price range based on symbol hash
-            if abs(symbol_hash) % 3 == 0:
-                price_range = price_ranges['high']
-            elif abs(symbol_hash) % 3 == 1:
-                price_range = price_ranges['medium']
-            else:
-                price_range = price_ranges['low']
-            
-            # Generate consistent price within range
-            price_offset = abs(symbol_hash) % (price_range[1] - price_range[0])
-            price = price_range[0] + price_offset + (abs(symbol_hash) % 100) / 100
-            
-            sample_prices[symbol] = round(price, 2)
-            print(f"   📊 {symbol}: ₹{price:.2f} (sample)")
-        
-        print(f"✅ Consistent sample prices generated for all {len(symbols)} symbols")
-        return sample_prices
+            # Re-raise the original exception with context
+            raise Exception(f"Cannot prepare investment data: {str(e)}")
     
     def compare_csv_with_portfolio(self, current_symbols: List[str]) -> Dict:
         """Compare current CSV stocks with current portfolio"""
@@ -245,3 +237,29 @@ class CSVService:
         except Exception as e:
             print(f"❌ Error comparing CSV with portfolio: {e}")
             raise Exception(f"Failed to compare CSV with portfolio: {str(e)}")
+    
+    def get_connection_status(self) -> Dict:
+        """Get current connection and data status"""
+        status = {
+            'zerodha_available': bool(self.zerodha_auth),
+            'zerodha_authenticated': False,
+            'kite_instance': bool(self.kite),
+            'csv_accessible': False,
+            'last_check': datetime.now().isoformat()
+        }
+        
+        # Check Zerodha status
+        if self.zerodha_auth:
+            try:
+                status['zerodha_authenticated'] = self.zerodha_auth.is_authenticated()
+            except:
+                status['zerodha_authenticated'] = False
+        
+        # Check CSV accessibility
+        try:
+            response = requests.get(self.csv_url, timeout=10)
+            status['csv_accessible'] = response.status_code == 200
+        except:
+            status['csv_accessible'] = False
+        
+        return status

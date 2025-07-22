@@ -89,7 +89,7 @@ class PortfolioMetricsService:
         
         for symbol, holding in holdings.items():
             try:
-                shares = int(holding.get('total_shares', 0))
+                shares = int(holding.get('total_shares', holding.get('shares', 0)))
                 avg_price = float(holding.get('avg_price', 0))
                 investment_value = float(holding.get('total_investment', 0))
                 
@@ -101,7 +101,7 @@ class PortfolioMetricsService:
                 absolute_return = current_holding_value - investment_value
                 percentage_return = (absolute_return / investment_value) * 100 if investment_value > 0 else 0
                 
-                # Calculate holding period
+                # Calculate holding period with better error handling
                 days_held, years_held = self._calculate_holding_period(holding)
                 
                 # Calculate annualized return (CAGR) for this stock
@@ -151,27 +151,31 @@ class PortfolioMetricsService:
         return holdings_with_metrics
     
     def _calculate_holding_period(self, holding: Dict) -> Tuple[int, float]:
-        """Calculate holding period in days and years"""
+        """Calculate holding period in days and years with better error handling"""
         try:
             first_purchase_date = holding.get('first_purchase_date')
             if not first_purchase_date:
-                return 1, 1/365.25
+                return 30, 30/365.25  # Default to 30 days
             
             # Parse datetime flexibly
-            if 'T' in first_purchase_date:
-                # ISO format: 2023-12-01T10:30:00.123456
-                first_purchase = datetime.fromisoformat(first_purchase_date.replace('Z', '+00:00'))
-            else:
-                # Try different date formats
-                for fmt in ['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%d/%m/%Y']:
-                    try:
-                        first_purchase = datetime.strptime(first_purchase_date, fmt)
-                        break
-                    except ValueError:
-                        continue
+            if isinstance(first_purchase_date, str):
+                if 'T' in first_purchase_date:
+                    # ISO format: 2023-12-01T10:30:00.123456
+                    first_purchase = datetime.fromisoformat(first_purchase_date.replace('Z', ''))
                 else:
-                    # If all formats fail, default to today
-                    first_purchase = datetime.now()
+                    # Try different date formats
+                    for fmt in ['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%d/%m/%Y']:
+                        try:
+                            first_purchase = datetime.strptime(first_purchase_date, fmt)
+                            break
+                        except ValueError:
+                            continue
+                    else:
+                        # If all formats fail, default to 30 days ago
+                        first_purchase = datetime.now() - timedelta(days=30)
+            else:
+                # If it's already a datetime object
+                first_purchase = first_purchase_date
             
             days_held = max(1, (datetime.now() - first_purchase).days)
             years_held = max(days_held / 365.25, 1/365.25)
@@ -180,10 +184,10 @@ class PortfolioMetricsService:
             
         except Exception as e:
             print(f"      ⚠️ Error calculating holding period: {e}")
-            return 1, 1/365.25
+            return 30, 30/365.25  # Default to 30 days
     
     def _calculate_stock_cagr(self, investment_value: float, current_value: float, years_held: float) -> float:
-        """Calculate CAGR for individual stock"""
+        """Calculate CAGR for individual stock with better error handling"""
         try:
             if investment_value <= 0 or current_value <= 0 or years_held <= 0:
                 return 0.0
@@ -191,10 +195,19 @@ class PortfolioMetricsService:
             # CAGR = (Ending Value / Beginning Value)^(1/years) - 1
             cagr_ratio = current_value / investment_value
             if cagr_ratio > 0:
-                cagr = ((cagr_ratio ** (1 / years_held)) - 1) * 100
-                # Cap extreme values to prevent display issues
-                cagr = max(-99.9, min(999.9, cagr))
-                return cagr
+                # Handle very small time periods
+                if years_held < 1/365.25:  # Less than 1 day
+                    years_held = 1/365.25
+                
+                try:
+                    cagr = ((cagr_ratio ** (1 / years_held)) - 1) * 100
+                    # Cap extreme values to prevent display issues
+                    cagr = max(-99.9, min(999.9, cagr))
+                    return cagr
+                except (OverflowError, ZeroDivisionError):
+                    # Fallback to simple return annualized
+                    simple_return = ((current_value - investment_value) / investment_value) * 100
+                    return simple_return / years_held if years_held > 0 else simple_return
             else:
                 return -99.9  # Near total loss
                 
@@ -236,16 +249,20 @@ class PortfolioMetricsService:
             first_order_date_str = construction_data.get('first_order_date')
             if not first_order_date_str:
                 return {
-                    'investment_period_days': 1,
-                    'investment_period_years': 1/365.25,
-                    'cagr': 0.0
+                    'investment_period_days': 30,  # Default to 30 days
+                    'investment_period_years': 30/365.25,
+                    'cagr': portfolio_totals.get('returns_percentage', 0)
                 }
             
             # Parse first investment date
             if 'T' in first_order_date_str:
-                first_order_date = datetime.fromisoformat(first_order_date_str.replace('Z', '+00:00'))
+                first_order_date = datetime.fromisoformat(first_order_date_str.replace('Z', ''))
             else:
-                first_order_date = datetime.strptime(first_order_date_str, '%Y-%m-%d')
+                try:
+                    first_order_date = datetime.strptime(first_order_date_str, '%Y-%m-%d')
+                except ValueError:
+                    # If parsing fails, use 30 days ago
+                    first_order_date = datetime.now() - timedelta(days=30)
             
             investment_period_days = max(1, (datetime.now() - first_order_date).days)
             investment_period_years = max(investment_period_days / 365.25, 1/365.25)
@@ -257,8 +274,13 @@ class PortfolioMetricsService:
             if current_value > 0 and total_investment > 0 and investment_period_years > 0:
                 cagr_ratio = current_value / total_investment
                 if cagr_ratio > 0:
-                    cagr = ((cagr_ratio ** (1 / investment_period_years)) - 1) * 100
-                    cagr = max(-99.9, min(999.9, cagr))  # Cap extreme values
+                    try:
+                        cagr = ((cagr_ratio ** (1 / investment_period_years)) - 1) * 100
+                        cagr = max(-99.9, min(999.9, cagr))  # Cap extreme values
+                    except (OverflowError, ZeroDivisionError):
+                        # Fallback to simple annualized return
+                        simple_return = portfolio_totals.get('returns_percentage', 0)
+                        cagr = simple_return / investment_period_years if investment_period_years > 0 else simple_return
                 else:
                     cagr = -99.9
             else:
@@ -273,14 +295,20 @@ class PortfolioMetricsService:
         except Exception as e:
             print(f"      ⚠️ Error calculating time metrics: {e}")
             return {
-                'investment_period_days': 1,
-                'investment_period_years': 1/365.25,
+                'investment_period_days': 30,
+                'investment_period_years': 30/365.25,
                 'cagr': portfolio_totals.get('returns_percentage', 0)
             }
     
     def _calculate_risk_metrics(self, holdings_with_metrics: Dict, portfolio_totals: Dict) -> Dict:
         """Calculate risk metrics like volatility and Sharpe ratio"""
         print("   ⚠️ Calculating risk metrics...")
+        
+        if not holdings_with_metrics:
+            return {
+                'volatility_score': 0.0,
+                'sharpe_ratio': 0.0
+            }
         
         returns_data = [holding['percentage_return'] for holding in holdings_with_metrics.values()]
         
@@ -291,7 +319,7 @@ class PortfolioMetricsService:
                 variance = sum((ret - mean_return) ** 2 for ret in returns_data) / (len(returns_data) - 1)
                 volatility_score = math.sqrt(max(0, variance))
                 volatility_score = min(volatility_score, 100)  # Cap at 100%
-            except (ValueError, OverflowError):
+            except (ValueError, OverflowError, ZeroDivisionError):
                 volatility_score = 0.0
         else:
             volatility_score = 0.0
@@ -316,29 +344,30 @@ class PortfolioMetricsService:
         """Calculate allocation analysis metrics"""
         print("   ⚖️ Calculating allocation metrics...")
         
+        if not holdings_with_metrics:
+            return {
+                'allocation_stats': {
+                    'target_allocation': 0,
+                    'min_allocation': 0,
+                    'max_allocation': 0,
+                    'avg_allocation': 0
+                },
+                'allocation_deviation': 0,
+                'rebalancing_needed': False
+            }
+        
         allocations = [holding['allocation_percent'] for holding in holdings_with_metrics.values()]
         
-        if allocations:
-            target_allocation = 100 / len(allocations)
-            allocation_deviation = sum(abs(alloc - target_allocation) for alloc in allocations) / len(allocations)
-            rebalancing_needed = allocation_deviation > 2.0
-            
-            allocation_stats = {
-                'target_allocation': target_allocation,
-                'min_allocation': min(allocations),
-                'max_allocation': max(allocations),
-                'avg_allocation': sum(allocations) / len(allocations)
-            }
-        else:
-            target_allocation = 0
-            allocation_deviation = 0
-            rebalancing_needed = False
-            allocation_stats = {
-                'target_allocation': 0,
-                'min_allocation': 0,
-                'max_allocation': 0,
-                'avg_allocation': 0
-            }
+        target_allocation = 100 / len(allocations)
+        allocation_deviation = sum(abs(alloc - target_allocation) for alloc in allocations) / len(allocations)
+        rebalancing_needed = allocation_deviation > 2.0
+        
+        allocation_stats = {
+            'target_allocation': target_allocation,
+            'min_allocation': min(allocations),
+            'max_allocation': max(allocations),
+            'avg_allocation': sum(allocations) / len(allocations)
+        }
         
         return {
             'allocation_stats': allocation_stats,

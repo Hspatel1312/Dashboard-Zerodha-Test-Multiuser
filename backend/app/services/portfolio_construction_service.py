@@ -1,6 +1,6 @@
 # backend/app/services/portfolio_construction_service.py
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 
 class PortfolioConstructionService:
@@ -42,24 +42,56 @@ class PortfolioConstructionService:
         order_timeline = []
         total_cash_flow = 0
         
-        # Sort orders by execution time
+        # Sort orders by execution time with better error handling
         try:
-            sorted_orders = sorted(all_orders, key=lambda x: x.get('execution_time', ''))
+            sorted_orders = sorted(
+                all_orders, 
+                key=lambda x: self._parse_date_safely(x.get('execution_time', ''))
+            )
             print(f"   📊 Processing {len(sorted_orders)} orders...")
         except Exception as e:
             print(f"   ⚠️ Error sorting orders: {e}")
             sorted_orders = all_orders
         
+        # Track order processing statistics
+        processed_count = 0
+        error_count = 0
+        
         for order_idx, order in enumerate(sorted_orders):
             try:
-                symbol = order.get('symbol', f'UNKNOWN_{order_idx}')
-                action = order.get('action', 'BUY')
-                shares = int(order.get('shares', 0))
-                price = float(order.get('price', 0))
-                value = float(order.get('value', shares * price))
+                # Extract order data with better validation
+                symbol = str(order.get('symbol', f'UNKNOWN_{order_idx}')).strip()
+                action = str(order.get('action', 'BUY')).upper().strip()
+                
+                # Handle both 'shares' and 'quantity' fields
+                shares = int(order.get('shares', order.get('quantity', 0)))
+                
+                # Handle price with validation
+                price_value = order.get('price', 0)
+                if isinstance(price_value, str):
+                    price = float(price_value.replace('₹', '').replace(',', ''))
+                else:
+                    price = float(price_value)
+                
+                # Calculate value with fallback
+                value_from_order = order.get('value')
+                if value_from_order:
+                    if isinstance(value_from_order, str):
+                        value = float(value_from_order.replace('₹', '').replace(',', ''))
+                    else:
+                        value = float(value_from_order)
+                else:
+                    value = shares * price
+                
                 execution_time = order.get('execution_time', datetime.now().isoformat())
                 
-                print(f"   📝 Processing: {symbol} {action} {shares} @ ₹{price:.2f}")
+                # Validate data
+                if shares <= 0 or price <= 0:
+                    print(f"   ⚠️ Invalid data for order {order_idx}: shares={shares}, price={price}")
+                    error_count += 1
+                    continue
+                
+                print(f"   📝 Processing: {symbol} {action} {shares} @ ₹{price:.2f} = ₹{value:.2f}")
                 
                 # Initialize holding if not exists
                 if symbol not in holdings:
@@ -74,7 +106,7 @@ class PortfolioConstructionService:
                 
                 holding = holdings[symbol]
                 
-                if action.upper() == 'BUY':
+                if action == 'BUY':
                     # Add to position
                     old_total_investment = holding['total_investment']
                     old_total_shares = holding['total_shares']
@@ -94,7 +126,7 @@ class PortfolioConstructionService:
                     
                     print(f"      ✅ BUY: {symbol} now has {holding['total_shares']} shares at avg ₹{holding['avg_price']:.2f}")
                     
-                elif action.upper() == 'SELL':
+                elif action == 'SELL':
                     # Reduce position
                     if holding['total_shares'] >= shares:
                         holding['total_shares'] -= shares
@@ -112,13 +144,14 @@ class PortfolioConstructionService:
                     
                     total_cash_flow -= value  # Cash inflow
                 
-                # Record transaction
+                # Record transaction with better data
                 transaction = {
                     'date': execution_time,
                     'action': action,
                     'shares': shares,
                     'price': price,
-                    'value': value
+                    'value': value,
+                    'order_id': order.get('order_id', f'order_{order_idx}')
                 }
                 holding['transactions'].append(transaction)
                 holding['last_transaction_date'] = execution_time
@@ -130,12 +163,16 @@ class PortfolioConstructionService:
                     'symbol': symbol,
                     'shares': shares,
                     'price': price,
-                    'value': value
+                    'value': value,
+                    'order_id': order.get('order_id', f'order_{order_idx}')
                 })
+                
+                processed_count += 1
                 
             except Exception as e:
                 print(f"   ❌ Error processing order {order_idx}: {e}")
                 print(f"      Order data: {order}")
+                error_count += 1
                 continue
         
         # Remove positions with zero or negative shares
@@ -164,16 +201,42 @@ class PortfolioConstructionService:
             'total_cash_outflow': total_cash_flow,
             'first_order_date': first_order_date,
             'last_order_date': last_order_date,
-            'total_orders': len(all_orders)
+            'total_orders': len(all_orders),
+            'processed_orders': processed_count,
+            'error_orders': error_count
         }
         
         print(f"   ✅ Portfolio construction complete:")
-        print(f"      Total orders processed: {len(all_orders)}")
+        print(f"      Total orders processed: {processed_count}/{len(all_orders)}")
+        print(f"      Errors encountered: {error_count}")
         print(f"      Active holdings: {len(active_holdings)}")
         print(f"      Total cash outflow: ₹{total_cash_flow:,.2f}")
         print(f"      Date range: {first_order_date} to {last_order_date}")
         
         return construction_result
+    
+    def _parse_date_safely(self, date_str: str) -> datetime:
+        """Safely parse date string with multiple format support"""
+        if not date_str:
+            return datetime.now()
+        
+        try:
+            # Try ISO format first
+            if 'T' in date_str:
+                return datetime.fromisoformat(date_str.replace('Z', ''))
+            
+            # Try other common formats
+            for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%d/%m/%Y']:
+                try:
+                    return datetime.strptime(date_str, fmt)
+                except ValueError:
+                    continue
+            
+            # If all fail, return current time
+            return datetime.now()
+            
+        except Exception:
+            return datetime.now()
     
     def validate_portfolio_construction(self, construction_result: Dict) -> Dict:
         """
@@ -186,17 +249,20 @@ class PortfolioConstructionService:
             'is_valid': True,
             'warnings': [],
             'errors': [],
-            'summary': {}
+            'summary': {},
+            'data_quality': {}
         }
         
         total_investment = 0
         total_shares = 0
+        price_anomalies = 0
         
         for symbol, holding in holdings.items():
             try:
                 shares = holding.get('total_shares', 0)
                 investment = holding.get('total_investment', 0)
                 avg_price = holding.get('avg_price', 0)
+                transactions = holding.get('transactions', [])
                 
                 # Validate calculations
                 expected_investment = shares * avg_price
@@ -216,10 +282,29 @@ class PortfolioConstructionService:
                     validation_results['errors'].append(f"{symbol}: Negative investment (₹{investment:.2f})")
                     validation_results['is_valid'] = False
                 
+                # Check for unrealistic prices
+                if avg_price > 50000:  # More than ₹50,000 per share seems unusual
+                    validation_results['warnings'].append(f"{symbol}: Unusually high average price (₹{avg_price:.2f})")
+                    price_anomalies += 1
+                
+                if avg_price < 1:  # Less than ₹1 per share seems unusual
+                    validation_results['warnings'].append(f"{symbol}: Unusually low average price (₹{avg_price:.2f})")
+                    price_anomalies += 1
+                
                 # Check for missing transaction data
-                transactions = holding.get('transactions', [])
                 if not transactions:
                     validation_results['warnings'].append(f"{symbol}: No transaction history found")
+                
+                # Validate transaction consistency
+                calculated_shares = sum(
+                    t['shares'] if t['action'] == 'BUY' else -t['shares'] 
+                    for t in transactions
+                )
+                
+                if abs(calculated_shares - shares) > 0:
+                    validation_results['warnings'].append(
+                        f"{symbol}: Transaction shares ({calculated_shares}) don't match holding shares ({shares})"
+                    )
                 
                 total_investment += investment
                 total_shares += shares
@@ -228,20 +313,43 @@ class PortfolioConstructionService:
                 validation_results['errors'].append(f"{symbol}: Error validating holding - {str(e)}")
                 validation_results['is_valid'] = False
         
+        # Calculate data quality metrics
+        total_orders = construction_result.get('total_orders', 0)
+        processed_orders = construction_result.get('processed_orders', 0)
+        error_orders = construction_result.get('error_orders', 0)
+        
+        processing_success_rate = (processed_orders / total_orders * 100) if total_orders > 0 else 0
+        
+        validation_results['data_quality'] = {
+            'processing_success_rate': processing_success_rate,
+            'total_orders': total_orders,
+            'processed_orders': processed_orders,
+            'error_orders': error_orders,
+            'price_anomalies': price_anomalies
+        }
+        
         validation_results['summary'] = {
             'total_holdings': len(holdings),
             'total_investment': total_investment,
             'total_shares': total_shares,
-            'avg_investment_per_stock': total_investment / len(holdings) if holdings else 0
+            'avg_investment_per_stock': total_investment / len(holdings) if holdings else 0,
+            'warnings_count': len(validation_results['warnings']),
+            'errors_count': len(validation_results['errors'])
         }
+        
+        # Overall validation status
+        if validation_results['errors']:
+            validation_results['is_valid'] = False
+            print(f"   ❌ {len(validation_results['errors'])} critical errors found")
         
         if validation_results['warnings']:
             print(f"   ⚠️ {len(validation_results['warnings'])} warnings found")
         
-        if validation_results['errors']:
-            print(f"   ❌ {len(validation_results['errors'])} errors found")
-            validation_results['is_valid'] = False
-        else:
-            print(f"   ✅ Portfolio construction validation passed")
+        if validation_results['is_valid'] and not validation_results['warnings']:
+            print(f"   ✅ Portfolio construction validation passed perfectly")
+        elif validation_results['is_valid']:
+            print(f"   ✅ Portfolio construction validation passed with warnings")
+        
+        print(f"   📊 Data quality: {processing_success_rate:.1f}% order processing success rate")
         
         return validation_results
