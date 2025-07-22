@@ -67,6 +67,22 @@ st.markdown("""
         margin: 1rem 0;
         color: #0c5460;
     }
+    
+    .connection-status-connected {
+        background-color: #d4edda;
+        border-left: 4px solid #28a745;
+        padding: 1rem;
+        margin: 1rem 0;
+        border-radius: 4px;
+    }
+    
+    .connection-status-disconnected {
+        background-color: #f8d7da;
+        border-left: 4px solid #dc3545;
+        padding: 1rem;
+        margin: 1rem 0;
+        border-radius: 4px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -79,24 +95,88 @@ if 'investment_plan' not in st.session_state:
 if 'current_step' not in st.session_state:
     st.session_state.current_step = 'requirements'
 
-def main():
-    st.title("📈 Investment System Manager")
-    
-    # Test backend connection
+def check_backend_connection():
+    """Check backend connection and return status"""
     try:
         response = requests.get(f"{API_BASE_URL}/health", timeout=10)
         if response.status_code == 200:
-            health_data = response.json()
-            if health_data.get('zerodha_connected'):
-                st.markdown('<div class="success-alert">✅ Backend connected! 🔗 Zerodha Connected</div>', unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="info-alert">✅ Backend connected! ⚠️ Zerodha using sample data</div>', unsafe_allow_html=True)
+            return True, response.json()
         else:
-            st.error("❌ Backend connection failed")
-            return
+            return False, {"error": f"HTTP {response.status_code}"}
     except Exception as e:
-        st.error(f"❌ Cannot connect to backend: {e}")
-        return
+        return False, {"error": str(e)}
+
+def check_zerodha_connection():
+    """Check Zerodha connection status"""
+    try:
+        response = requests.get(f"{API_BASE_URL}/api/connection-status", timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"overall_status": "error", "error": f"HTTP {response.status_code}"}
+    except Exception as e:
+        return {"overall_status": "error", "error": str(e)}
+
+def show_connection_status():
+    """Show current connection status"""
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("🔗 Backend Connection")
+        backend_connected, backend_status = check_backend_connection()
+        
+        if backend_connected:
+            st.markdown('<div class="connection-status-connected">✅ <strong>Backend Connected</strong><br>API server is running and responding</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="connection-status-disconnected">❌ <strong>Backend Disconnected</strong><br>Error: {backend_status.get("error", "Unknown error")}</div>', unsafe_allow_html=True)
+            return False
+    
+    with col2:
+        st.subheader("📊 Zerodha Connection")
+        zerodha_status = check_zerodha_connection()
+        
+        if zerodha_status.get("overall_status") == "connected":
+            profile_name = zerodha_status.get("services", {}).get("zerodha_auth", {}).get("profile_name", "Unknown")
+            st.markdown(f'<div class="connection-status-connected">✅ <strong>Zerodha Connected</strong><br>Profile: {profile_name}</div>', unsafe_allow_html=True)
+            return True
+        else:
+            error_msg = zerodha_status.get("error", "Authentication failed")
+            zerodha_error = zerodha_status.get("services", {}).get("zerodha_auth", {}).get("error", "Unknown error")
+            st.markdown(f'<div class="connection-status-disconnected">❌ <strong>Zerodha Disconnected</strong><br>Error: {zerodha_error}</div>', unsafe_allow_html=True)
+            return False
+
+def main():
+    st.title("📈 Investment System Manager")
+    
+    # Show connection status at the top
+    zerodha_connected = show_connection_status()
+    
+    if not zerodha_connected:
+        st.markdown("---")
+        st.error("⚠️ **Zerodha Connection Required**")
+        st.write("To use this system, you need a working Zerodha connection. Please:")
+        st.write("1. Check your Zerodha API credentials in the backend configuration")
+        st.write("2. Ensure the backend server is running")
+        st.write("3. Verify your internet connection")
+        st.write("4. Check if markets are open (9:15 AM - 3:30 PM IST)")
+        
+        if st.button("🔄 Test Zerodha Connection"):
+            with st.spinner("Testing Zerodha connection..."):
+                try:
+                    response = requests.get(f"{API_BASE_URL}/api/test-auth", timeout=30)
+                    if response.status_code == 200:
+                        result = response.json()
+                        if result.get("success"):
+                            st.success(f"✅ {result.get('message')}")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {result.get('message')}: {result.get('error')}")
+                    else:
+                        st.error(f"❌ Connection test failed: HTTP {response.status_code}")
+                except Exception as e:
+                    st.error(f"❌ Connection test error: {e}")
+        
+        st.stop()
     
     # Sidebar navigation
     with st.sidebar:
@@ -120,21 +200,27 @@ def show_initial_investment_page():
     """Initial Investment Flow"""
     st.header("💰 Initial Investment Setup")
     
-    # Check if this is first time or rebalancing needed
+    # Check investment requirements
     try:
-        response = requests.get(f"{API_BASE_URL}/investment/requirements")
+        with st.spinner("Loading investment requirements..."):
+            response = requests.get(f"{API_BASE_URL}/investment/requirements", timeout=30)
+        
         if response.status_code == 200:
             requirements_data = response.json()
             if requirements_data['success']:
                 requirements = requirements_data['data']
             else:
-                st.error("Failed to get investment requirements")
+                st.error(f"Failed to get investment requirements: {requirements_data.get('detail', 'Unknown error')}")
                 return
         else:
-            st.error(f"API Error: {response.status_code}")
+            st.error(f"API Error: {response.status_code} - {response.text}")
             return
     except Exception as e:
         st.error(f"Error fetching requirements: {e}")
+        st.write("This usually means:")
+        st.write("- Backend server is not running")
+        st.write("- Zerodha connection is not working")  
+        st.write("- Network connectivity issues")
         return
     
     # Display investment requirements
@@ -159,19 +245,26 @@ def show_initial_investment_page():
         )
     
     # Show CSV stocks data
-    st.subheader("📈 Current CSV Stocks")
+    st.subheader("📈 Current CSV Stocks (Live Prices)")
     
     stocks_df = pd.DataFrame(requirements['stocks_data']['stocks'])
     
-    # Format the display - use actual data from API
+    # Format the display
     display_df = pd.DataFrame({
         'Stock Symbol': stocks_df['symbol'],
-        'Current Price': stocks_df['price'].apply(lambda x: f"₹{x:,.2f}"),
+        'Live Price': stocks_df['price'].apply(lambda x: f"₹{x:,.2f}"),
         'Min Investment (4%)': (stocks_df['price'] * 25).apply(lambda x: f"₹{x:,.0f}"),
         'Momentum Score': stocks_df['score'].apply(lambda x: f"{x:.2f}")
     })
     
     st.dataframe(display_df, use_container_width=True, hide_index=True)
+    
+    # Show data source info
+    price_status = requirements['stocks_data']['price_data_status']
+    if price_status.get('live_prices_used'):
+        st.success(f"✅ Using live prices from {price_status.get('market_data_source', 'Zerodha')} (Success rate: {price_status.get('success_rate', 0):.1f}%)")
+    else:
+        st.error("❌ Live prices not available")
     
     # Investment amount input
     st.subheader("💰 Enter Investment Amount")
@@ -267,7 +360,7 @@ def show_investment_plan():
     display_orders = orders_df[['symbol', 'shares', 'price_formatted', 'value_formatted', 'allocation_formatted']].rename(columns={
         'symbol': 'Stock',
         'shares': 'Shares',
-        'price_formatted': 'Price',
+        'price_formatted': 'Live Price',
         'value_formatted': 'Investment',
         'allocation_formatted': 'Allocation'
     })
@@ -304,25 +397,6 @@ def show_investment_plan():
         )
         fig.update_layout(height=400)
         st.plotly_chart(fig, use_container_width=True)
-    
-    # Validation status
-    validation = plan['validation']
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("📊 **Allocation Validation**")
-        st.write(f"✅ Stocks in range (4-7%): {validation['stocks_in_range']}/{len(orders_df)}")
-        if validation['stocks_below_min'] > 0:
-            st.write(f"⚠️ Below minimum: {validation['stocks_below_min']}")
-        if validation['stocks_above_max'] > 0:
-            st.write(f"⚠️ Above maximum: {validation['stocks_above_max']}")
-    
-    with col2:
-        st.write("💰 **Investment Summary**")
-        st.write(f"💸 Total allocated: ₹{total_investment:,.0f}")
-        st.write(f"💵 Cash remaining: ₹{remaining_cash:,.0f}")
-        st.write(f"📊 Utilization: {utilization:.2f}%")
     
     # Execution buttons
     st.subheader("🚀 Execute Investment")
@@ -368,16 +442,10 @@ def execute_initial_investment():
                     with col3:
                         st.metric("💵 Remaining Cash", f"₹{result['remaining_cash']:,.0f}")
                     
-                    st.markdown('<div class="success-alert">✅ <strong>Investment Complete!</strong><br>Your orders have been recorded in the system. You can now monitor your portfolio and check for rebalancing needs.</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="success-alert">✅ <strong>Investment Complete!</strong><br>Your orders have been recorded in the system.</div>', unsafe_allow_html=True)
                     
                     # Clear the plan
                     st.session_state.investment_plan = None
-                    
-                    # Show next steps
-                    st.subheader("🎯 Next Steps")
-                    st.write("1. 📊 Check your portfolio status in the Portfolio Status page")
-                    st.write("2. 📋 View your orders in the Order History page")
-                    st.write("3. ⚖️ Monitor for rebalancing needs when CSV updates")
                     
                 else:
                     st.error(f"Execution failed: {result_data.get('detail', 'Unknown error')}")
@@ -392,7 +460,9 @@ def show_rebalancing_page():
     
     # Check if rebalancing is needed
     try:
-        response = requests.get(f"{API_BASE_URL}/investment/rebalancing-check")
+        with st.spinner("Checking rebalancing requirements..."):
+            response = requests.get(f"{API_BASE_URL}/investment/rebalancing-check", timeout=30)
+        
         if response.status_code == 200:
             rebalancing_data = response.json()
             if rebalancing_data['success']:
@@ -400,8 +470,6 @@ def show_rebalancing_page():
                 
                 if rebalancing_info['rebalancing_needed']:
                     st.markdown('<div class="warning-alert">⚖️ <strong>Rebalancing Needed!</strong><br>Your portfolio needs rebalancing due to CSV changes.</div>', unsafe_allow_html=True)
-                    
-                    # Show rebalancing interface
                     show_rebalancing_interface(rebalancing_info)
                 else:
                     if rebalancing_info.get('is_first_time'):
@@ -414,6 +482,7 @@ def show_rebalancing_page():
             st.error(f"API Error: {response.status_code}")
     except Exception as e:
         st.error(f"Error checking rebalancing: {e}")
+        st.write("This usually means Zerodha connection is not working or backend is down.")
 
 def show_rebalancing_interface(rebalancing_info):
     """Show rebalancing interface"""
@@ -470,17 +539,20 @@ def show_rebalancing_interface(rebalancing_info):
 def calculate_rebalancing_plan(additional_investment):
     """Calculate rebalancing plan"""
     try:
-        response = requests.post(
-            f"{API_BASE_URL}/investment/calculate-rebalancing",
-            json={"additional_investment": additional_investment},
-            timeout=30
-        )
+        with st.spinner("Calculating rebalancing plan..."):
+            response = requests.post(
+                f"{API_BASE_URL}/investment/calculate-rebalancing",
+                json={"additional_investment": additional_investment},
+                timeout=30
+            )
         
         if response.status_code == 200:
             plan_data = response.json()
             if plan_data['success']:
                 st.success("✅ Rebalancing plan calculated!")
-                # Implementation would be similar to show_investment_plan()
+                # Store and display the plan
+                st.session_state.rebalancing_plan = plan_data['data']
+                show_rebalancing_plan(plan_data['data'])
             else:
                 st.error(f"Calculation failed: {plan_data.get('detail', 'Unknown error')}")
         else:
@@ -488,12 +560,88 @@ def calculate_rebalancing_plan(additional_investment):
     except Exception as e:
         st.error(f"Error calculating rebalancing: {e}")
 
+def show_rebalancing_plan(plan):
+    """Display rebalancing plan"""
+    st.subheader("📋 Rebalancing Plan")
+    
+    # Plan summary
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        current_value = plan.get('current_value', 0)
+        st.metric("💰 Current Value", f"₹{current_value:,.0f}")
+    
+    with col2:
+        target_value = plan.get('target_value', 0)
+        st.metric("🎯 Target Value", f"₹{target_value:,.0f}")
+    
+    with col3:
+        net_cash_required = plan.get('net_cash_required', 0)
+        st.metric("💸 Net Cash Required", f"₹{net_cash_required:,.0f}")
+    
+    with col4:
+        plan_status = plan.get('status', 'UNKNOWN')
+        status_emoji = "🟢" if plan_status == 'READY_FOR_EXECUTION' else "🔴"
+        st.metric("📊 Status", f"{status_emoji} {plan_status}")
+    
+    # Orders table
+    orders = plan.get('orders', [])
+    if orders:
+        st.subheader("📝 Rebalancing Orders")
+        
+        orders_df = pd.DataFrame(orders)
+        
+        # Format orders for display
+        orders_df['total_value_fmt'] = orders_df['total_value'].apply(lambda x: f"₹{x:,.2f}")
+        orders_df['price_fmt'] = orders_df['price'].apply(lambda x: f"₹{x:.2f}")
+        
+        display_orders = orders_df[['stock_symbol', 'order_type', 'quantity', 'price_fmt', 'total_value_fmt', 'current_shares', 'target_shares']].rename(columns={
+            'stock_symbol': 'Stock',
+            'order_type': 'Action',
+            'quantity': 'Quantity',
+            'price_fmt': 'Price',
+            'total_value_fmt': 'Value',
+            'current_shares': 'Current',
+            'target_shares': 'Target'
+        })
+        
+        st.dataframe(display_orders, use_container_width=True, hide_index=True)
+    
+    # Execute rebalancing
+    if plan.get('status') == 'READY_FOR_EXECUTION':
+        if st.button("🚀 Execute Rebalancing", type="primary", use_container_width=True):
+            execute_rebalancing_plan(plan)
+
+def execute_rebalancing_plan(plan):
+    """Execute rebalancing plan"""
+    try:
+        with st.spinner("Executing rebalancing..."):
+            response = requests.post(
+                f"{API_BASE_URL}/investment/execute-rebalancing",
+                json={"additional_investment": plan.get('additional_investment', 0)},
+                timeout=60
+            )
+        
+        if response.status_code == 200:
+            result_data = response.json()
+            if result_data['success']:
+                st.success("✅ Rebalancing executed successfully!")
+                st.rerun()
+            else:
+                st.error(f"Execution failed: {result_data.get('detail', 'Unknown error')}")
+        else:
+            st.error(f"API Error: {response.status_code}")
+    except Exception as e:
+        st.error(f"Error executing rebalancing: {e}")
+
 def show_portfolio_status():
-    """Enhanced portfolio status with beautiful visualizations - FIXED VERSION"""
+    """Portfolio status page with real data only"""
     st.header("📊 Portfolio Status")
     
     try:
-        response = requests.get(f"{API_BASE_URL}/investment/portfolio-status", timeout=30)
+        with st.spinner("Loading portfolio data..."):
+            response = requests.get(f"{API_BASE_URL}/investment/portfolio-status", timeout=30)
+        
         if response.status_code == 200:
             status_data = response.json()
             if status_data['success']:
@@ -502,33 +650,14 @@ def show_portfolio_status():
                 if status['status'] == 'empty':
                     st.info("📭 No portfolio found. Please complete initial investment first.")
                     if st.button("🚀 Go to Initial Investment"):
-                        st.rerun()
+                        st.switch_page("💰 Initial Investment")
                     return
                 elif status['status'] == 'error':
                     st.error(f"❌ Error loading portfolio: {status.get('error', 'Unknown error')}")
                     return
                 
-                # Extract data with better error handling
-                portfolio_summary = status.get('portfolio_summary', {})
-                performance_metrics = status.get('performance_metrics', {})
-                allocation_analysis = status.get('allocation_analysis', {})
-                holdings = status.get('holdings', {})
-                timeline = status.get('timeline', {})
-                
-                # Portfolio Header with Key Metrics
-                show_portfolio_header(portfolio_summary, performance_metrics, timeline)
-                
-                # Portfolio Performance Charts
-                show_performance_section(holdings, portfolio_summary, performance_metrics)
-                
-                # Holdings Heatmap - FIXED VERSION
-                show_holdings_heatmap_fixed(holdings)
-                
-                # Detailed Holdings Table
-                show_detailed_holdings_table_fixed(holdings)
-                
-                # Advanced Analytics
-                show_advanced_analytics(allocation_analysis, performance_metrics, timeline)
+                # Display portfolio data
+                show_portfolio_details(status)
                 
             else:
                 st.error("Failed to get portfolio status")
@@ -537,471 +666,121 @@ def show_portfolio_status():
             
     except Exception as e:
         st.error(f"Error fetching portfolio status: {e}")
+        st.write("This usually means:")
+        st.write("- Backend server is not running")
+        st.write("- Zerodha connection is not working")
+        st.write("- Network connectivity issues")
 
-def show_portfolio_header(portfolio_summary, performance_metrics, timeline):
-    """Show portfolio header with key metrics"""
+def show_portfolio_details(status):
+    """Show detailed portfolio information"""
+    portfolio_summary = status.get('portfolio_summary', {})
+    performance_metrics = status.get('performance_metrics', {})
+    holdings = status.get('holdings', {})
     
-    # Main metrics row
+    # Portfolio Header with Key Metrics
+    st.subheader("📊 Portfolio Overview")
+    
     col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         current_value = portfolio_summary.get('current_value', 0)
-        st.metric(
-            "💰 Portfolio Value",
-            f"₹{current_value:,.0f}",
-            help="Current market value of all holdings"
-        )
+        st.metric("💰 Portfolio Value", f"₹{current_value:,.0f}")
     
     with col2:
         total_returns = portfolio_summary.get('total_returns', 0)
         returns_percentage = portfolio_summary.get('returns_percentage', 0)
-        st.metric(
-            "📈 Total Returns",
-            f"₹{total_returns:,.0f}",
-            delta=f"{returns_percentage:.2f}%",
-            help="Absolute returns since inception"
-        )
+        st.metric("📈 Total Returns", f"₹{total_returns:,.0f}", delta=f"{returns_percentage:.2f}%")
     
     with col3:
         cagr = portfolio_summary.get('cagr', 0)
-        delta_color = "normal" if cagr >= 0 else "inverse"
-        st.metric(
-            "🎯 CAGR",
-            f"{cagr:.2f}%",
-            delta=f"vs 6% risk-free",
-            delta_color=delta_color,
-            help="Compound Annual Growth Rate"
-        )
+        st.metric("🎯 CAGR", f"{cagr:.2f}%")
     
     with col4:
         investment_period = portfolio_summary.get('investment_period_days', 0)
-        investment_years = portfolio_summary.get('investment_period_years', 0)
-        st.metric(
-            "⏱️ Investment Period",
-            f"{investment_period} days",
-            delta=f"{investment_years:.1f} years",
-            help="Time since first investment"
-        )
+        st.metric("⏱️ Days Invested", f"{investment_period}")
     
     with col5:
-        sharpe_ratio = performance_metrics.get('sharpe_ratio', 0)
-        st.metric(
-            "📊 Sharpe Ratio",
-            f"{sharpe_ratio:.2f}",
-            help="Risk-adjusted returns"
-        )
-
-def show_performance_section(holdings, portfolio_summary, performance_metrics):
-    """Show performance charts and analysis"""
+        stock_count = portfolio_summary.get('stock_count', 0)
+        st.metric("📊 Holdings", f"{stock_count}")
     
-    st.subheader("📈 Performance Analysis")
-    
-    if not holdings:
-        st.info("No holdings data available for performance analysis")
-        return
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        # Returns comparison chart
+    # Holdings table
+    if holdings:
+        st.subheader("📋 Current Holdings")
+        
+        # Prepare holdings data for display
         holdings_data = []
         for symbol, holding in holdings.items():
-            try:
-                holdings_data.append({
-                    'Stock': str(symbol),
-                    'Current Value': float(holding.get('current_value', 0)),
-                    'Investment': float(holding.get('investment_value', 0)),
-                    'Return %': float(holding.get('percentage_return', 0)),
-                    'CAGR %': float(holding.get('annualized_return', 0)),
-                    'Days Held': int(holding.get('days_held', 1))
-                })
-            except (ValueError, TypeError):
-                continue
-        
-        if holdings_data:
-            holdings_df = pd.DataFrame(holdings_data)
-            
-            # Performance bar chart
-            fig = px.bar(
-                holdings_df,
-                x='Stock',
-                y='Return %',
-                title='Individual Stock Returns (%)',
-                color='Return %',
-                color_continuous_scale='RdYlGn',
-                text='Return %'
-            )
-            fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-            fig.update_layout(
-                height=400,
-                xaxis_title="Stocks",
-                yaxis_title="Returns (%)",
-                showlegend=False
-            )
-            fig.add_hline(y=0, line_dash="dash", line_color="gray", annotation_text="Break-even")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("No valid performance data available")
-    
-    with col2:
-        st.subheader("🥧 Asset Allocation")
-        
-        if holdings_data:
-            # Portfolio composition pie chart
-            fig = px.pie(
-                holdings_df,
-                values='Current Value',
-                names='Stock',
-                title='Portfolio Composition'
-            )
-            fig.update_traces(
-                textposition='inside',
-                textinfo='percent+label',
-                hovertemplate='<b>%{label}</b><br>Value: ₹%{value:,.0f}<br>Percentage: %{percent}<extra></extra>'
-            )
-            fig.update_layout(height=400)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("No allocation data available")
-
-def show_holdings_heatmap_fixed(holdings):
-    """Show beautiful holdings heatmap - COMPLETELY FIXED VERSION"""
-    
-    st.subheader("🔥 Holdings Heatmap")
-    
-    if not holdings:
-        st.info("No holdings data available for heatmap")
-        return
-    
-    # Prepare data for heatmap
-    heatmap_data = []
-    for symbol, holding in holdings.items():
-        try:
-            heatmap_data.append({
-                'Stock': str(symbol),
-                'Value': float(holding.get('current_value', 0)),
-                'Return %': float(holding.get('percentage_return', 0)),
-                'CAGR %': float(holding.get('annualized_return', 0)),
-                'Days Held': int(holding.get('days_held', 1)),
-                'Allocation %': float(holding.get('allocation_percent', 0))
+            holdings_data.append({
+                'Stock': symbol,
+                'Shares': f"{holding.get('shares', 0):,}",
+                'Avg Price': f"₹{holding.get('avg_price', 0):.2f}",
+                'Current Price': f"₹{holding.get('current_price', 0):.2f}",
+                'Current Value': f"₹{holding.get('current_value', 0):,.0f}",
+                'Return %': f"{holding.get('percentage_return', 0):.2f}%",
+                'CAGR %': f"{holding.get('annualized_return', 0):.2f}%",
+                'Allocation %': f"{holding.get('allocation_percent', 0):.2f}%",
+                'Days Held': holding.get('days_held', 0)
             })
-        except (ValueError, TypeError) as e:
-            print(f"Error processing holding {symbol}: {e}")
-            continue
+        
+        holdings_df = pd.DataFrame(holdings_data)
+        st.dataframe(holdings_df, use_container_width=True, hide_index=True)
+        
+        # Performance charts
+        show_performance_charts(holdings)
+    else:
+        st.info("📭 No holdings data available")
+
+def show_performance_charts(holdings):
+    """Show performance charts"""
+    st.subheader("📈 Performance Analysis")
     
-    if not heatmap_data:
-        st.info("No valid holdings data for heatmap visualization")
-        return
+    # Prepare data for charts
+    chart_data = []
+    for symbol, holding in holdings.items():
+        chart_data.append({
+            'Stock': symbol,
+            'Current Value': holding.get('current_value', 0),
+            'Return %': holding.get('percentage_return', 0),
+            'CAGR %': holding.get('annualized_return', 0),
+            'Allocation %': holding.get('allocation_percent', 0)
+        })
     
-    heatmap_df = pd.DataFrame(heatmap_data)
-    
-    # Create treemap for holdings with error handling
-    try:
-        fig = px.treemap(
-            heatmap_df,
-            path=['Stock'],
-            values='Value',
-            color='Return %',
-            color_continuous_scale='RdYlGn',
-            color_continuous_midpoint=0,
-            hover_data={
-                'Value': ':,.0f',
-                'Return %': ':.2f',
-                'CAGR %': ':.2f',
-                'Days Held': True,
-                'Allocation %': ':.2f'
-            }
-        )
+    if chart_data:
+        chart_df = pd.DataFrame(chart_data)
         
-        fig.update_traces(
-            texttemplate="<b>%{label}</b><br>₹%{value:,.0f}<br>%{color:.1f}%",
-            textposition="middle center",
-            textfont_size=12
-        )
+        col1, col2 = st.columns(2)
         
-        # COMPLETELY FIXED: Use only basic layout without colorbar customization
-        fig.update_layout(
-            title="Holdings Treemap (Size = Value, Color = Returns)",
-            height=500,
-            font=dict(size=14)
-            # Removed all coloraxis_colorbar configurations
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-    except Exception as e:
-        st.error(f"Error creating treemap: {e}")
-        # Show alternative visualization
-        show_alternative_holdings_chart(heatmap_df)
-    
-    # Additional performance matrix
-    if len(heatmap_df) > 1:
-        st.subheader("📊 Performance Matrix")
-        
-        try:
-            # Create scatter plot matrix
-            fig = px.scatter(
-                heatmap_df,
-                x='Days Held',
-                y='Return %',
-                size='Value',
-                color='CAGR %',
-                hover_name='Stock',
-                color_continuous_scale='RdYlGn',
-                size_max=60
-            )
-            
-            fig.update_layout(
-                title='Risk-Return Analysis (Bubble Size = Investment Value)',
-                height=400,
-                xaxis_title="Days Held",
-                yaxis_title="Total Return (%)"
-                # Removed coloraxis_colorbar configuration
-            )
-            
-            fig.add_hline(y=0, line_dash="dash", line_color="gray", annotation_text="Break-even")
-            st.plotly_chart(fig, use_container_width=True)
-            
-        except Exception as e:
-            st.error(f"Error creating performance matrix: {e}")
-            # Show simple bar chart as fallback
+        with col1:
+            # Returns bar chart
             fig = px.bar(
-                heatmap_df,
+                chart_df,
                 x='Stock',
                 y='Return %',
                 title='Stock Returns (%)',
                 color='Return %',
                 color_continuous_scale='RdYlGn'
             )
-            # No colorbar customization for bar chart either
+            fig.add_hline(y=0, line_dash="dash", line_color="gray", annotation_text="Break-even")
             st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Need at least 2 holdings for performance matrix visualization")
-
-def show_alternative_holdings_chart(heatmap_df):
-    """Alternative chart when treemap fails - SIMPLIFIED VERSION"""
-    st.subheader("📊 Holdings Overview")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Simple pie chart
-        fig = px.pie(
-            heatmap_df,
-            values='Value',
-            names='Stock',
-            title='Portfolio Allocation by Value'
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        # Bar chart of returns - simplified without colorbar customization
-        fig = px.bar(
-            heatmap_df,
-            x='Stock',
-            y='Return %',
-            title='Returns by Stock',
-            color='Return %',
-            color_continuous_scale='RdYlGn'
-        )
-        fig.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig, use_container_width=True)
-
-def show_detailed_holdings_table_fixed(holdings):
-    """Show detailed holdings table with enhanced formatting - FIXED VERSION"""
-    
-    st.subheader("📋 Detailed Holdings")
-    
-    if not holdings:
-        st.info("No holdings data available")
-        return
-    
-    # Prepare detailed table data with better error handling
-    table_data = []
-    for symbol, holding in holdings.items():
-        try:
-            # Safely extract values with defaults
-            shares = int(holding.get('shares', 0))
-            avg_price = float(holding.get('avg_price', 0))
-            current_price = float(holding.get('current_price', 0))
-            investment_value = float(holding.get('investment_value', 0))
-            current_value = float(holding.get('current_value', 0))
-            absolute_return = float(holding.get('absolute_return', 0))
-            percentage_return = float(holding.get('percentage_return', 0))
-            allocation_percent = float(holding.get('allocation_percent', 0))
-            days_held = int(holding.get('days_held', 1))
-            annualized_return = float(holding.get('annualized_return', 0))
-            first_purchase = str(holding.get('first_purchase_date', ''))[:10]
-            transaction_count = int(holding.get('transaction_count', 0))
-            
-            table_data.append({
-                'Stock': str(symbol),
-                'Shares': f"{shares:,}",
-                'Avg Price': f"₹{avg_price:,.2f}",
-                'Current Price': f"₹{current_price:,.2f}",
-                'Investment': f"₹{investment_value:,.0f}",
-                'Current Value': f"₹{current_value:,.0f}",
-                'Absolute P&L': f"₹{absolute_return:,.0f}",
-                'Return %': f"{percentage_return:.2f}%",
-                'CAGR %': f"{annualized_return:.2f}%",
-                'Allocation %': f"{allocation_percent:.2f}%",
-                'Days Held': days_held,
-                'First Purchase': first_purchase if first_purchase != '' else 'N/A',
-                'Transactions': transaction_count
-            })
-            
-        except (ValueError, TypeError, KeyError) as e:
-            print(f"Error processing holding {symbol} for table: {e}")
-            # Add a safe fallback row
-            table_data.append({
-                'Stock': str(symbol),
-                'Shares': 'Error',
-                'Avg Price': 'Error',
-                'Current Price': 'Error',
-                'Investment': 'Error',
-                'Current Value': 'Error',
-                'Absolute P&L': 'Error',
-                'Return %': 'Error',
-                'CAGR %': 'Error',
-                'Allocation %': 'Error',
-                'Days Held': 'Error',
-                'First Purchase': 'Error',
-                'Transactions': 'Error'
-            })
-    
-    if not table_data:
-        st.warning("No valid holdings data to display")
-        return
-    
-    table_df = pd.DataFrame(table_data)
-    
-    # Display table with custom styling
-    st.dataframe(
-        table_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            'Return %': st.column_config.TextColumn('Return %', help="Total percentage return"),
-            'CAGR %': st.column_config.TextColumn('CAGR %', help="Compound Annual Growth Rate"),
-            'Allocation %': st.column_config.TextColumn('Allocation %', help="Portfolio allocation percentage")
-        }
-    )
-    
-    # Summary statistics with error handling
-    try:
-        # Calculate summary stats from valid holdings only
-        valid_returns = []
-        valid_cagrs = []
-        valid_holding_periods = []
         
-        for holding in holdings.values():
-            try:
-                ret = float(holding.get('percentage_return', 0))
-                cagr = float(holding.get('annualized_return', 0))
-                days = int(holding.get('days_held', 1))
-                
-                valid_returns.append(ret)
-                valid_cagrs.append(cagr)
-                valid_holding_periods.append(days)
-            except (ValueError, TypeError):
-                continue
-        
-        if valid_returns:
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                avg_return = sum(valid_returns) / len(valid_returns)
-                st.metric("📊 Average Return", f"{avg_return:.2f}%")
-            
-            with col2:
-                avg_cagr = sum(valid_cagrs) / len(valid_cagrs)
-                st.metric("🎯 Average CAGR", f"{avg_cagr:.2f}%")
-            
-            with col3:
-                positive_returns = sum(1 for ret in valid_returns if ret > 0)
-                win_rate = (positive_returns / len(valid_returns)) * 100
-                st.metric("🏆 Win Rate", f"{win_rate:.1f}%")
-            
-            with col4:
-                avg_holding_period = sum(valid_holding_periods) / len(valid_holding_periods)
-                st.metric("⏱️ Avg Holding Period", f"{avg_holding_period:.0f} days")
-        
-    except Exception as e:
-        st.warning(f"Could not calculate summary statistics: {e}")
-
-def show_advanced_analytics(allocation_analysis, performance_metrics, timeline):
-    """Show advanced analytics section"""
-    
-    st.subheader("🧠 Advanced Analytics")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("### ⚖️ Allocation Analysis")
-        
-        allocation_stats = allocation_analysis.get('allocation_stats', {})
-        st.write(f"**Target Allocation**: {allocation_stats.get('target_allocation', 0):.2f}%")
-        st.write(f"**Current Range**: {allocation_stats.get('min_allocation', 0):.2f}% - {allocation_stats.get('max_allocation', 0):.2f}%")
-        st.write(f"**Average Allocation**: {allocation_stats.get('avg_allocation', 0):.2f}%")
-        st.write(f"**Deviation Score**: {allocation_analysis.get('allocation_deviation', 0):.2f}%")
-        
-        if allocation_analysis.get('rebalancing_needed', False):
-            st.warning("⚠️ Portfolio may need rebalancing")
-        else:
-            st.success("✅ Portfolio allocation is balanced")
-        
-        st.write("### 📊 Risk Metrics")
-        st.write(f"**Volatility**: {performance_metrics.get('volatility_score', 0):.2f}%")
-        st.write(f"**Sharpe Ratio**: {performance_metrics.get('sharpe_ratio', 0):.2f}")
-        
-        # Risk assessment
-        volatility = performance_metrics.get('volatility_score', 0)
-        if volatility < 10:
-            risk_level = "🟢 Low Risk"
-        elif volatility < 20:
-            risk_level = "🟡 Medium Risk"
-        else:
-            risk_level = "🔴 High Risk"
-        
-        st.write(f"**Risk Level**: {risk_level}")
-    
-    with col2:
-        st.write("### 📅 Investment Timeline")
-        
-        first_investment = timeline.get('first_investment', 'N/A')
-        last_investment = timeline.get('last_investment', 'N/A')
-        total_orders = timeline.get('total_orders', 0)
-        last_updated = timeline.get('last_updated', 'N/A')
-        
-        st.write(f"**First Investment**: {first_investment[:10] if first_investment != 'N/A' else 'N/A'}")
-        st.write(f"**Last Investment**: {last_investment[:10] if last_investment != 'N/A' else 'N/A'}")
-        st.write(f"**Total Orders**: {total_orders}")
-        st.write(f"**Last Updated**: {last_updated[:10] if last_updated != 'N/A' else 'N/A'}")
-        
-        st.write("### 🎯 Performance Benchmarks")
-        
-        # Get CAGR from performance metrics
-        portfolio_cagr = performance_metrics.get('avg_return', 0)
-        
-        # Benchmark comparisons
-        benchmarks = {
-            "Fixed Deposit": 6.5,
-            "Nifty 50 (Est.)": 12.0,
-            "Small Cap Index": 15.0
-        }
-        
-        for benchmark, rate in benchmarks.items():
-            if portfolio_cagr > rate:
-                st.success(f"✅ Outperforming {benchmark} ({rate}%)")
-            else:
-                st.error(f"❌ Underperforming {benchmark} ({rate}%)")
+        with col2:
+            # Allocation pie chart
+            fig = px.pie(
+                chart_df,
+                values='Current Value',
+                names='Stock',
+                title='Portfolio Allocation'
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
 def show_order_history():
     """Order history page"""
     st.header("📋 Order History")
     
     try:
-        response = requests.get(f"{API_BASE_URL}/investment/system-orders")
+        with st.spinner("Loading order history..."):
+            response = requests.get(f"{API_BASE_URL}/investment/system-orders", timeout=30)
+        
         if response.status_code == 200:
             orders_data = response.json()
             if orders_data['success']:
@@ -1013,6 +792,7 @@ def show_order_history():
                     # Format for display
                     orders_df['value_formatted'] = orders_df['value'].apply(lambda x: f"₹{x:,.0f}")
                     orders_df['price_formatted'] = orders_df['price'].apply(lambda x: f"₹{x:.2f}")
+                    orders_df['execution_time'] = pd.to_datetime(orders_df['execution_time']).dt.strftime('%Y-%m-%d %H:%M')
                     
                     display_orders = orders_df[['execution_time', 'symbol', 'action', 'shares', 'price_formatted', 'value_formatted', 'status']].rename(columns={
                         'execution_time': 'Time',

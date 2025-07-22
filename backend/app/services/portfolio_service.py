@@ -4,20 +4,47 @@ from ..auth import ZerodhaAuth
 class PortfolioService:
     def __init__(self, zerodha_auth: ZerodhaAuth):
         self.zerodha_auth = zerodha_auth
-        self.kite = zerodha_auth.get_kite_instance()
+        self.kite = zerodha_auth.get_kite_instance() if zerodha_auth else None
     
     def get_portfolio_data(self):
-        """Get real portfolio data from Zerodha"""
+        """Get real portfolio data from Zerodha - NO FAKE DATA"""
+        if not self.zerodha_auth:
+            print("❌ No Zerodha authentication service available")
+            return None
+        
+        if not self.zerodha_auth.is_authenticated():
+            print("❌ Zerodha not authenticated")
+            return None
+        
         if not self.kite:
             print("❌ No Zerodha connection available")
             return None
         
         try:
-            print("📊 Fetching live data from Zerodha...")
+            print("📊 Fetching live portfolio data from Zerodha...")
             
             # Get holdings and margins
             holdings = self.kite.holdings()
             margins = self.kite.margins()
+            
+            if not holdings:
+                print("⚠️ No holdings found in Zerodha account")
+                return {
+                    "user_id": 1,
+                    "current_value": 0,
+                    "invested_value": 0,
+                    "total_invested": 0,
+                    "total_returns": 0,
+                    "returns_percentage": 0,
+                    "available_cash": margins['equity']['available']['cash'] if margins else 0,
+                    "day_change": 0,
+                    "day_change_percent": 0,
+                    "zerodha_connected": True,
+                    "holdings": [],
+                    "allocation": [],
+                    "total_holdings": 0,
+                    "message": "No holdings found in your Zerodha account"
+                }
             
             print(f"📈 Retrieved {len(holdings)} holdings from Zerodha")
             
@@ -30,7 +57,6 @@ class PortfolioService:
                 symbol = holding['tradingsymbol']
                 
                 # Handle ALL shares: regular + t1 + collateral (pledged)
-                # Your shares are all in collateral_quantity (pledged)
                 regular_qty = holding.get('quantity', 0)
                 t1_qty = holding.get('t1_quantity', 0)  
                 collateral_qty = holding.get('collateral_quantity', 0)
@@ -42,6 +68,12 @@ class PortfolioService:
                 if total_quantity > 0:
                     avg_price = holding['average_price']
                     current_price = holding['last_price']
+                    
+                    # Validate prices
+                    if avg_price <= 0 or current_price <= 0:
+                        print(f"   ⚠️ {symbol}: Invalid prices - avg_price={avg_price}, current_price={current_price}")
+                        continue
+                    
                     holding_value = total_quantity * current_price
                     investment_value = total_quantity * avg_price
                     pnl = holding_value - investment_value
@@ -69,13 +101,30 @@ class PortfolioService:
                     current_value += holding_value
                     
                     print(f"✅ Added {symbol}: ₹{holding_value:,.2f} value, {pnl_percent:.2f}% P&L")
+                else:
+                    print(f"   🔍 {symbol}: No shares to process (qty=0)")
             
             print(f"📊 Total processed holdings: {len(portfolio_holdings)}")
             print(f"📊 Total current value: ₹{current_value:,.2f}")
             
             if len(portfolio_holdings) == 0:
                 print("❌ No valid holdings found after processing")
-                return None
+                return {
+                    "user_id": 1,
+                    "current_value": 0,
+                    "invested_value": 0,
+                    "total_invested": 0,
+                    "total_returns": 0,
+                    "returns_percentage": 0,
+                    "available_cash": margins['equity']['available']['cash'] if margins else 0,
+                    "day_change": 0,
+                    "day_change_percent": 0,
+                    "zerodha_connected": True,
+                    "holdings": [],
+                    "allocation": [],
+                    "total_holdings": 0,
+                    "message": "No valid holdings found (all holdings have zero quantity or invalid prices)"
+                }
             
             # Calculate allocation percentages
             for holding in portfolio_holdings:
@@ -91,15 +140,26 @@ class PortfolioService:
                 if total_investment > 0 else 0
             )
             
-            # Get available cash
-            available_cash = margins['equity']['available']['cash']
+            # Get available cash with error handling
+            available_cash = 0
+            try:
+                available_cash = margins['equity']['available']['cash'] if margins else 0
+            except Exception as e:
+                print(f"⚠️ Could not fetch cash margin: {e}")
+                available_cash = 0
             
             # Calculate day change for portfolio
-            day_change = sum(
-                holding.get('day_change', 0) * portfolio_holdings[i]['quantity']
-                for i, holding in enumerate(holdings)
-                if i < len(portfolio_holdings)
-            )
+            day_change = 0
+            try:
+                day_change = sum(
+                    holding.get('day_change', 0) * portfolio_holdings[i]['quantity']
+                    for i, holding in enumerate(holdings)
+                    if i < len(portfolio_holdings)
+                )
+            except Exception as e:
+                print(f"⚠️ Could not calculate day change: {e}")
+                day_change = 0
+            
             day_change_percent = (day_change / current_value) * 100 if current_value > 0 else 0
             
             print(f"✅ Portfolio processed successfully:")
@@ -121,7 +181,9 @@ class PortfolioService:
                 "day_change_percent": day_change_percent,
                 "total_invested": total_investment,  # Add this for frontend compatibility
                 "total_holdings": len(portfolio_holdings),
-                "zerodha_connected": True
+                "zerodha_connected": True,
+                "data_source": "Zerodha Live API",
+                "last_updated": self.zerodha_auth.zerodha_auth.get_last_sync_time() if hasattr(self.zerodha_auth, 'get_last_sync_time') else None
             }
             
         except Exception as e:
@@ -130,41 +192,11 @@ class PortfolioService:
             print(f"❌ Full error: {traceback.format_exc()}")
             return None
     
-    def get_sample_data(self):
-        """Fallback sample data"""
-        print("📊 Using sample portfolio data")
+    def get_connection_status(self):
+        """Get honest connection status"""
         return {
-            "user_id": 1,
-            "current_value": 485000,
-            "invested_value": 450000,
-            "total_invested": 450000,
-            "total_returns": 35000,
-            "returns_percentage": 7.78,
-            "available_cash": 25000,
-            "day_change": 5200,
-            "day_change_percent": 1.08,
-            "zerodha_connected": False,
-            "holdings": [
-                {
-                    "symbol": "SAMPLE",
-                    "quantity": 10,
-                    "avg_price": 100,
-                    "current_price": 110,
-                    "current_value": 1100,
-                    "allocation_percent": 5.0,
-                    "pnl": 100,
-                    "pnl_percent": 10.0
-                }
-            ],
-            "allocation": [
-                {
-                    "symbol": "SAMPLE",
-                    "quantity": 10,
-                    "avg_price": 100,
-                    "current_price": 110,
-                    "current_value": 1100,
-                    "allocation": 5.0
-                }
-            ],
-            "total_holdings": 1
+            "zerodha_auth_available": bool(self.zerodha_auth),
+            "zerodha_authenticated": self.zerodha_auth.is_authenticated() if self.zerodha_auth else False,
+            "kite_instance_available": bool(self.kite),
+            "can_fetch_data": bool(self.zerodha_auth and self.zerodha_auth.is_authenticated() and self.kite)
         }

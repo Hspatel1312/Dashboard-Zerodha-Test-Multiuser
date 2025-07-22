@@ -23,27 +23,59 @@ class InvestmentService:
         self.csv_history_file = "csv_history.json"
     
     def get_investment_requirements(self) -> Dict:
-        """Get minimum investment requirements based on current CSV"""
+        """Get minimum investment requirements based on current CSV - STRICT NO FAKE DATA"""
         try:
             print("📋 Getting investment requirements...")
             
-            # Get stocks with live prices
-            stocks_data = self.csv_service.get_stocks_with_prices()
+            # Validate Zerodha connection first
+            if not self.zerodha_auth:
+                raise Exception("Zerodha authentication service not available. Please configure your Zerodha API credentials.")
             
-            # Calculate minimum investment
+            if not self.zerodha_auth.is_authenticated():
+                print("🔄 Attempting Zerodha authentication...")
+                try:
+                    self.zerodha_auth.authenticate()
+                except Exception as e:
+                    raise Exception(f"Unable to authenticate with Zerodha: {str(e)}. Please check your API credentials and network connection.")
+            
+            if not self.zerodha_auth.is_authenticated():
+                raise Exception("Zerodha authentication failed. Cannot proceed without live market data connection.")
+            
+            # Get stocks with LIVE prices only - no fake data allowed
+            try:
+                stocks_data = self.csv_service.get_stocks_with_prices()
+            except Exception as e:
+                raise Exception(f"Unable to fetch live stock prices: {str(e)}. This could be due to:\n1. Market being closed (9:15 AM - 3:30 PM IST)\n2. Network connectivity issues\n3. Zerodha API rate limits\n4. Invalid stock symbols in CSV")
+            
+            # Validate that we have real data
+            if not stocks_data.get('price_data_status', {}).get('live_prices_used', False):
+                raise Exception("Live prices not available. Cannot proceed with investment calculations using outdated data.")
+            
+            if stocks_data.get('total_stocks', 0) == 0:
+                raise Exception("No valid stocks with live prices found. Please check:\n1. CSV file accessibility\n2. Stock symbols validity\n3. Market hours\n4. Zerodha connection")
+            
+            # Calculate minimum investment using live prices
             min_investment_info = self.calculator.calculate_minimum_investment(stocks_data['stocks'])
             
-            # Prepare response
+            # Prepare response with validation
             requirements = {
                 'is_first_time': self._is_first_time_setup(),
                 'stocks_data': stocks_data,
                 'minimum_investment': min_investment_info,
                 'csv_info': stocks_data['csv_info'],
-                'system_status': 'ready_for_initial_investment'
+                'system_status': 'ready_for_initial_investment',
+                'data_quality': {
+                    'live_data_confirmed': True,
+                    'zerodha_connected': True,
+                    'price_success_rate': stocks_data['price_data_status']['success_rate'],
+                    'total_valid_stocks': stocks_data['total_stocks'],
+                    'data_source': stocks_data['price_data_status']['market_data_source']
+                }
             }
             
-            print(f"✅ Investment requirements prepared:")
+            print(f"✅ Investment requirements prepared with LIVE data:")
             print(f"   Stocks: {stocks_data['total_stocks']}")
+            print(f"   Price success rate: {stocks_data['price_data_status']['success_rate']:.1f}%")
             print(f"   Minimum investment: ₹{min_investment_info['minimum_investment']:,.0f}")
             print(f"   Recommended: ₹{min_investment_info['recommended_minimum']:,.0f}")
             
@@ -51,31 +83,47 @@ class InvestmentService:
             
         except Exception as e:
             print(f"❌ Error getting investment requirements: {e}")
-            raise Exception(f"Failed to get investment requirements: {str(e)}")
+            # Re-raise with context - no fallback to fake data
+            raise Exception(f"Cannot provide investment requirements: {str(e)}")
     
     def calculate_initial_investment_plan(self, investment_amount: float) -> Dict:
-        """Calculate initial investment plan for given amount"""
+        """Calculate initial investment plan for given amount - LIVE DATA ONLY"""
         try:
             print(f"💰 Calculating initial investment plan for ₹{investment_amount:,.0f}")
             
-            # Get stocks with live prices
-            stocks_data = self.csv_service.get_stocks_with_prices()
+            # Validate Zerodha connection
+            if not self.zerodha_auth or not self.zerodha_auth.is_authenticated():
+                raise Exception("Zerodha connection required for live price calculations. Please ensure you're connected.")
             
-            # Validate minimum investment
+            # Get stocks with LIVE prices - will fail if not available
+            try:
+                stocks_data = self.csv_service.get_stocks_with_prices()
+            except Exception as e:
+                raise Exception(f"Cannot get live stock prices for investment calculation: {str(e)}")
+            
+            # Validate data quality
+            if not stocks_data.get('price_data_status', {}).get('live_prices_used', False):
+                raise Exception("Live market data not available. Cannot calculate investment plan with stale data.")
+            
+            if stocks_data.get('price_data_status', {}).get('success_rate', 0) < 50:
+                success_rate = stocks_data['price_data_status']['success_rate']
+                raise Exception(f"Poor data quality (only {success_rate:.1f}% of stocks have live prices). Cannot proceed with investment calculation.")
+            
+            # Validate minimum investment using live prices
             min_investment_info = self.calculator.calculate_minimum_investment(stocks_data['stocks'])
             
             if investment_amount < min_investment_info['minimum_investment']:
                 raise Exception(
                     f"Investment amount ₹{investment_amount:,.0f} is below minimum required "
-                    f"₹{min_investment_info['minimum_investment']:,.0f}"
+                    f"₹{min_investment_info['minimum_investment']:,.0f} based on current live market prices"
                 )
             
-            # Calculate optimal allocation
+            # Calculate optimal allocation using live prices
             allocation_plan = self.calculator.calculate_optimal_allocation(
                 investment_amount, stocks_data['stocks']
             )
             
-            # Generate order preview
+            # Generate order preview with live prices
             orders = []
             for allocation in allocation_plan['allocations']:
                 if allocation['shares'] > 0:
@@ -83,7 +131,7 @@ class InvestmentService:
                         'symbol': allocation['symbol'],
                         'action': 'BUY',
                         'shares': allocation['shares'],
-                        'price': allocation['price'],
+                        'price': allocation['price'],  # Live price
                         'value': allocation['value'],
                         'allocation_percent': allocation['allocation_percent']
                     })
@@ -100,24 +148,36 @@ class InvestmentService:
                     'utilization_percent': allocation_plan['utilization_percent']
                 },
                 'csv_info': stocks_data['csv_info'],
-                'validation': allocation_plan['validation']
+                'validation': allocation_plan['validation'],
+                'data_quality': {
+                    'live_prices_used': True,
+                    'price_success_rate': stocks_data['price_data_status']['success_rate'],
+                    'last_price_update': stocks_data['price_data_status']['last_updated'],
+                    'market_data_source': stocks_data['price_data_status']['market_data_source']
+                }
             }
             
-            print(f"✅ Initial investment plan created:")
+            print(f"✅ Initial investment plan created using LIVE data:")
             print(f"   Orders: {len(orders)} BUY orders")
             print(f"   Investment: ₹{investment_plan['summary']['total_investment_value']:,.0f}")
             print(f"   Utilization: {investment_plan['summary']['utilization_percent']:.2f}%")
+            print(f"   Price success rate: {stocks_data['price_data_status']['success_rate']:.1f}%")
             
             return investment_plan
             
         except Exception as e:
             print(f"❌ Error calculating investment plan: {e}")
-            raise Exception(f"Failed to calculate investment plan: {str(e)}")
+            # Re-raise with context - no fallback to fake data
+            raise Exception(f"Cannot calculate investment plan: {str(e)}")
     
     def execute_initial_investment(self, investment_plan: Dict) -> Dict:
-        """Execute initial investment (store orders, don't place on Zerodha yet)"""
+        """Execute initial investment (store orders with live price data)"""
         try:
             print(f"🚀 Executing initial investment...")
+            
+            # Validate that plan has live data
+            if not investment_plan.get('data_quality', {}).get('live_prices_used', False):
+                raise Exception("Cannot execute investment plan - live price data not confirmed")
             
             # Create system orders
             system_orders = []
@@ -129,12 +189,14 @@ class InvestmentService:
                     'symbol': order['symbol'],
                     'action': order['action'],
                     'shares': order['shares'],
-                    'price': order['price'],
+                    'price': order['price'],  # Live price at time of calculation
                     'value': order['value'],
                     'allocation_percent': order['allocation_percent'],
-                    'status': 'EXECUTED_SYSTEM',  # Not placed on Zerodha
+                    'status': 'EXECUTED_SYSTEM',  # Not placed on Zerodha yet
                     'execution_time': datetime.now().isoformat(),
-                    'session_type': 'INITIAL_INVESTMENT'
+                    'session_type': 'INITIAL_INVESTMENT',
+                    'data_source': 'LIVE_ZERODHA_PRICES',
+                    'price_timestamp': investment_plan.get('data_quality', {}).get('last_price_update')
                 }
                 system_orders.append(system_order)
                 order_id += 1
@@ -154,12 +216,14 @@ class InvestmentService:
                 'total_investment': investment_plan['summary']['total_investment_value'],
                 'remaining_cash': investment_plan['summary']['remaining_cash'],
                 'portfolio_state': self._get_current_portfolio_state(),
-                'execution_time': datetime.now().isoformat()
+                'execution_time': datetime.now().isoformat(),
+                'data_quality': investment_plan['data_quality']
             }
             
-            print(f"✅ Initial investment executed:")
+            print(f"✅ Initial investment executed with live data:")
             print(f"   Orders stored: {len(system_orders)}")
             print(f"   Total investment: ₹{execution_result['total_investment']:,.0f}")
+            print(f"   All prices were live market prices")
             
             return execution_result
             
@@ -168,7 +232,7 @@ class InvestmentService:
             raise Exception(f"Failed to execute initial investment: {str(e)}")
     
     def check_rebalancing_needed(self) -> Dict:
-        """Check if rebalancing is needed by comparing current CSV with system portfolio"""
+        """Check if rebalancing is needed - requires live data"""
         try:
             print("🔍 Checking if rebalancing is needed...")
             
@@ -182,15 +246,25 @@ class InvestmentService:
                     'is_first_time': True
                 }
             
+            # Validate Zerodha connection for live comparison
+            if not self.zerodha_auth or not self.zerodha_auth.is_authenticated():
+                raise Exception("Zerodha connection required to check current portfolio state and CSV changes")
+            
             # Get current portfolio symbols
             current_symbols = list(portfolio_state['holdings'].keys())
             
-            # Compare with CSV
-            comparison = self.csv_service.compare_csv_with_portfolio(current_symbols)
+            # Compare with CSV using live data
+            try:
+                comparison = self.csv_service.compare_csv_with_portfolio(current_symbols)
+            except Exception as e:
+                raise Exception(f"Cannot compare portfolio with CSV: {str(e)}")
             
             if comparison['rebalancing_needed']:
-                # Calculate current portfolio value
-                portfolio_value = self._calculate_current_portfolio_value(portfolio_state)
+                # Calculate current portfolio value using live prices
+                try:
+                    portfolio_value = self._calculate_current_portfolio_value(portfolio_state)
+                except Exception as e:
+                    raise Exception(f"Cannot calculate current portfolio value with live prices: {str(e)}")
                 
                 rebalancing_info = {
                     'rebalancing_needed': True,
@@ -198,7 +272,8 @@ class InvestmentService:
                     'comparison': comparison,
                     'current_portfolio_value': portfolio_value,
                     'portfolio_state': portfolio_state,
-                    'is_first_time': False
+                    'is_first_time': False,
+                    'live_data_confirmed': True
                 }
                 
                 print(f"🔄 Rebalancing needed!")
@@ -213,28 +288,43 @@ class InvestmentService:
                     'rebalancing_needed': False,
                     'reason': 'Portfolio matches current CSV',
                     'comparison': comparison,
-                    'is_first_time': False
+                    'is_first_time': False,
+                    'live_data_confirmed': True
                 }
             
         except Exception as e:
             print(f"❌ Error checking rebalancing: {e}")
-            raise Exception(f"Failed to check rebalancing: {str(e)}")
+            raise Exception(f"Failed to check rebalancing requirements: {str(e)}")
     
     def calculate_rebalancing_plan(self, additional_investment: float = 0) -> Dict:
-        """Calculate rebalancing plan with optional additional investment"""
+        """Calculate rebalancing plan with live data only"""
         try:
             print(f"🧮 Calculating rebalancing plan with additional investment: ₹{additional_investment:,.0f}")
+            
+            # Validate Zerodha connection
+            if not self.zerodha_auth or not self.zerodha_auth.is_authenticated():
+                raise Exception("Zerodha connection required for live price-based rebalancing calculations")
             
             # Get current portfolio state
             portfolio_state = self._get_current_portfolio_state()
             if not portfolio_state:
                 raise Exception("No current portfolio found")
             
-            # Get new CSV stocks
-            stocks_data = self.csv_service.get_stocks_with_prices()
+            # Get new CSV stocks with live prices
+            try:
+                stocks_data = self.csv_service.get_stocks_with_prices()
+            except Exception as e:
+                raise Exception(f"Cannot get live stock prices for rebalancing: {str(e)}")
             
-            # Calculate current portfolio value
-            current_value = self._calculate_current_portfolio_value(portfolio_state)
+            # Validate live data
+            if not stocks_data.get('price_data_status', {}).get('live_prices_used', False):
+                raise Exception("Live market data not available for rebalancing calculations")
+            
+            # Calculate current portfolio value using live prices
+            try:
+                current_value = self._calculate_current_portfolio_value(portfolio_state)
+            except Exception as e:
+                raise Exception(f"Cannot calculate current portfolio value: {str(e)}")
             
             # Total value to allocate = current value + additional investment
             total_value = current_value + additional_investment
@@ -242,11 +332,11 @@ class InvestmentService:
             # Calculate target allocation (equal weight)
             target_per_stock = total_value / len(stocks_data['stocks'])
             
-            # Generate rebalancing orders
+            # Generate rebalancing orders using live prices
             orders = []
             for stock in stocks_data['stocks']:
                 symbol = stock['symbol']
-                current_price = stock['price']
+                current_price = stock['price']  # Live price
                 
                 # Current holding
                 current_holding = portfolio_state['holdings'].get(symbol, {})
@@ -266,7 +356,7 @@ class InvestmentService:
                         'symbol': symbol,
                         'action': 'BUY' if shares_difference > 0 else 'SELL',
                         'shares': abs(shares_difference),
-                        'price': current_price,
+                        'price': current_price,  # Live price
                         'value': abs(value_difference),
                         'current_shares': current_shares,
                         'target_shares': target_shares,
@@ -297,13 +387,19 @@ class InvestmentService:
                     'additional_investment': additional_investment
                 },
                 'csv_info': stocks_data['csv_info'],
-                'status': 'READY_FOR_EXECUTION' if net_cash_required <= additional_investment else 'INSUFFICIENT_CASH'
+                'status': 'READY_FOR_EXECUTION' if net_cash_required <= additional_investment else 'INSUFFICIENT_CASH',
+                'data_quality': {
+                    'live_prices_used': True,
+                    'price_success_rate': stocks_data['price_data_status']['success_rate'],
+                    'market_data_source': stocks_data['price_data_status']['market_data_source']
+                }
             }
             
-            print(f"✅ Rebalancing plan calculated:")
+            print(f"✅ Rebalancing plan calculated using live data:")
             print(f"   Orders: {len(orders)} total ({len(buy_orders)} BUY, {len(sell_orders)} SELL)")
             print(f"   Net cash required: ₹{net_cash_required:,.0f}")
             print(f"   Status: {rebalancing_plan['status']}")
+            print(f"   Price success rate: {stocks_data['price_data_status']['success_rate']:.1f}%")
             
             return rebalancing_plan
             
@@ -312,9 +408,13 @@ class InvestmentService:
             raise Exception(f"Failed to calculate rebalancing plan: {str(e)}")
     
     def execute_rebalancing(self, rebalancing_plan: Dict) -> Dict:
-        """Execute rebalancing plan"""
+        """Execute rebalancing plan with live data validation"""
         try:
             print(f"🚀 Executing rebalancing plan...")
+            
+            # Validate live data in plan
+            if not rebalancing_plan.get('data_quality', {}).get('live_prices_used', False):
+                raise Exception("Cannot execute rebalancing plan - live price data not confirmed")
             
             # Create system orders
             system_orders = []
@@ -326,12 +426,13 @@ class InvestmentService:
                     'symbol': order['symbol'],
                     'action': order['action'],
                     'shares': order['shares'],
-                    'price': order['price'],
+                    'price': order['price'],  # Live price
                     'value': order['value'],
                     'allocation_percent': order['allocation_percent'],
                     'status': 'EXECUTED_SYSTEM',
                     'execution_time': datetime.now().isoformat(),
-                    'session_type': 'REBALANCING'
+                    'session_type': 'REBALANCING',
+                    'data_source': 'LIVE_ZERODHA_PRICES'
                 }
                 system_orders.append(system_order)
                 order_id += 1
@@ -351,10 +452,11 @@ class InvestmentService:
                 'total_investment': rebalancing_plan['summary']['cash_required'],
                 'cash_generated': rebalancing_plan['summary']['cash_generated'],
                 'net_investment': rebalancing_plan['summary']['net_cash_required'],
-                'execution_time': datetime.now().isoformat()
+                'execution_time': datetime.now().isoformat(),
+                'data_quality': rebalancing_plan['data_quality']
             }
             
-            print(f"✅ Rebalancing executed:")
+            print(f"✅ Rebalancing executed with live data:")
             print(f"   Orders stored: {len(system_orders)}")
             print(f"   Net investment: ₹{execution_result['net_investment']:,.0f}")
             
@@ -365,9 +467,7 @@ class InvestmentService:
             raise Exception(f"Failed to execute rebalancing: {str(e)}")
     
     def get_system_portfolio_status(self) -> Dict:
-        """
-        Get comprehensive system portfolio status with advanced metrics
-        """
+        """Get comprehensive system portfolio status - LIVE DATA ONLY"""
         try:
             print("📊 Getting comprehensive system portfolio status...")
             
@@ -385,7 +485,20 @@ class InvestmentService:
                     'timeline': {}
                 }
             
-            # Step 1: Construct portfolio from orders using dedicated service
+            # Validate Zerodha connection for live calculations
+            if not self.zerodha_auth or not self.zerodha_auth.is_authenticated():
+                return {
+                    'status': 'error',
+                    'error': 'Zerodha connection required for live portfolio status',
+                    'message': 'Please ensure Zerodha is connected to get current portfolio status',
+                    'holdings': {},
+                    'portfolio_summary': {'total_investment': 0, 'current_value': 0},
+                    'performance_metrics': {},
+                    'allocation_analysis': {},
+                    'timeline': {}
+                }
+            
+            # Step 1: Construct portfolio from orders
             print("🔧 Step 1: Constructing portfolio from orders...")
             portfolio_construction = self.portfolio_constructor.construct_portfolio_from_orders(all_orders)
             
@@ -393,7 +506,6 @@ class InvestmentService:
             validation = self.portfolio_constructor.validate_portfolio_construction(portfolio_construction)
             if not validation['is_valid']:
                 print(f"⚠️ Portfolio construction validation failed: {validation['errors']}")
-                # Continue with warnings, but note the issues
             
             if not portfolio_construction['holdings']:
                 return {
@@ -406,37 +518,53 @@ class InvestmentService:
                     'timeline': {}
                 }
             
-            # Step 2: Get current prices for all portfolio stocks
-            print("🔧 Step 2: Getting current market prices...")
+            # Step 2: Get current live prices for all portfolio stocks
+            print("🔧 Step 2: Getting live market prices...")
             holdings = portfolio_construction['holdings']
             symbols = list(holdings.keys())
             
             try:
                 current_prices = self.csv_service.get_live_prices(symbols)
-                print(f"   ✅ Got prices for {len(current_prices)}/{len(symbols)} stocks")
+                print(f"   ✅ Got live prices for {len(current_prices)}/{len(symbols)} stocks")
                 
-                # Ensure all symbols have prices (use avg_price as fallback)
-                for symbol in symbols:
-                    if symbol not in current_prices:
-                        current_prices[symbol] = holdings[symbol]['avg_price']
-                        print(f"   🔄 Using avg price for {symbol}: ₹{current_prices[symbol]:.2f}")
+                # Validate we got prices for all holdings
+                missing_prices = [symbol for symbol in symbols if symbol not in current_prices]
+                if missing_prices:
+                    raise Exception(f"Missing live prices for {len(missing_prices)} stocks: {missing_prices[:3]}{'...' if len(missing_prices) > 3 else ''}. Cannot calculate accurate portfolio status.")
                         
             except Exception as e:
-                print(f"⚠️ Could not get live prices: {e}, using average prices")
-                current_prices = {symbol: holding['avg_price'] for symbol, holding in holdings.items()}
+                print(f"❌ Could not get live prices: {e}")
+                return {
+                    'status': 'error',
+                    'error': f'Live price data not available: {str(e)}',
+                    'message': 'Cannot calculate portfolio status without current market prices',
+                    'holdings': {},
+                    'portfolio_summary': {'total_investment': 0, 'current_value': 0},
+                    'performance_metrics': {},
+                    'allocation_analysis': {},
+                    'timeline': {}
+                }
             
-            # Step 3: Calculate comprehensive metrics using dedicated service
-            print("🔧 Step 3: Calculating comprehensive metrics...")
+            # Step 3: Calculate comprehensive metrics using live prices
+            print("🔧 Step 3: Calculating comprehensive metrics with live data...")
             try:
                 portfolio_metrics = self.metrics_calculator.calculate_comprehensive_metrics(
                     holdings, current_prices, portfolio_construction
                 )
             except Exception as e:
                 print(f"❌ Error calculating metrics: {e}")
-                # Create fallback metrics
-                portfolio_metrics = self._create_fallback_metrics(holdings, current_prices, portfolio_construction)
+                return {
+                    'status': 'error',
+                    'error': f'Metrics calculation failed: {str(e)}',
+                    'message': 'Could not calculate portfolio metrics',
+                    'holdings': {},
+                    'portfolio_summary': {'total_investment': 0, 'current_value': 0},
+                    'performance_metrics': {},
+                    'allocation_analysis': {},
+                    'timeline': {}
+                }
             
-            # Step 4: Format response for frontend
+            # Step 4: Format response for frontend with live data confirmation
             status_info = {
                 'status': 'active',
                 'holdings': portfolio_metrics['holdings_with_metrics'],
@@ -468,15 +596,21 @@ class InvestmentService:
                     'total_orders': len(all_orders),
                     'last_updated': datetime.now().isoformat()
                 },
-                'validation': validation  # Include validation results for debugging
+                'data_quality': {
+                    'live_prices_confirmed': True,
+                    'zerodha_connected': True,
+                    'price_data_timestamp': datetime.now().isoformat(),
+                    'all_holdings_priced': len(current_prices) == len(symbols)
+                },
+                'validation': validation
             }
             
-            print(f"✅ Comprehensive portfolio status calculated:")
+            print(f"✅ Comprehensive portfolio status calculated with LIVE data:")
             print(f"   Holdings: {len(portfolio_metrics['holdings_with_metrics'])}")
             print(f"   Total investment: ₹{portfolio_metrics['total_investment']:,.2f}")
             print(f"   Current value: ₹{portfolio_metrics['current_value']:,.2f}")
             print(f"   CAGR: {portfolio_metrics['cagr']:.2f}%")
-            print(f"   Investment period: {portfolio_metrics['investment_period_days']} days")
+            print(f"   All prices are live from Zerodha")
             
             return status_info
             
@@ -487,152 +621,12 @@ class InvestmentService:
             return {
                 'status': 'error',
                 'error': str(e),
+                'message': 'Failed to get portfolio status',
                 'holdings': {},
                 'portfolio_summary': {'total_investment': 0, 'current_value': 0},
                 'performance_metrics': {},
                 'allocation_analysis': {},
                 'timeline': {}
-            }
-    
-    def _create_fallback_metrics(self, holdings: Dict, current_prices: Dict, construction_data: Dict) -> Dict:
-        """Create fallback metrics when main calculation fails"""
-        print("   🔄 Creating fallback metrics...")
-        
-        try:
-            # Calculate basic metrics
-            total_investment = 0
-            current_value = 0
-            holdings_with_metrics = {}
-            
-            for symbol, holding in holdings.items():
-                shares = holding.get('total_shares', 0)
-                avg_price = holding.get('avg_price', 0)
-                investment_value = holding.get('total_investment', 0)
-                current_price = current_prices.get(symbol, avg_price)
-                
-                current_holding_value = shares * current_price
-                absolute_return = current_holding_value - investment_value
-                percentage_return = (absolute_return / investment_value) * 100 if investment_value > 0 else 0
-                
-                holdings_with_metrics[symbol] = {
-                    'shares': shares,
-                    'avg_price': avg_price,
-                    'current_price': current_price,
-                    'investment_value': investment_value,
-                    'current_value': current_holding_value,
-                    'absolute_return': absolute_return,
-                    'percentage_return': percentage_return,
-                    'allocation_percent': 0,  # Will calculate later
-                    'days_held': 30,  # Default
-                    'years_held': 30/365.25,
-                    'annualized_return': percentage_return,
-                    'first_purchase_date': construction_data.get('first_order_date', ''),
-                    'last_transaction_date': construction_data.get('last_order_date', ''),
-                    'transaction_count': 1
-                }
-                
-                total_investment += investment_value
-                current_value += current_holding_value
-            
-            # Calculate allocation percentages
-            for holding in holdings_with_metrics.values():
-                holding['allocation_percent'] = (
-                    (holding['current_value'] / current_value) * 100 
-                    if current_value > 0 else 0
-                )
-            
-            # Calculate basic metrics
-            total_returns = current_value - total_investment
-            returns_percentage = (total_returns / total_investment) * 100 if total_investment > 0 else 0
-            
-            # Simple CAGR calculation
-            try:
-                first_order_date = construction_data.get('first_order_date')
-                if first_order_date:
-                    if 'T' in first_order_date:
-                        first_date = datetime.fromisoformat(first_order_date.replace('Z', ''))
-                    else:
-                        first_date = datetime.strptime(first_order_date, '%Y-%m-%d')
-                    
-                    days_held = max(1, (datetime.now() - first_date).days)
-                    years_held = max(days_held / 365.25, 1/365.25)
-                    
-                    if total_investment > 0 and current_value > 0:
-                        cagr = ((current_value / total_investment) ** (1 / years_held) - 1) * 100
-                        cagr = max(-99.9, min(999.9, cagr))
-                    else:
-                        cagr = 0
-                else:
-                    days_held = 30
-                    years_held = 30/365.25
-                    cagr = returns_percentage
-            except:
-                days_held = 30
-                years_held = 30/365.25
-                cagr = returns_percentage
-            
-            # Find best/worst performers
-            if holdings_with_metrics:
-                best_symbol = max(holdings_with_metrics.keys(), 
-                                 key=lambda s: holdings_with_metrics[s]['percentage_return'])
-                worst_symbol = min(holdings_with_metrics.keys(), 
-                                  key=lambda s: holdings_with_metrics[s]['percentage_return'])
-                
-                best_performer = {
-                    'symbol': best_symbol,
-                    'percentage_return': holdings_with_metrics[best_symbol]['percentage_return']
-                }
-                worst_performer = {
-                    'symbol': worst_symbol,
-                    'percentage_return': holdings_with_metrics[worst_symbol]['percentage_return']
-                }
-            else:
-                best_performer = None
-                worst_performer = None
-            
-            return {
-                'holdings_with_metrics': holdings_with_metrics,
-                'total_investment': total_investment,
-                'current_value': current_value,
-                'total_returns': total_returns,
-                'returns_percentage': returns_percentage,
-                'cagr': cagr,
-                'investment_period_days': days_held,
-                'investment_period_years': years_held,
-                'best_performer': best_performer,
-                'worst_performer': worst_performer,
-                'avg_return': returns_percentage,
-                'volatility_score': 0.0,
-                'sharpe_ratio': 0.0,
-                'allocation_stats': {
-                    'target_allocation': 100 / len(holdings_with_metrics) if holdings_with_metrics else 0,
-                    'min_allocation': min([h['allocation_percent'] for h in holdings_with_metrics.values()]) if holdings_with_metrics else 0,
-                    'max_allocation': max([h['allocation_percent'] for h in holdings_with_metrics.values()]) if holdings_with_metrics else 0,
-                    'avg_allocation': sum([h['allocation_percent'] for h in holdings_with_metrics.values()]) / len(holdings_with_metrics) if holdings_with_metrics else 0
-                },
-                'allocation_deviation': 0.0,
-                'rebalancing_needed': False
-            }
-            
-        except Exception as e:
-            print(f"   ❌ Error creating fallback metrics: {e}")
-            return {
-                'holdings_with_metrics': {},
-                'total_investment': 0,
-                'current_value': 0,
-                'total_returns': 0,
-                'returns_percentage': 0,
-                'cagr': 0,
-                'investment_period_days': 1,
-                'investment_period_years': 1/365.25,
-                'best_performer': None,
-                'worst_performer': None,
-                'avg_return': 0,
-                'volatility_score': 0.0,
-                'sharpe_ratio': 0.0,
-                'allocation_stats': {'target_allocation': 0, 'min_allocation': 0, 'max_allocation': 0, 'avg_allocation': 0},
-                'allocation_deviation': 0.0,
-                'rebalancing_needed': False
             }
     
     # Helper methods (keep all existing helper methods)
@@ -667,7 +661,7 @@ class InvestmentService:
             return []
     
     def _update_portfolio_state(self, orders: List[Dict], csv_info: Dict):
-        """Update portfolio state after initial investment"""
+        """Update portfolio state after investment"""
         holdings = {}
         
         for order in orders:
@@ -682,7 +676,7 @@ class InvestmentService:
             'holdings': holdings,
             'last_updated': datetime.now().isoformat(),
             'csv_info': csv_info,
-            'type': 'INITIAL_INVESTMENT'
+            'type': 'INITIAL_INVESTMENT' if orders[0].get('session_type') == 'INITIAL_INVESTMENT' else 'REBALANCING'
         }
         
         with open(self.portfolio_state_file, 'w') as f:
@@ -700,14 +694,14 @@ class InvestmentService:
             return None
     
     def _calculate_current_portfolio_value(self, portfolio_state: Dict) -> float:
-        """Calculate current value of portfolio using live prices"""
+        """Calculate current value of portfolio using live prices ONLY"""
         if not portfolio_state or not portfolio_state.get('holdings'):
             return 0.0
         
         holdings = portfolio_state['holdings']
         symbols = list(holdings.keys())
         
-        # Get current prices
+        # Get live prices - will raise exception if not available
         try:
             current_prices = self.csv_service.get_live_prices(symbols)
             total_value = 0.0
@@ -716,11 +710,12 @@ class InvestmentService:
                 if symbol in current_prices:
                     current_value = holding['shares'] * current_prices[symbol]
                     total_value += current_value
+                else:
+                    raise Exception(f"Live price not available for {symbol}")
             
             return total_value
-        except:
-            # Fallback to investment value if can't get live prices
-            return sum(holding['total_investment'] for holding in holdings.values())
+        except Exception as e:
+            raise Exception(f"Cannot calculate portfolio value without live prices: {str(e)}")
     
     def _save_csv_snapshot(self, csv_info: Dict):
         """Save CSV snapshot for history tracking"""
