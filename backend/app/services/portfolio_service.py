@@ -7,7 +7,7 @@ class PortfolioService:
         self.kite = zerodha_auth.get_kite_instance() if zerodha_auth else None
     
     def get_portfolio_data(self):
-        """Get real portfolio data from Zerodha - NO FAKE DATA"""
+        """Get real portfolio data from Zerodha - EXACTLY like your notebook logic"""
         if not self.zerodha_auth:
             print("❌ No Zerodha authentication service available")
             return None
@@ -23,7 +23,7 @@ class PortfolioService:
         try:
             print("📊 Fetching live portfolio data from Zerodha...")
             
-            # Get holdings and margins
+            # Get holdings and margins - EXACTLY like your notebook
             holdings = self.kite.holdings()
             margins = self.kite.margins()
             
@@ -48,7 +48,7 @@ class PortfolioService:
             
             print(f"📈 Retrieved {len(holdings)} holdings from Zerodha")
             
-            # Process holdings data (including collateral/pledged shares)
+            # Process holdings data - INCLUDING pledged shares like your notebook
             portfolio_holdings = []
             total_investment = 0
             current_value = 0
@@ -56,7 +56,7 @@ class PortfolioService:
             for holding in holdings:
                 symbol = holding['tradingsymbol']
                 
-                # Handle ALL shares: regular + t1 + collateral (pledged)
+                # Handle ALL shares: regular + t1 + collateral (pledged) - EXACTLY like notebook
                 regular_qty = holding.get('quantity', 0)
                 t1_qty = holding.get('t1_quantity', 0)  
                 collateral_qty = holding.get('collateral_quantity', 0)
@@ -183,7 +183,7 @@ class PortfolioService:
                 "total_holdings": len(portfolio_holdings),
                 "zerodha_connected": True,
                 "data_source": "Zerodha Live API",
-                "last_updated": self.zerodha_auth.zerodha_auth.get_last_sync_time() if hasattr(self.zerodha_auth, 'get_last_sync_time') else None
+                "zerodha_profile": self.zerodha_auth.profile_name
             }
             
         except Exception as e:

@@ -29,7 +29,7 @@ zerodha_auth = None
 portfolio_service = None
 investment_service = None
 
-# Try to initialize step by step with error tracking
+# Initialize step by step with error tracking
 try:
     print("Step 1: Loading configuration...")
     from .config import settings
@@ -54,9 +54,16 @@ try:
     initialization_status["investment_service_created"] = True
     print("✅ Investment service created")
     
-    # Set up investment router dependency
-    from .routers import investment
-    investment.investment_service = investment_service
+    print("Step 5: Setting up investment router...")
+    try:
+        from .routers import investment
+        investment.investment_service = investment_service
+        print("✅ Investment router dependency set")
+    except Exception as router_error:
+        print(f"⚠️ Could not set investment router dependency: {router_error}")
+        # Continue anyway as this is not critical
+    
+    print("⏸️ Authentication will be attempted on first API call")
     
     print("⏸️ Authentication will be attempted on first API call")
     
@@ -271,134 +278,6 @@ async def get_portfolio_summary(user_id: int):
             "connected": False,
             "message": "An error occurred while fetching portfolio data",
             "data": None
-        }
-
-@app.get("/api/test-portfolio-direct")
-async def test_portfolio_direct():
-    """Test portfolio service by importing and calling it directly"""
-    if not zerodha_auth:
-        return {
-            "error": "ZerodhaAuth not available",
-            "details": "Authentication service not initialized"
-        }
-    
-    try:
-        # Import and create portfolio service fresh
-        from .services.portfolio_service import PortfolioService
-        
-        # Ensure authentication
-        if not zerodha_auth.is_authenticated():
-            print("🔄 Authenticating...")
-            zerodha_auth.authenticate()
-        
-        if not zerodha_auth.is_authenticated():
-            return {
-                "error": "Authentication failed",
-                "details": "Could not authenticate with Zerodha"
-            }
-        
-        # Create a fresh portfolio service instance
-        fresh_portfolio_service = PortfolioService(zerodha_auth)
-        
-        print("🧪 Testing fresh portfolio service instance...")
-        result = fresh_portfolio_service.get_portfolio_data()
-        
-        if result:
-            return {
-                "success": True,
-                "message": "Fresh portfolio service works!",
-                "holdings_count": len(result.get('holdings', [])),
-                "current_value": result.get('current_value', 0),
-                "zerodha_connected": result.get('zerodha_connected', False),
-                "data_source": result.get('data_source', 'unknown')
-            }
-        else:
-            return {
-                "success": False,
-                "message": "Fresh portfolio service returned None",
-                "details": "Service is working but no data was returned"
-            }
-        
-    except Exception as e:
-        error_msg = f"Fresh portfolio test error: {str(e)}\n{traceback.format_exc()}"
-        print(f"❌ {error_msg}")
-        return {
-            "error": str(e),
-            "traceback": error_msg
-        }
-
-@app.get("/api/debug/holdings")
-async def debug_holdings():
-    """Debug endpoint to check raw holdings data"""
-    if not zerodha_auth:
-        return {"error": "ZerodhaAuth not available"}
-    
-    try:
-        # Ensure authentication
-        if not zerodha_auth.is_authenticated():
-            print("🔄 Authenticating for debug...")
-            kite = zerodha_auth.authenticate()
-        
-        if not zerodha_auth.is_authenticated():
-            return {"error": "Authentication failed"}
-        
-        # Get raw holdings
-        kite = zerodha_auth.get_kite_instance()
-        if not kite:
-            return {"error": "Kite instance not available"}
-        
-        print("🔍 Fetching raw holdings for debug...")
-        holdings = kite.holdings()
-        margins = kite.margins()
-        
-        return {
-            "holdings_count": len(holdings) if holdings else 0,
-            "raw_holdings": holdings[:3] if holdings else [],  # First 3 for testing
-            "margins_available": bool(margins),
-            "cash_available": margins['equity']['available']['cash'] if margins else 0,
-            "authentication_working": True,
-            "message": "Raw data fetch successful"
-        }
-        
-    except Exception as e:
-        error_msg = f"Debug error: {str(e)}\n{traceback.format_exc()}"
-        print(f"❌ {error_msg}")
-        return {
-            "error": str(e),
-            "traceback": error_msg,
-            "authentication_working": False
-        }
-
-@app.get("/api/portfolio/performance/{user_id}")
-async def get_portfolio_performance(user_id: int):
-    """Get portfolio performance data - only if real data is available"""
-    
-    # Check if we have authenticated connection
-    if not zerodha_auth or not zerodha_auth.is_authenticated():
-        return {
-            "error": "No authenticated Zerodha connection",
-            "message": "Please ensure Zerodha is connected to view performance data",
-            "performance_data": [],
-            "period": "unavailable"
-        }
-    
-    try:
-        # In a real implementation, this would fetch historical data
-        # For now, we'll return an error since we don't have historical data API
-        return {
-            "error": "Historical performance data not available",
-            "message": "Historical performance tracking will be available once the system has been running and collecting data",
-            "performance_data": [],
-            "period": "not_implemented",
-            "note": "Performance tracking requires historical data collection which is not yet implemented"
-        }
-        
-    except Exception as e:
-        return {
-            "error": str(e),
-            "message": "Error fetching performance data",
-            "performance_data": [],
-            "period": "error"
         }
 
 @app.get("/api/connection-status")
