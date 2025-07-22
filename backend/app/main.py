@@ -65,8 +65,6 @@ try:
     
     print("⏸️ Authentication will be attempted on first API call")
     
-    print("⏸️ Authentication will be attempted on first API call")
-    
 except Exception as e:
     error_msg = f"Initialization error: {str(e)}\n{traceback.format_exc()}"
     print(f"❌ {error_msg}")

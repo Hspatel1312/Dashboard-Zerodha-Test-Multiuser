@@ -7,12 +7,12 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/investment_db"
     REDIS_URL: str = "redis://localhost:6379/0"
     
-    # Zerodha API Configuration - these will be read from environment or use defaults
-    ZERODHA_API_KEY: str = "femohcxeam7tjt1p"  # Your current API key
-    ZERODHA_API_SECRET: str = "xjudlehzrnblhs1wznjvb95uhgtny54f"  # Your current secret
-    ZERODHA_USER_ID: str = "MSC739"  # Your current user ID
-    ZERODHA_PASSWORD: str = "Pranjal@1006"  # Your current password
-    ZERODHA_TOTP_KEY: str = "PHHXNLG7ZPS3C4GCOF7HLGCM7DV6HRAB"  # Your current TOTP
+    # Zerodha API Configuration - Use your working credentials from notebook
+    ZERODHA_API_KEY: str = "femohcxeam7tjt1p"
+    ZERODHA_API_SECRET: str = "xjudlehzrnblhs1wznjvb95uhgtny54f"
+    ZERODHA_USER_ID: str = "MSC739"
+    ZERODHA_PASSWORD: str = "Pranjal@1006"
+    ZERODHA_TOTP_KEY: str = "PHHXNLG7ZPS3C4GCOF7HLGCM7DV6HRAB"
     ZERODHA_ACCESS_TOKEN_FILE: str = "zerodha_access_token.txt"
     
     # Security Configuration
@@ -35,6 +35,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
-        case_sensitive = False  # This allows lowercase env vars
+        case_sensitive = False
 
 settings = Settings()

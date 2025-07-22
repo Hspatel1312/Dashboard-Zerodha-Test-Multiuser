@@ -1,13 +1,12 @@
 # backend/app/services/portfolio_service.py
-from ..auth import ZerodhaAuth
 
 class PortfolioService:
-    def __init__(self, zerodha_auth: ZerodhaAuth):
+    def __init__(self, zerodha_auth):
         self.zerodha_auth = zerodha_auth
         self.kite = zerodha_auth.get_kite_instance() if zerodha_auth else None
     
     def get_portfolio_data(self):
-        """Get real portfolio data from Zerodha - EXACTLY like your notebook logic"""
+        """Get real portfolio data from Zerodha - Using the working method from your notebook"""
         if not self.zerodha_auth:
             print("❌ No Zerodha authentication service available")
             return None
@@ -25,6 +24,7 @@ class PortfolioService:
             
             # Get holdings and margins - EXACTLY like your notebook
             holdings = self.kite.holdings()
+            positions_data = self.kite.positions()
             margins = self.kite.margins()
             
             if not holdings:
