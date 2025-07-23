@@ -22,8 +22,19 @@ class CSVService:
             # Parse CSV using io.StringIO
             df = pd.read_csv(StringIO(response.text))
             
-            # Extract stock symbols
-            symbols = df['Symbol'].tolist()
+            # Extract stock symbols - handle different possible column names
+            if 'Symbol' in df.columns:
+                symbols = df['Symbol'].tolist()
+            elif 'symbol' in df.columns:
+                symbols = df['symbol'].tolist()
+            elif 'SYMBOL' in df.columns:
+                symbols = df['SYMBOL'].tolist()
+            else:
+                # If no symbol column found, use first column
+                symbols = df.iloc[:, 0].tolist()
+            
+            # Clean symbols (remove any whitespace/special characters)
+            symbols = [str(symbol).strip() for symbol in symbols if str(symbol).strip()]
             
             # Create CSV snapshot
             csv_data = {
@@ -43,7 +54,7 @@ class CSVService:
             raise Exception(f"Failed to fetch CSV data: {str(e)}")
     
     def get_live_prices(self, symbols: List[str]) -> Dict[str, float]:
-        """Get live prices for all symbols from Zerodha - NO FAKE DATA ALLOWED"""
+        """Get live prices using CORRECT Zerodha API format"""
         if not symbols:
             raise Exception("No symbols provided for price fetching")
             
@@ -52,7 +63,8 @@ class CSVService:
         
         # Check authentication status first
         if not self.zerodha_auth:
-            raise Exception("Zerodha authentication service not available. Please set up Zerodha connection.")
+            print("❌ No Zerodha auth service available")
+            raise Exception("Zerodha authentication service not available")
         
         if not self.zerodha_auth.is_authenticated():
             print("🔄 Attempting to authenticate with Zerodha...")
@@ -61,62 +73,100 @@ class CSVService:
                 self.kite = self.zerodha_auth.get_kite_instance()
             except Exception as e:
                 print(f"❌ Zerodha authentication failed: {e}")
-                raise Exception(f"Unable to connect to Zerodha. Please check your API credentials and try again. Error: {str(e)}")
+                raise Exception(f"Unable to authenticate with Zerodha: {str(e)}")
         
         if not self.kite:
-            raise Exception("Zerodha API connection not available. Please check your Zerodha setup.")
+            raise Exception("Zerodha API connection not available after authentication")
         
         print("✅ Zerodha authenticated, fetching live prices...")
         
         prices = {}
         failed_symbols = []
         
-        # Get quotes for all symbols
-        for symbol in symbols:
-            try:
-                print(f"   🔍 Fetching price for {symbol}...")
-                
-                # Try NSE first
-                quote_symbol = f"NSE:{symbol}"
-                print(f"      Trying {quote_symbol}...")
-                quote_data = self.kite.quote(quote_symbol)
-                
-                if quote_data and quote_symbol in quote_data:
-                    price = quote_data[quote_symbol]['last_price']
-                    if price and price > 0:
-                        prices[symbol] = float(price)
-                        print(f"   ✅ {symbol}: ₹{prices[symbol]:.2f} (NSE)")
-                        continue
-                    else:
-                        print(f"      Invalid price from NSE for {symbol}: {price}")
-                else:
-                    print(f"      NSE failed for {symbol} - no data returned")
-                
-                # Try BSE if NSE fails
-                quote_symbol = f"BSE:{symbol}"
-                print(f"      Trying {quote_symbol}...")
-                quote_data = self.kite.quote(quote_symbol)
-                
-                if quote_data and quote_symbol in quote_data:
-                    price = quote_data[quote_symbol]['last_price']
-                    if price and price > 0:
-                        prices[symbol] = float(price)
-                        print(f"   ✅ {symbol}: ₹{prices[symbol]:.2f} (BSE)")
-                        continue
-                    else:
-                        print(f"      Invalid price from BSE for {symbol}: {price}")
-                else:
-                    print(f"      BSE failed for {symbol} - no data returned")
-                
-                # If both fail, add to failed list
-                failed_symbols.append(symbol)
-                print(f"   ❌ {symbol}: Could not fetch price from any exchange")
-                        
-            except Exception as e:
-                failed_symbols.append(symbol)
-                print(f"   ❌ {symbol}: Error fetching price - {str(e)}")
+        # Prepare symbols for batch quote request
+        # Try both NSE and BSE for each symbol
+        quote_symbols = []
+        symbol_mapping = {}  # Maps "NSE:SYMBOL" -> "SYMBOL"
         
-        # Check if we got enough valid prices
+        for symbol in symbols:
+            nse_symbol = f"NSE:{symbol}"
+            bse_symbol = f"BSE:{symbol}"
+            
+            quote_symbols.extend([nse_symbol, bse_symbol])
+            symbol_mapping[nse_symbol] = symbol
+            symbol_mapping[bse_symbol] = symbol
+        
+        print(f"   📝 Prepared {len(quote_symbols)} quote requests for {len(symbols)} symbols")
+        
+        # Batch quote request using CORRECT API format
+        try:
+            print("   🔍 Making batch quote request...")
+            # Using the correct format: kite.quote(['NSE:SYMBOL', 'BSE:SYMBOL', ...])
+            quote_response = self.kite.quote(quote_symbols)
+            
+            print(f"   📊 Quote response received for {len(quote_response)} symbols")
+            
+            # Process the response
+            for quote_key, quote_data in quote_response.items():
+                if quote_key in symbol_mapping:
+                    original_symbol = symbol_mapping[quote_key]
+                    
+                    # Extract last_price from the response
+                    last_price = quote_data.get('last_price', 0)
+                    
+                    if last_price and last_price > 0:
+                        # If we already have a price for this symbol, skip (prefer NSE over BSE)
+                        if original_symbol not in prices:
+                            prices[original_symbol] = float(last_price)
+                            exchange = quote_key.split(':')[0]
+                            print(f"   ✅ {original_symbol}: ₹{last_price:.2f} ({exchange})")
+                    else:
+                        print(f"   ⚠️ {quote_key}: Invalid price {last_price}")
+            
+            # Check which symbols failed
+            for symbol in symbols:
+                if symbol not in prices:
+                    failed_symbols.append(symbol)
+                    print(f"   ❌ {symbol}: No valid price found")
+            
+        except Exception as e:
+            print(f"   ❌ Batch quote request failed: {e}")
+            print(f"   🔍 Trying individual quote requests...")
+            
+            # Fallback: Try individual requests
+            for symbol in symbols:
+                try:
+                    # Try NSE first
+                    nse_symbol = f"NSE:{symbol}"
+                    quote_response = self.kite.quote([nse_symbol])
+                    
+                    if nse_symbol in quote_response:
+                        last_price = quote_response[nse_symbol].get('last_price', 0)
+                        if last_price and last_price > 0:
+                            prices[symbol] = float(last_price)
+                            print(f"   ✅ {symbol}: ₹{last_price:.2f} (NSE)")
+                            continue
+                    
+                    # Try BSE if NSE failed
+                    bse_symbol = f"BSE:{symbol}"
+                    quote_response = self.kite.quote([bse_symbol])
+                    
+                    if bse_symbol in quote_response:
+                        last_price = quote_response[bse_symbol].get('last_price', 0)
+                        if last_price and last_price > 0:
+                            prices[symbol] = float(last_price)
+                            print(f"   ✅ {symbol}: ₹{last_price:.2f} (BSE)")
+                            continue
+                    
+                    # If both failed
+                    failed_symbols.append(symbol)
+                    print(f"   ❌ {symbol}: No price from NSE or BSE")
+                    
+                except Exception as symbol_error:
+                    failed_symbols.append(symbol)
+                    print(f"   ❌ {symbol}: Error - {symbol_error}")
+        
+        # Calculate success rate
         success_rate = len(prices) / len(symbols) * 100 if symbols else 0
         
         print(f"📊 Price fetching results:")
@@ -124,23 +174,26 @@ class CSVService:
         print(f"   Failed: {len(failed_symbols)}")
         
         if len(prices) == 0:
-            raise Exception("Unable to fetch live prices for any stocks. Please check:\n1. Zerodha connection\n2. Market hours (9:15 AM - 3:30 PM IST)\n3. Internet connectivity\n4. API credentials")
+            raise Exception("Unable to fetch live prices for any stocks. Please check:\n1. Zerodha connection\n2. Market hours (9:15 AM - 3:30 PM IST)\n3. Internet connectivity\n4. Symbol names in CSV")
         
         if success_rate < 50:
-            raise Exception(f"Low success rate ({success_rate:.1f}%) for price fetching. Only got prices for {len(prices)}/{len(symbols)} stocks. This may indicate:\n1. Market is closed\n2. Network connectivity issues\n3. Some stocks may be delisted\n4. API rate limits")
+            print(f"⚠️ Low success rate ({success_rate:.1f}%). This may indicate:")
+            print("   - Market is closed")
+            print("   - Some symbols may be incorrect or delisted")
+            print("   - Network connectivity issues")
         
         if failed_symbols:
-            print(f"⚠️ Warning: Could not fetch prices for {len(failed_symbols)} symbols: {', '.join(failed_symbols[:5])}{'...' if len(failed_symbols) > 5 else ''}")
+            print(f"⚠️ Failed symbols: {', '.join(failed_symbols[:10])}{'...' if len(failed_symbols) > 10 else ''}")
         
         return prices
     
     def get_stocks_with_prices(self) -> Dict:
-        """Get complete stock data with live prices - STRICT NO FAKE DATA"""
+        """Get complete stock data with live prices"""
         try:
             # Fetch CSV data
             csv_data = self.fetch_csv_data()
             
-            # Get live prices (will raise exception if fails)
+            # Get live prices using corrected API
             prices = self.get_live_prices(csv_data['symbols'])
             
             # Combine data - only include stocks with valid prices
@@ -148,22 +201,35 @@ class CSVService:
             excluded_count = 0
             
             for stock_info in csv_data['data']:
-                symbol = stock_info['Symbol']
+                # Handle different column name possibilities
+                if 'Symbol' in stock_info:
+                    symbol = stock_info['Symbol']
+                elif 'symbol' in stock_info:
+                    symbol = stock_info['symbol']
+                elif 'SYMBOL' in stock_info:
+                    symbol = stock_info['SYMBOL']
+                else:
+                    # Skip if no symbol found
+                    excluded_count += 1
+                    continue
+                
+                symbol = str(symbol).strip()
+                
                 if symbol in prices:
                     stocks_data.append({
                         'symbol': symbol,
                         'price': prices[symbol],
-                        'momentum': stock_info.get('Momentum', 0),
-                        'volatility': stock_info.get('Volatility', 0),
-                        'fitp': stock_info.get('FITP', 0),
-                        'score': stock_info.get('Score', 0)
+                        'momentum': stock_info.get('Momentum', stock_info.get('momentum', 0)),
+                        'volatility': stock_info.get('Volatility', stock_info.get('volatility', 0)),
+                        'fitp': stock_info.get('FITP', stock_info.get('fitp', 0)),
+                        'score': stock_info.get('Score', stock_info.get('score', 0))
                     })
                 else:
                     print(f"   ⚠️ {symbol}: Excluded - no valid price data")
                     excluded_count += 1
             
             if len(stocks_data) == 0:
-                raise Exception("No stocks have valid live price data. This could mean:\n1. Market is closed\n2. All stocks failed to fetch prices\n3. Network connectivity issues\nPlease try again during market hours or check your connection.")
+                raise Exception("No stocks have valid live price data. This could mean:\n1. Market is closed\n2. All symbols failed to fetch prices\n3. Network connectivity issues\nPlease try again during market hours or check symbol names.")
             
             result = {
                 'stocks': stocks_data,
@@ -194,7 +260,6 @@ class CSVService:
             
         except Exception as e:
             print(f"❌ Error preparing stock data: {e}")
-            # Re-raise the original exception with context - NO FALLBACK TO FAKE DATA
             raise Exception(f"Cannot prepare investment data: {str(e)}")
     
     def compare_csv_with_portfolio(self, current_symbols: List[str]) -> Dict:
@@ -238,7 +303,7 @@ class CSVService:
             raise Exception(f"Failed to compare CSV with portfolio: {str(e)}")
     
     def get_connection_status(self) -> Dict:
-        """Get current connection and data status - HONEST STATUS ONLY"""
+        """Get current connection and data status"""
         status = {
             'zerodha_available': bool(self.zerodha_auth),
             'zerodha_authenticated': False,

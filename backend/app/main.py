@@ -54,33 +54,48 @@ try:
     initialization_status["investment_service_created"] = True
     print("✅ Investment service created")
     
-    print("Step 5: Setting up investment router...")
-    try:
-        from .routers import investment
-        investment.investment_service = investment_service
-        print("✅ Investment router dependency set")
-    except Exception as router_error:
-        print(f"⚠️ Could not set investment router dependency: {router_error}")
-        # Continue anyway as this is not critical
-    
-    print("⏸️ Authentication will be attempted on first API call")
-    
 except Exception as e:
     error_msg = f"Initialization error: {str(e)}\n{traceback.format_exc()}"
     print(f"❌ {error_msg}")
     initialization_status["error_message"] = error_msg
 
-# Include investment router
+# Include routers AFTER services are created
 try:
+    print("Step 5: Setting up routers...")
+    
+    # Import and setup investment router
     from .routers.investment import router as investment_router
-    app.include_router(investment_router)
-    print("✅ Investment routes added")
+    
+    # Set the investment service dependency BEFORE including router
+    from .routers import investment
+    investment.investment_service = investment_service
+    
+    # Include the router with proper prefix
+    app.include_router(investment_router, prefix="/api")
+    print("✅ Investment router included at /api/investment/*")
+    
 except Exception as e:
-    print(f"⚠️ Could not add investment routes: {e}")
+    print(f"⚠️ Could not set up routers: {e}")
+    print(f"   Traceback: {traceback.format_exc()}")
 
 @app.get("/")
 async def root():
-    return {"message": "Investment Rebalancing WebApp API", "status": initialization_status}
+    return {
+        "message": "Investment Rebalancing WebApp API", 
+        "status": initialization_status,
+        "available_endpoints": [
+            "/health - Health check",
+            "/api/investment/requirements - Get investment requirements",
+            "/api/investment/calculate-plan - Calculate investment plan",
+            "/api/investment/execute-initial - Execute initial investment",
+            "/api/investment/rebalancing-check - Check rebalancing status",
+            "/api/investment/calculate-rebalancing - Calculate rebalancing plan",
+            "/api/investment/execute-rebalancing - Execute rebalancing",
+            "/api/investment/portfolio-status - Get portfolio status",
+            "/api/investment/csv-stocks - Get CSV stocks with prices",
+            "/api/investment/system-orders - Get system orders history"
+        ]
+    }
 
 @app.get("/health")
 async def health_check():
@@ -201,9 +216,10 @@ async def test_auth():
             "status": "error"
         }
 
+# Legacy portfolio endpoint for compatibility
 @app.get("/api/portfolio/summary/{user_id}")
 async def get_portfolio_summary(user_id: int):
-    """Get portfolio summary with strict no-fake-data policy"""
+    """Get portfolio summary - redirects to investment service"""
     
     print(f"🔍 PORTFOLIO SUMMARY CALLED for user {user_id}")
     
