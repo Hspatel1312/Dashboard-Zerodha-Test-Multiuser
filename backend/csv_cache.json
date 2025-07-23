@@ -1,0 +1,170 @@
+{
+  "symbols": [
+    "AIIL",
+    "LAURUSLABS",
+    "MCX",
+    "KIMS",
+    "ASTERDM",
+    "NH",
+    "WOCKPHARMA",
+    "RADICO",
+    "GODFRYPHLP",
+    "RAMCOCEM",
+    "ERIS",
+    "AMBER",
+    "JMFINANCIL",
+    "SARDAEN",
+    "PGEL",
+    "CEATLTD",
+    "DEEPAKFERT",
+    "EIDPARRY",
+    "LTFOODS",
+    "ECLERX"
+  ],
+  "data": [
+    {
+      "Symbol": "AIIL",
+      "Momentum": 1.470171126028174,
+      "Volatility": 0.0345201046232321,
+      "FITP": 0.5466101694915254,
+      "Score": 42.58883749265189
+    },
+    {
+      "Symbol": "LAURUSLABS",
+      "Momentum": 0.8236856668511345,
+      "Volatility": 0.02335313808172,
+      "FITP": 0.5847457627118644,
+      "Score": 35.27087725721474
+    },
+    {
+      "Symbol": "MCX",
+      "Momentum": 0.8739655979272009,
+      "Volatility": 0.0252335431104753,
+      "FITP": 0.5423728813559322,
+      "Score": 34.635072613500206
+    },
+    {
+      "Symbol": "KIMS",
+      "Momentum": 0.6581847044541973,
+      "Volatility": 0.0193680590391918,
+      "FITP": 0.5550847457627118,
+      "Score": 33.982997631427054
+    },
+    {
+      "Symbol": "ASTERDM",
+      "Momentum": 0.6291417707767519,
+      "Volatility": 0.0206199307209612,
+      "FITP": 0.5254237288135594,
+      "Score": 30.511342607819604
+    },
+    {
+      "Symbol": "NH",
+      "Momentum": 0.6122929554979045,
+      "Volatility": 0.0206343305137446,
+      "FITP": 0.5127118644067796,
+      "Score": 29.67350722089353
+    },
+    {
+      "Symbol": "WOCKPHARMA",
+      "Momentum": 1.040318957771788,
+      "Volatility": 0.0353797485918849,
+      "FITP": 0.5042372881355932,
+      "Score": 29.404362641808195
+    },
+    {
+      "Symbol": "RADICO",
+      "Momentum": 0.6068525989592468,
+      "Volatility": 0.0225567389731414,
+      "FITP": 0.5296610169491526,
+      "Score": 26.90338349359072
+    },
+    {
+      "Symbol": "GODFRYPHLP",
+      "Momentum": 1.132004805314112,
+      "Volatility": 0.0427408173519637,
+      "FITP": 0.4576271186440678,
+      "Score": 26.48533358621186
+    },
+    {
+      "Symbol": "RAMCOCEM",
+      "Momentum": 0.3741364683068718,
+      "Volatility": 0.0153689759525521,
+      "FITP": 0.5508474576271186,
+      "Score": 24.343617262589493
+    },
+    {
+      "Symbol": "ERIS",
+      "Momentum": 0.5602805199446108,
+      "Volatility": 0.0231943083990153,
+      "FITP": 0.5211864406779662,
+      "Score": 24.155948532977007
+    },
+    {
+      "Symbol": "AMBER",
+      "Momentum": 0.7894230430752264,
+      "Volatility": 0.0348956457277896,
+      "FITP": 0.5254237288135594,
+      "Score": 22.622393900754183
+    },
+    {
+      "Symbol": "JMFINANCIL",
+      "Momentum": 0.659886243131206,
+      "Volatility": 0.0307817937811635,
+      "FITP": 0.538135593220339,
+      "Score": 21.437549995381147
+    },
+    {
+      "Symbol": "SARDAEN",
+      "Momentum": 0.6269372693726937,
+      "Volatility": 0.0292608708202841,
+      "FITP": 0.5296610169491526,
+      "Score": 21.42578986193708
+    },
+    {
+      "Symbol": "PGEL",
+      "Momentum": 0.8027375201288245,
+      "Volatility": 0.0376090396730867,
+      "FITP": 0.4830508474576271,
+      "Score": 21.34427060904902
+    },
+    {
+      "Symbol": "CEATLTD",
+      "Momentum": 0.4880737088576268,
+      "Volatility": 0.023101332634951,
+      "FITP": 0.4703389830508475,
+      "Score": 21.12751314264869
+    },
+    {
+      "Symbol": "DEEPAKFERT",
+      "Momentum": 0.6802011448135667,
+      "Volatility": 0.0325410526688348,
+      "FITP": 0.4830508474576271,
+      "Score": 20.902862354695976
+    },
+    {
+      "Symbol": "EIDPARRY",
+      "Momentum": 0.4528562460765851,
+      "Volatility": 0.0225149267034292,
+      "FITP": 0.5,
+      "Score": 20.11360072549609
+    },
+    {
+      "Symbol": "LTFOODS",
+      "Momentum": 0.5694738556768204,
+      "Volatility": 0.0296113761033571,
+      "FITP": 0.5211864406779662,
+      "Score": 19.23159037557386
+    },
+    {
+      "Symbol": "ECLERX",
+      "Momentum": 0.4702331007101487,
+      "Volatility": 0.0251058931721568,
+      "FITP": 0.5466101694915254,
+      "Score": 18.729988910796852
+    }
+  ],
+  "fetch_time": "2025-07-23T11:01:59.776371",
+  "csv_hash": "4e58c23c",
+  "symbol_column_used": "Symbol",
+  "source_url": "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv"
+}

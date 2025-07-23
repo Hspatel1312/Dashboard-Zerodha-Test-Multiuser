@@ -85,6 +85,8 @@ async def root():
         "status": initialization_status,
         "available_endpoints": [
             "/health - Health check",
+            "/api/test-live-prices - Test live price fetching",
+            "/api/test-auth - Test Zerodha authentication",
             "/api/investment/requirements - Get investment requirements",
             "/api/investment/calculate-plan - Calculate investment plan",
             "/api/investment/execute-initial - Execute initial investment",
@@ -214,6 +216,139 @@ async def test_auth():
             "details": "An exception occurred during the authentication process. Check your API credentials and network connection.",
             "traceback": traceback.format_exc() if app.debug else None,
             "status": "error"
+        }
+
+@app.get("/api/test-live-prices")
+async def test_live_prices():
+    """Test live price fetching with detailed debugging"""
+    if not zerodha_auth:
+        return {
+            "success": False,
+            "error": "ZerodhaAuth service not initialized"
+        }
+    
+    try:
+        print("🧪 Testing live price fetching...")
+        
+        # Check authentication first
+        if not zerodha_auth.is_authenticated():
+            print("🔄 Not authenticated, attempting authentication...")
+            try:
+                zerodha_auth.authenticate()
+                if not zerodha_auth.is_authenticated():
+                    return {
+                        "success": False,
+                        "error": "Zerodha authentication failed",
+                        "details": "Cannot test live prices without authentication"
+                    }
+            except Exception as auth_error:
+                return {
+                    "success": False,
+                    "error": f"Authentication failed: {str(auth_error)}"
+                }
+        
+        kite = zerodha_auth.get_kite_instance()
+        if not kite:
+            return {
+                "success": False,
+                "error": "No kite instance available"
+            }
+        
+        # Test with a few known symbols
+        test_symbols = ["NSE:RELIANCE", "NSE:TCS", "NSE:INFY", "NSE:HDFCBANK", "NSE:ICICIBANK"]
+        
+        try:
+            print(f"🔍 Testing quotes for: {test_symbols}")
+            quote_response = kite.quote(test_symbols)
+            
+            formatted_prices = {}
+            raw_sample = {}
+            
+            for symbol, data in quote_response.items():
+                if isinstance(data, dict):
+                    last_price = data.get('last_price', 0)
+                    formatted_prices[symbol] = last_price
+                    # Include some raw data for debugging
+                    raw_sample[symbol] = {
+                        'last_price': data.get('last_price'),
+                        'timestamp': data.get('timestamp'),
+                        'last_trade_time': data.get('last_trade_time'),
+                        'ohlc': data.get('ohlc', {})
+                    }
+            
+            return {
+                "success": True,
+                "message": "Live price test successful",
+                "test_symbols": test_symbols,
+                "prices_fetched": len(formatted_prices),
+                "formatted_prices": formatted_prices,
+                "raw_sample": raw_sample,
+                "profile_name": getattr(zerodha_auth, 'profile_name', 'Unknown'),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as quote_error:
+            return {
+                "success": False,
+                "error": f"Quote request failed: {str(quote_error)}",
+                "test_symbols": test_symbols,
+                "details": "The kite.quote() API call failed"
+            }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Live price test error: {str(e)}",
+            "traceback": traceback.format_exc()
+        }
+
+@app.get("/api/debug-csv-service")
+async def debug_csv_service():
+    """Debug CSV service and price fetching"""
+    if not investment_service:
+        return {
+            "success": False,
+            "error": "Investment service not available"
+        }
+    
+    try:
+        print("🔍 Debugging CSV service...")
+        
+        # Test CSV fetching
+        csv_service = investment_service.csv_service
+        csv_data = csv_service.fetch_csv_data()
+        
+        # Test a small batch of price fetching
+        test_symbols = csv_data['symbols'][:5]  # Test first 5 symbols
+        print(f"🧪 Testing price fetch for: {test_symbols}")
+        
+        prices = csv_service.get_live_prices(test_symbols)
+        
+        # Get connection status
+        connection_status = csv_service.get_connection_status()
+        
+        return {
+            "success": True,
+            "csv_data": {
+                "total_symbols": len(csv_data['symbols']),
+                "sample_symbols": csv_data['symbols'][:10],
+                "fetch_time": csv_data['fetch_time'],
+                "csv_hash": csv_data['csv_hash']
+            },
+            "price_test": {
+                "test_symbols": test_symbols,
+                "prices": prices,
+                "price_count": len(prices)
+            },
+            "connection_status": connection_status,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
         }
 
 # Legacy portfolio endpoint for compatibility

@@ -3,21 +3,31 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import requests
 import json
 from typing import Dict, List, Optional
+import time
 
 # Page configuration
 st.set_page_config(
     page_title="Investment System Dashboard",
     page_icon="📈",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Custom CSS for professional styling
 st.markdown("""
 <style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    
     .success-alert {
         background-color: #d4edda;
         border: 1px solid #c3e6cb;
@@ -59,55 +69,112 @@ st.markdown("""
 # API Configuration
 API_BASE_URL = "http://127.0.0.1:8000"
 
+# Initialize session state
+if 'last_refresh' not in st.session_state:
+    st.session_state.last_refresh = datetime.now()
+if 'backend_status' not in st.session_state:
+    st.session_state.backend_status = None
+
 class InvestmentAPIClient:
     def __init__(self, base_url: str):
         self.base_url = base_url
-    
-    def get_investment_requirements(self) -> Dict:
-        """Get investment requirements from your investment service"""
+        self.timeout = 30
+
+    def check_backend_health(self) -> Dict:
+        """Check backend health and initialization status"""
         try:
-            response = requests.get(f"{self.base_url}/api/investment/requirements", timeout=30)
+            response = requests.get(f"{self.base_url}/health", timeout=10)
+            if response.status_code == 200:
+                return {
+                    'connected': True,
+                    'data': response.json(),
+                    'error': None
+                }
+            else:
+                return {
+                    'connected': False,
+                    'data': None,
+                    'error': f"HTTP {response.status_code}"
+                }
+        except Exception as e:
+            return {
+                'connected': False,
+                'data': None,
+                'error': str(e)
+            }
+
+    def test_zerodha_auth(self) -> Dict:
+        """Test Zerodha authentication"""
+        try:
+            response = requests.get(f"{self.base_url}/api/test-auth", timeout=30)
             if response.status_code == 200:
                 return response.json()
             else:
-                error_text = ""
+                return {
+                    'success': False,
+                    'error': f"HTTP {response.status_code}",
+                    'message': 'Authentication test failed'
+                }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'message': 'Failed to connect to authentication service'
+            }
+
+    def get_investment_requirements(self) -> Dict:
+        """Get investment requirements"""
+        try:
+            response = requests.get(f"{self.base_url}/api/investment/requirements", timeout=self.timeout)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                error_text = response.text
                 try:
                     error_data = response.json()
                     error_text = error_data.get('detail', response.text)
                 except:
-                    error_text = response.text
-                st.error(f"API Error {response.status_code}: {error_text}")
-                return None
+                    pass
+                return {
+                    'success': False,
+                    'error': f"API Error {response.status_code}: {error_text}"
+                }
         except Exception as e:
-            st.error(f"Connection error: {str(e)}")
-            return None
-    
+            return {
+                'success': False,
+                'error': f"Connection error: {str(e)}"
+            }
+
     def calculate_investment_plan(self, investment_amount: float) -> Dict:
-        """Calculate investment plan using your investment calculator"""
+        """Calculate investment plan"""
         try:
             data = {"investment_amount": investment_amount}
             response = requests.post(
                 f"{self.base_url}/api/investment/calculate-plan",
                 json=data,
-                timeout=30
+                timeout=self.timeout
             )
             if response.status_code == 200:
                 return response.json()
             else:
-                error_text = ""
+                error_text = response.text
                 try:
                     error_data = response.json()
                     error_text = error_data.get('detail', response.text)
                 except:
-                    error_text = response.text
-                st.error(f"API Error {response.status_code}: {error_text}")
-                return None
+                    pass
+                return {
+                    'success': False,
+                    'error': f"API Error {response.status_code}: {error_text}"
+                }
         except Exception as e:
-            st.error(f"Error calculating plan: {str(e)}")
-            return None
-    
+            return {
+                'success': False,
+                'error': f"Error calculating plan: {str(e)}"
+            }
+
     def execute_initial_investment(self, investment_amount: float) -> Dict:
-        """Execute initial investment using your investment service"""
+        """Execute initial investment"""
         try:
             data = {"investment_amount": investment_amount}
             response = requests.post(
@@ -118,134 +185,160 @@ class InvestmentAPIClient:
             if response.status_code == 200:
                 return response.json()
             else:
-                error_text = ""
+                error_text = response.text
                 try:
                     error_data = response.json()
                     error_text = error_data.get('detail', response.text)
                 except:
-                    error_text = response.text
-                st.error(f"API Error {response.status_code}: {error_text}")
-                return None
+                    pass
+                return {
+                    'success': False,
+                    'error': f"API Error {response.status_code}: {error_text}"
+                }
         except Exception as e:
-            st.error(f"Error executing investment: {str(e)}")
-            return None
-    
+            return {
+                'success': False,
+                'error': f"Error executing investment: {str(e)}"
+            }
+
     def check_rebalancing_needed(self) -> Dict:
-        """Check if rebalancing is needed using your rebalancing logic"""
+        """Check if rebalancing is needed"""
         try:
-            response = requests.get(f"{self.base_url}/api/investment/rebalancing-check", timeout=30)
+            response = requests.get(f"{self.base_url}/api/investment/rebalancing-check", timeout=self.timeout)
             if response.status_code == 200:
                 return response.json()
             else:
-                st.error(f"API Error: {response.status_code}")
-                return None
+                return {
+                    'success': False,
+                    'error': f"API Error: {response.status_code}"
+                }
         except Exception as e:
-            st.error(f"Error checking rebalancing: {str(e)}")
-            return None
-    
-    def calculate_rebalancing_plan(self, additional_investment: float = 0) -> Dict:
-        """Calculate rebalancing plan"""
-        try:
-            data = {"additional_investment": additional_investment}
-            response = requests.post(
-                f"{self.base_url}/api/investment/calculate-rebalancing",
-                json=data,
-                timeout=30
-            )
-            if response.status_code == 200:
-                return response.json()
-            else:
-                st.error(f"API Error: {response.status_code}")
-                return None
-        except Exception as e:
-            st.error(f"Error calculating rebalancing: {str(e)}")
-            return None
-    
-    def execute_rebalancing(self, additional_investment: float = 0) -> Dict:
-        """Execute rebalancing plan"""
-        try:
-            data = {"additional_investment": additional_investment}
-            response = requests.post(
-                f"{self.base_url}/api/investment/execute-rebalancing",
-                json=data,
-                timeout=60
-            )
-            if response.status_code == 200:
-                return response.json()
-            else:
-                st.error(f"API Error: {response.status_code}")
-                return None
-        except Exception as e:
-            st.error(f"Error executing rebalancing: {str(e)}")
-            return None
-    
+            return {
+                'success': False,
+                'error': f"Error checking rebalancing: {str(e)}"
+            }
+
     def get_portfolio_status(self) -> Dict:
-        """Get system portfolio status (from your portfolio construction service)"""
+        """Get system portfolio status"""
         try:
-            response = requests.get(f"{self.base_url}/api/investment/portfolio-status", timeout=30)
+            response = requests.get(f"{self.base_url}/api/investment/portfolio-status", timeout=self.timeout)
             if response.status_code == 200:
                 return response.json()
             else:
-                st.error(f"API Error: {response.status_code}")
-                return None
+                return {
+                    'success': False,
+                    'error': f"API Error: {response.status_code}"
+                }
         except Exception as e:
-            st.error(f"Error getting portfolio status: {str(e)}")
-            return None
-    
+            return {
+                'success': False,
+                'error': f"Error getting portfolio status: {str(e)}"
+            }
+
     def get_csv_stocks(self) -> Dict:
         """Get current CSV stocks with live prices"""
         try:
-            response = requests.get(f"{self.base_url}/api/investment/csv-stocks", timeout=30)
+            response = requests.get(f"{self.base_url}/api/investment/csv-stocks", timeout=self.timeout)
             if response.status_code == 200:
                 return response.json()
             else:
-                st.error(f"API Error: {response.status_code}")
-                return None
+                return {
+                    'success': False,
+                    'error': f"API Error: {response.status_code}"
+                }
         except Exception as e:
-            st.error(f"Error getting CSV stocks: {str(e)}")
-            return None
-    
+            return {
+                'success': False,
+                'error': f"Error getting CSV stocks: {str(e)}"
+            }
+
     def get_system_orders(self) -> Dict:
         """Get all system orders history"""
         try:
-            response = requests.get(f"{self.base_url}/api/investment/system-orders", timeout=30)
+            response = requests.get(f"{self.base_url}/api/investment/system-orders", timeout=self.timeout)
             if response.status_code == 200:
                 return response.json()
             else:
-                st.error(f"API Error: {response.status_code}")
-                return None
+                return {
+                    'success': False,
+                    'error': f"API Error: {response.status_code}"
+                }
         except Exception as e:
-            st.error(f"Error getting system orders: {str(e)}")
-            return None
+            return {
+                'success': False,
+                'error': f"Error getting system orders: {str(e)}"
+            }
 
 # Initialize API client
 api_client = InvestmentAPIClient(API_BASE_URL)
 
+def check_backend_connection():
+    """Check and display backend connection status"""
+    health_check = api_client.check_backend_health()
+    st.session_state.backend_status = health_check
+    
+    if not health_check['connected']:
+        st.error(f"❌ Cannot connect to backend: {health_check['error']}")
+        with st.expander("Troubleshooting"):
+            st.write("**Backend Connection Issues:**")
+            st.write("1. Ensure the backend is running:")
+            st.code("cd backend && python -m uvicorn app.main:app --reload")
+            st.write("2. Check if the API is accessible:")
+            st.code(f"curl {API_BASE_URL}/health")
+            st.write("3. Verify no firewall/port issues")
+        return False
+    
+    health_data = health_check['data']
+    
+    # Check initialization status
+    init_status = health_data.get('initialization', {})
+    
+    if not init_status.get('investment_service_created', False):
+        st.error("❌ Investment service not initialized in backend")
+        with st.expander("Backend Initialization Details"):
+            st.json(init_status)
+        return False
+    
+    return True
+
+def show_connection_status():
+    """Show detailed connection status in sidebar"""
+    with st.sidebar:
+        st.subheader("🔌 Connection Status")
+        
+        if st.session_state.backend_status and st.session_state.backend_status['connected']:
+            st.success("✅ Backend Connected")
+            
+            health_data = st.session_state.backend_status['data']
+            zerodha_status = health_data.get('zerodha_connection', {})
+            
+            if zerodha_status.get('authenticated', False):
+                st.success("✅ Zerodha Connected")
+            else:
+                st.warning("⚠️ Zerodha Not Connected")
+                if st.button("🔄 Test Zerodha Auth"):
+                    with st.spinner("Testing Zerodha authentication..."):
+                        auth_result = api_client.test_zerodha_auth()
+                        if auth_result.get('success'):
+                            st.success(f"✅ {auth_result.get('message')}")
+                            if auth_result.get('profile_name'):
+                                st.info(f"Profile: {auth_result.get('profile_name')}")
+                        else:
+                            st.error(f"❌ {auth_result.get('message')}")
+        else:
+            st.error("❌ Backend Disconnected")
+        
+        st.caption(f"Last checked: {st.session_state.last_refresh.strftime('%H:%M:%S')}")
+
 def main():
-    st.title("📈 Investment System Dashboard")
+    st.markdown('<h1 class="main-header">📈 Investment System Dashboard</h1>', unsafe_allow_html=True)
     st.markdown("*Sophisticated portfolio construction and rebalancing system*")
     
-    # Check backend connection
-    backend_connected = False
-    try:
-        response = requests.get(f"{API_BASE_URL}/health", timeout=10)
-        if response.status_code == 200:
-            backend_connected = True
-            health_data = response.json()
-            # Check if investment service is available
-            if not health_data.get('services', {}).get('investment_service', False):
-                st.error("❌ Investment service not initialized in backend. Please check backend logs.")
-                with st.expander("Health Check Details"):
-                    st.json(health_data)
-                return
-        else:
-            st.error(f"❌ Backend returned status {response.status_code}. Please check backend.")
-            return
-    except Exception as e:
-        st.error(f"❌ Cannot connect to backend: {str(e)}")
-        st.info("Please ensure the backend is running:")
-        st.code("cd backend && python -m uvicorn app.main:app --reload")
-        return
+    # Check backend connection first
+    backend_ok = check_backend_connection()
+    
+    if not backend_ok:
+        st.stop()
     
     # Sidebar navigation
     with st.sidebar:
@@ -264,23 +357,15 @@ def main():
         )
         
         st.markdown("---")
-        st.subheader("📊 Quick Status")
         
-        # Quick status check
-        portfolio_status = api_client.get_portfolio_status()
-        if portfolio_status and portfolio_status.get('success'):
-            data = portfolio_status['data']
-            if data['status'] == 'active':
-                st.success("✅ Portfolio Active")
-                st.metric("💰 Total Value", f"₹{data['portfolio_summary']['current_value']:,.0f}")
-                st.metric("📈 Returns", f"₹{data['portfolio_summary']['total_returns']:,.0f}")
-            else:
-                st.info("📭 No Portfolio Yet")
-        else:
-            st.warning("⚠️ Status Unknown")
+        # Show connection status
+        show_connection_status()
+        
+        st.markdown("---")
         
         # Manual refresh
         if st.button("🔄 Refresh Data"):
+            st.session_state.last_refresh = datetime.now()
             st.rerun()
     
     # Route to appropriate page
@@ -325,7 +410,9 @@ def show_system_overview():
                 st.markdown('<div class="info-alert">📭 <strong>No Portfolio</strong><br>Ready for initial investment</div>', unsafe_allow_html=True)
                 st.info("Click 'Initial Investment' to start")
         else:
+            error_msg = portfolio_status.get('error', 'Unknown error') if portfolio_status else 'Failed to fetch'
             st.markdown('<div class="error-alert">❌ <strong>Portfolio Status Unknown</strong><br>Please check system</div>', unsafe_allow_html=True)
+            st.caption(f"Error: {error_msg}")
     
     with col2:
         if rebalancing_check and rebalancing_check.get('success'):
@@ -341,7 +428,9 @@ def show_system_overview():
                 st.markdown('<div class="success-alert">✅ <strong>Portfolio Balanced</strong><br>No rebalancing needed</div>', unsafe_allow_html=True)
                 st.write(f"**Reason**: {data['reason']}")
         else:
+            error_msg = rebalancing_check.get('error', 'Unknown error') if rebalancing_check else 'Failed to fetch'
             st.markdown('<div class="warning-alert">⚠️ <strong>Rebalancing Status Unknown</strong></div>', unsafe_allow_html=True)
+            st.caption(f"Error: {error_msg}")
     
     with col3:
         if csv_stocks and csv_stocks.get('success'):
@@ -351,7 +440,9 @@ def show_system_overview():
             st.metric("💰 Price Success", f"{data['price_data_status']['success_rate']:.1f}%")
             st.caption(f"Source: {data['price_data_status']['market_data_source']}")
         else:
+            error_msg = csv_stocks.get('error', 'Unknown error') if csv_stocks else 'Failed to fetch'
             st.markdown('<div class="error-alert">❌ <strong>CSV Data Issues</strong><br>Cannot fetch stocks</div>', unsafe_allow_html=True)
+            st.caption(f"Error: {error_msg}")
     
     # Current CSV stocks table
     if csv_stocks and csv_stocks.get('success'):
@@ -363,12 +454,10 @@ def show_system_overview():
             
             # Format for display
             df['price_fmt'] = df['price'].apply(lambda x: f"₹{x:,.2f}")
-            df['score'] = df.get('score', 0)
             
-            display_df = df[['symbol', 'price_fmt', 'score']].rename(columns={
+            display_df = df[['symbol', 'price_fmt']].rename(columns={
                 'symbol': 'Stock Symbol',
-                'price_fmt': 'Current Price',
-                'score': 'Momentum Score'
+                'price_fmt': 'Current Price'
             })
             
             st.dataframe(display_df, use_container_width=True, hide_index=True)
@@ -378,7 +467,7 @@ def show_system_overview():
             st.caption(f"CSV fetched: {csv_info['fetch_time'][:19]} | Hash: {csv_info['csv_hash']}")
 
 def show_initial_investment():
-    """Initial investment interface using your investment service"""
+    """Initial investment interface"""
     st.header("💰 Initial Investment Setup")
     
     # Check if already have portfolio
@@ -399,7 +488,7 @@ def show_initial_investment():
         requirements = api_client.get_investment_requirements()
     
     if not requirements or not requirements.get('success'):
-        st.error("❌ Cannot get investment requirements. Please check backend connection.")
+        st.error(f"❌ Cannot get investment requirements: {requirements.get('error', 'Unknown error') if requirements else 'No response'}")
         return
     
     req_data = requirements['data']
@@ -476,7 +565,7 @@ def show_initial_investment():
             st.session_state.investment_plan = plan_result['data']
             st.success("✅ Investment plan calculated!")
         else:
-            st.error("❌ Failed to calculate investment plan")
+            st.error(f"❌ Failed to calculate investment plan: {plan_result.get('error', 'Unknown error') if plan_result else 'No response'}")
     
     # Show investment plan
     if 'investment_plan' in st.session_state:
@@ -535,138 +624,22 @@ def show_initial_investment():
                     del st.session_state.investment_plan  # Clear the plan
                     st.rerun()
                 else:
-                    st.error("❌ Failed to execute investment")
+                    st.error(f"❌ Failed to execute investment: {result.get('error', 'Unknown error') if result else 'No response'}")
 
 def show_rebalancing():
-    """Rebalancing interface using your rebalancing service"""
+    """Rebalancing interface"""
     st.header("⚖️ Portfolio Rebalancing")
-    
-    # Check rebalancing status
-    with st.spinner("Checking rebalancing requirements..."):
-        rebalancing_check = api_client.check_rebalancing_needed()
-    
-    if not rebalancing_check or not rebalancing_check.get('success'):
-        st.error("❌ Cannot check rebalancing status")
-        return
-    
-    rebalance_data = rebalancing_check['data']
-    
-    # Rebalancing status
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        if rebalance_data['rebalancing_needed']:
-            st.markdown('<div class="warning-alert">⚠️ <strong>Rebalancing Needed</strong></div>', unsafe_allow_html=True)
-            st.write(f"**Reason**: {rebalance_data['reason']}")
-            
-            if rebalance_data.get('new_stocks'):
-                st.write(f"**New stocks to add**: {', '.join(rebalance_data['new_stocks'])}")
-            
-            if rebalance_data.get('removed_stocks'):
-                st.write(f"**Stocks to remove**: {', '.join(rebalance_data['removed_stocks'])}")
-            
-        else:
-            st.markdown('<div class="success-alert">✅ <strong>Portfolio is balanced</strong></div>', unsafe_allow_html=True)
-            st.write(f"**Status**: {rebalance_data['reason']}")
-            
-            if not rebalance_data.get('is_first_time', False):
-                st.info("You can still add additional investment if desired.")
-    
-    with col2:
-        st.subheader("💰 Additional Investment")
-        additional_investment = st.number_input(
-            "Additional Amount (₹)",
-            min_value=0,
-            value=0,
-            step=10000,
-            help="Optional additional investment during rebalancing"
-        )
-    
-    # Calculate rebalancing plan
-    if rebalance_data['rebalancing_needed'] or additional_investment > 0:
-        st.subheader("🧮 Rebalancing Plan")
-        
-        if st.button("📊 Calculate Rebalancing Plan", type="primary"):
-            with st.spinner("Calculating rebalancing plan..."):
-                rebalancing_plan = api_client.calculate_rebalancing_plan(additional_investment)
-            
-            if rebalancing_plan and rebalancing_plan.get('success'):
-                st.session_state.rebalancing_plan = rebalancing_plan['data']
-                st.success("✅ Rebalancing plan calculated!")
-            else:
-                st.error("❌ Failed to calculate rebalancing plan")
-    
-    # Show rebalancing plan
-    if 'rebalancing_plan' in st.session_state:
-        plan = st.session_state.rebalancing_plan
-        
-        # Plan summary
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("💰 Current Value", f"₹{plan['current_value']:,.0f}")
-        
-        with col2:
-            st.metric("➕ Additional", f"₹{plan['additional_investment']:,.0f}")
-        
-        with col3:
-            st.metric("🎯 Target Value", f"₹{plan['target_value']:,.0f}")
-        
-        with col4:
-            st.metric("📊 Status", plan['status'])
-        
-        # Show allocation plan if available
-        if 'allocation_plan' in plan:
-            allocation = plan['allocation_plan']
-            
-            st.subheader("📋 Proposed Allocation")
-            
-            if allocation.get('allocations'):
-                allocations_df = pd.DataFrame(allocation['allocations'])
-                allocations_df['price_fmt'] = allocations_df['price'].apply(lambda x: f"₹{x:.2f}")
-                allocations_df['value_fmt'] = allocations_df['value'].apply(lambda x: f"₹{x:,.0f}")
-                allocations_df['allocation_fmt'] = allocations_df['allocation_percent'].apply(lambda x: f"{x:.2f}%")
-                
-                display_df = allocations_df[['symbol', 'shares', 'price_fmt', 'value_fmt', 'allocation_fmt']].rename(columns={
-                    'symbol': 'Stock',
-                    'shares': 'Target Shares',
-                    'price_fmt': 'Current Price',
-                    'value_fmt': 'Target Value',
-                    'allocation_fmt': 'Allocation %'
-                })
-                
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
-        
-        # Execute rebalancing
-        if plan['status'] == 'READY_FOR_EXECUTION':
-            st.subheader("🚀 Execute Rebalancing")
-            
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                st.info("💡 This will update system orders but NOT place live trades")
-            
-            with col2:
-                if st.button("🚀 Execute Rebalancing", type="primary", use_container_width=True):
-                    with st.spinner("Executing rebalancing..."):
-                        result = api_client.execute_rebalancing(additional_investment)
-                    
-                    if result and result.get('success'):
-                        st.success("✅ Rebalancing executed successfully!")
-                        del st.session_state.rebalancing_plan
-                        st.rerun()
-                    else:
-                        st.error("❌ Failed to execute rebalancing")
+    st.info("🚧 Rebalancing functionality will be implemented in the next version")
 
 def show_order_history():
-    """Order history from your system orders"""
+    """Order history from system orders"""
     st.header("📋 System Order History")
     
     with st.spinner("Loading order history..."):
         orders_result = api_client.get_system_orders()
     
     if not orders_result or not orders_result.get('success'):
-        st.error("❌ Cannot load order history")
+        st.error(f"❌ Cannot load order history: {orders_result.get('error', 'Unknown error') if orders_result else 'No response'}")
         return
     
     orders_data = orders_result['data']
@@ -702,30 +675,8 @@ def show_order_history():
     df['allocation_fmt'] = df['allocation_percent'].apply(lambda x: f"{x:.2f}%")
     df['execution_time'] = pd.to_datetime(df['execution_time']).dt.strftime('%Y-%m-%d %H:%M')
     
-    # Filter options
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        session_types = df['session_type'].unique()
-        selected_sessions = st.multiselect("Session Type", session_types, default=session_types)
-    
-    with col2:
-        actions = df['action'].unique()
-        selected_actions = st.multiselect("Action", actions, default=actions)
-    
-    with col3:
-        symbols = df['symbol'].unique()
-        selected_symbols = st.multiselect("Stocks", symbols, default=symbols[:10] if len(symbols) > 10 else symbols)
-    
-    # Apply filters
-    filtered_df = df[
-        (df['session_type'].isin(selected_sessions)) &
-        (df['action'].isin(selected_actions)) &
-        (df['symbol'].isin(selected_symbols))
-    ]
-    
-    # Display table
-    display_df = filtered_df[['execution_time', 'symbol', 'action', 'shares', 'price_fmt', 'value_fmt', 'allocation_fmt', 'session_type']].rename(columns={
+    # Display table (showing recent orders first)
+    display_df = df[['execution_time', 'symbol', 'action', 'shares', 'price_fmt', 'value_fmt', 'allocation_fmt', 'session_type']].rename(columns={
         'execution_time': 'Date/Time',
         'symbol': 'Stock',
         'action': 'Action',
@@ -734,44 +685,19 @@ def show_order_history():
         'value_fmt': 'Value',
         'allocation_fmt': 'Allocation %',
         'session_type': 'Session'
-    })
+    }).sort_values('Date/Time', ascending=False)
     
     st.dataframe(display_df, use_container_width=True, hide_index=True)
-    
-    # Order timeline chart
-    if len(filtered_df) > 0:
-        st.subheader("📈 Order Timeline")
-        
-        # Group by date
-        daily_orders = filtered_df.groupby(filtered_df['execution_time'].str[:10]).agg({
-            'value': 'sum',
-            'order_id': 'count'
-        }).reset_index()
-        daily_orders.columns = ['date', 'total_value', 'order_count']
-        
-        fig = px.bar(
-            daily_orders,
-            x='date',
-            y='total_value',
-            title='Daily Investment Value',
-            hover_data=['order_count']
-        )
-        fig.update_layout(
-            xaxis_title="Date",
-            yaxis_title="Investment Value (₹)",
-            hovermode='x unified'
-        )
-        st.plotly_chart(fig, use_container_width=True)
 
 def show_portfolio_status():
-    """Portfolio status from your portfolio construction service"""
+    """Portfolio status from portfolio construction service"""
     st.header("📊 System Portfolio Status")
     
     with st.spinner("Loading portfolio status..."):
         portfolio_result = api_client.get_portfolio_status()
     
     if not portfolio_result or not portfolio_result.get('success'):
-        st.error("❌ Cannot load portfolio status")
+        st.error(f"❌ Cannot load portfolio status: {portfolio_result.get('error', 'Unknown error') if portfolio_result else 'No response'}")
         return
     
     portfolio_data = portfolio_result['data']
@@ -904,37 +830,28 @@ def show_system_settings():
     
     with col1:
         if st.button("🔄 Test Backend Connection"):
-            try:
-                response = requests.get(f"{API_BASE_URL}/health", timeout=10)
-                if response.status_code == 200:
-                    health_data = response.json()
+            with st.spinner("Testing backend connection..."):
+                health_check = api_client.check_backend_health()
+                if health_check['connected']:
                     st.success("✅ Backend connected successfully!")
                     
                     with st.expander("Health Check Details"):
-                        st.json(health_data)
+                        st.json(health_check['data'])
                 else:
-                    st.error(f"❌ Backend responded with status {response.status_code}")
-            except Exception as e:
-                st.error(f"❌ Backend connection failed: {str(e)}")
+                    st.error(f"❌ Backend connection failed: {health_check['error']}")
     
     with col2:
         if st.button("🔄 Test Zerodha Connection"):
-            try:
-                response = requests.get(f"{API_BASE_URL}/api/test-auth", timeout=30)
-                if response.status_code == 200:
-                    auth_data = response.json()
-                    if auth_data.get('success'):
-                        st.success(f"✅ {auth_data.get('message')}")
-                        if auth_data.get('profile_name'):
-                            st.info(f"Profile: {auth_data.get('profile_name')}")
-                    else:
-                        st.error(f"❌ {auth_data.get('message')}")
-                        if auth_data.get('error'):
-                            st.error(f"Error: {auth_data.get('error')}")
+            with st.spinner("Testing Zerodha authentication..."):
+                auth_result = api_client.test_zerodha_auth()
+                if auth_result.get('success'):
+                    st.success(f"✅ {auth_result.get('message')}")
+                    if auth_result.get('profile_name'):
+                        st.info(f"Profile: {auth_result.get('profile_name')}")
                 else:
-                    st.error(f"❌ Auth test failed with status {response.status_code}")
-            except Exception as e:
-                st.error(f"❌ Auth test failed: {str(e)}")
+                    st.error(f"❌ {auth_result.get('message')}")
+                    if auth_result.get('error'):
+                        st.error(f"Error: {auth_result.get('error')}")
     
     # CSV data status
     st.subheader("📊 CSV Data Status")
@@ -954,13 +871,13 @@ def show_system_settings():
             st.metric("✅ Valid Prices", f"{price_status['success_rate']:.1f}%")
         
         with col3:
-            st.metric("❌ Excluded", data['excluded_symbols'])
+            st.metric("❌ Excluded", data.get('excluded_symbols', 0))
         
         st.info(f"**CSV Source**: {csv_info['source_url']}")
         st.info(f"**Last Fetched**: {csv_info['fetch_time'][:19]}")
         st.info(f"**Data Source**: {price_status['market_data_source']}")
     else:
-        st.error("❌ Cannot fetch CSV data status")
+        st.error(f"❌ Cannot fetch CSV data status: {csv_result.get('error', 'Unknown error') if csv_result else 'No response'}")
     
     # System configuration
     st.subheader("⚙️ System Configuration")
@@ -1010,15 +927,27 @@ def show_system_settings():
     
     with col3:
         if st.button("🔄 Refresh All Data"):
-            st.info("All data will be refreshed on next page load")
+            st.session_state.last_refresh = datetime.now()
+            st.success("✅ Data refreshed!")
             st.rerun()
     
     # System status summary
     st.subheader("📊 System Status Summary")
     
+    # Get current status for each component
+    backend_status = "🟢 Connected" if st.session_state.backend_status and st.session_state.backend_status['connected'] else "🔴 Disconnected"
+    
+    # Test other components
+    zerodha_status = "⚠️ Check Required"
+    csv_status = "🟢 Active" if csv_result and csv_result.get('success') else "🔴 Failed"
+    portfolio_status_check = api_client.get_portfolio_status()
+    portfolio_status = "🟢 Active" if portfolio_status_check and portfolio_status_check.get('success') else "🔴 Error"
+    orders_status_check = api_client.get_system_orders()
+    orders_status = "🟢 Active" if orders_status_check and orders_status_check.get('success') else "🔴 Error"
+    
     status_data = {
         "Component": ["Backend API", "Zerodha Auth", "CSV Data", "Portfolio", "Order System"],
-        "Status": ["🟢 Connected", "⚠️ Check Required", "🟢 Active", "📊 Check Portfolio", "🟢 Active"],
+        "Status": [backend_status, zerodha_status, csv_status, portfolio_status, orders_status],
         "Last Check": [datetime.now().strftime('%H:%M:%S')] * 5
     }
     
