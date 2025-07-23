@@ -87,14 +87,13 @@ async def root():
             "/health - Health check",
             "/api/test-live-prices - Test live price fetching",
             "/api/test-auth - Test Zerodha authentication",
+            "/api/test-nifty - Simple Nifty price test",
             "/api/investment/requirements - Get investment requirements",
             "/api/investment/calculate-plan - Calculate investment plan",
             "/api/investment/execute-initial - Execute initial investment",
             "/api/investment/rebalancing-check - Check rebalancing status",
-            "/api/investment/calculate-rebalancing - Calculate rebalancing plan",
-            "/api/investment/execute-rebalancing - Execute rebalancing",
             "/api/investment/portfolio-status - Get portfolio status",
-            "/api/investment/csv-stocks - Get CSV stocks with prices",
+            "/api/investment/csv-stocks - Get CSV stocks",
             "/api/investment/system-orders - Get system orders history"
         ]
     }
@@ -163,6 +162,113 @@ async def health_check():
     initialization_status["auth_successful"] = health_status["zerodha_connection"]["authenticated"]
     
     return health_status
+
+@app.get("/api/test-nifty")
+async def test_nifty_price():
+    """Simple test to get Nifty 50 price to verify Zerodha connection"""
+    if not zerodha_auth:
+        return {
+            "success": False,
+            "error": "ZerodhaAuth service not initialized"
+        }
+    
+    try:
+        print("🧪 Testing Nifty 50 price fetch...")
+        
+        # Check authentication first
+        if not zerodha_auth.is_authenticated():
+            print("🔄 Not authenticated, attempting authentication...")
+            try:
+                zerodha_auth.authenticate()
+                if not zerodha_auth.is_authenticated():
+                    return {
+                        "success": False,
+                        "error": "Zerodha authentication failed",
+                        "details": "Cannot test Nifty price without authentication"
+                    }
+            except Exception as auth_error:
+                return {
+                    "success": False,
+                    "error": f"Authentication failed: {str(auth_error)}"
+                }
+        
+        kite = zerodha_auth.get_kite_instance()
+        if not kite:
+            return {
+                "success": False,
+                "error": "No kite instance available"
+            }
+        
+        # Test with Nifty 50 index
+        try:
+            print("🔍 Testing Nifty 50 quote...")
+            # Try to get Nifty 50 quote
+            nifty_quote = kite.quote(["NSE:NIFTY 50"])
+            
+            if "NSE:NIFTY 50" in nifty_quote:
+                nifty_data = nifty_quote["NSE:NIFTY 50"]
+                nifty_price = nifty_data.get('last_price', 0)
+                
+                return {
+                    "success": True,
+                    "message": "Nifty 50 price fetched successfully",
+                    "nifty_price": nifty_price,
+                    "nifty_data": {
+                        "last_price": nifty_data.get('last_price'),
+                        "change": nifty_data.get('net_change'),
+                        "timestamp": nifty_data.get('timestamp'),
+                        "ohlc": nifty_data.get('ohlc', {})
+                    },
+                    "profile_name": getattr(zerodha_auth, 'profile_name', 'Unknown'),
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Nifty 50 data not found in response",
+                    "response_keys": list(nifty_quote.keys())
+                }
+                
+        except Exception as quote_error:
+            # Try alternative symbols
+            try:
+                print("🔄 Trying alternative symbols...")
+                alt_quotes = kite.quote(["NSE:RELIANCE", "NSE:TCS"])
+                
+                if alt_quotes:
+                    sample_data = {}
+                    for symbol, data in alt_quotes.items():
+                        if isinstance(data, dict):
+                            sample_data[symbol] = {
+                                'last_price': data.get('last_price'),
+                                'timestamp': data.get('timestamp')
+                            }
+                    
+                    return {
+                        "success": True,
+                        "message": "Alternative stock prices fetched (Nifty failed)",
+                        "alternative_data": sample_data,
+                        "nifty_error": str(quote_error),
+                        "profile_name": getattr(zerodha_auth, 'profile_name', 'Unknown'),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": f"Both Nifty and alternative quotes failed: {str(quote_error)}"
+                    }
+            except Exception as alt_error:
+                return {
+                    "success": False,
+                    "error": f"All quote requests failed. Nifty: {str(quote_error)}, Alt: {str(alt_error)}"
+                }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Nifty price test error: {str(e)}",
+            "traceback": traceback.format_exc()
+        }
 
 @app.get("/api/test-auth")
 async def test_auth():

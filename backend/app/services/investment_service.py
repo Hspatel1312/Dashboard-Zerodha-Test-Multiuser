@@ -47,18 +47,6 @@ class InvestmentService:
         try:
             print("📋 Getting investment requirements...")
             
-            # Validate Zerodha connection first
-            if not self.zerodha_auth:
-                print("⚠️ Zerodha authentication service not available, proceeding with fallback data")
-            else:
-                auth_status = self.zerodha_auth.get_auth_status()
-                if not auth_status['authenticated']:
-                    print("🔄 Attempting Zerodha authentication...")
-                    try:
-                        self.zerodha_auth.authenticate()
-                    except Exception as e:
-                        print(f"⚠️ Zerodha authentication failed, using fallback data: {str(e)}")
-            
             # Get stocks with prices (will use fallback if Zerodha fails)
             try:
                 stocks_data = self.csv_service.get_stocks_with_prices()
@@ -272,32 +260,50 @@ class InvestmentService:
     def get_system_portfolio_status(self) -> Dict:
         """Get system portfolio status with comprehensive metrics"""
         try:
-            portfolio_state = self._get_current_portfolio_state()
+            # Get all orders for portfolio construction
+            all_orders = self._load_system_orders()
             
-            if not portfolio_state:
+            if not all_orders:
                 return {
                     'status': 'empty',
-                    'message': 'No portfolio found. Please complete initial investment.',
+                    'message': 'No orders found. Please complete initial investment.',
                     'holdings': {},
-                    'portfolio_summary': {'total_investment': 0, 'current_value': 0}
+                    'portfolio_summary': {
+                        'total_investment': 0, 
+                        'current_value': 0,
+                        'total_returns': 0,
+                        'returns_percentage': 0,
+                        'stock_count': 0
+                    }
+                }
+            
+            # Construct portfolio from orders
+            construction_result = self.portfolio_construction.construct_portfolio_from_orders(all_orders)
+            
+            if not construction_result['holdings']:
+                return {
+                    'status': 'empty',
+                    'message': 'No active holdings found in portfolio construction.',
+                    'holdings': {},
+                    'portfolio_summary': {
+                        'total_investment': 0,
+                        'current_value': 0,
+                        'total_returns': 0,
+                        'returns_percentage': 0,
+                        'stock_count': 0
+                    }
                 }
             
             # Get current prices for all holdings
-            symbols = list(portfolio_state['holdings'].keys())
+            symbols = list(construction_result['holdings'].keys())
             
             try:
                 current_prices = self.csv_service.get_live_prices(symbols)
             except Exception as e:
                 print(f"⚠️ Could not get live prices, using fallback: {e}")
-                current_prices = self.csv_service._get_fallback_prices(symbols)
+                current_prices = self.csv_service._get_fallback_prices(symbols, f"Error: {str(e)}")
             
-            # Get all orders for portfolio construction
-            all_orders = self._load_system_orders()
-            
-            # Construct portfolio from orders
-            construction_result = self.portfolio_construction.construct_portfolio_from_orders(all_orders)
-            
-            # Calculate comprehensive metrics
+            # Calculate comprehensive metrics with better error handling
             try:
                 metrics = self.portfolio_metrics.calculate_comprehensive_metrics(
                     construction_result['holdings'],
@@ -305,37 +311,57 @@ class InvestmentService:
                     construction_result
                 )
                 
+                # Build response with proper error handling
+                holdings_with_metrics = {}
+                for symbol, holding_metrics in metrics['holdings_with_metrics'].items():
+                    holdings_with_metrics[symbol] = {
+                        'shares': int(holding_metrics.get('shares', 0)),
+                        'avg_price': float(holding_metrics.get('avg_price', 0)),
+                        'current_price': float(holding_metrics.get('current_price', 0)),
+                        'investment_value': float(holding_metrics.get('investment_value', 0)),
+                        'current_value': float(holding_metrics.get('current_value', 0)),
+                        'pnl': float(holding_metrics.get('absolute_return', 0)),
+                        'pnl_percent': float(holding_metrics.get('percentage_return', 0)),
+                        'allocation_percent': float(holding_metrics.get('allocation_percent', 0)),
+                        'days_held': int(holding_metrics.get('days_held', 0)),
+                        'annualized_return': float(holding_metrics.get('annualized_return', 0))
+                    }
+                
+                portfolio_summary = {
+                    'total_investment': float(metrics.get('total_investment', 0)),
+                    'current_value': float(metrics.get('current_value', 0)),
+                    'total_returns': float(metrics.get('total_returns', 0)),
+                    'returns_percentage': float(metrics.get('returns_percentage', 0)),
+                    'stock_count': len(holdings_with_metrics),
+                    'cagr': float(metrics.get('cagr', 0)),
+                    'investment_period_days': int(metrics.get('investment_period_days', 0))
+                }
+                
+                performance_metrics = {
+                    'best_performer': metrics.get('best_performer', {}),
+                    'worst_performer': metrics.get('worst_performer', {}),
+                    'volatility_score': float(metrics.get('volatility_score', 0)),
+                    'sharpe_ratio': float(metrics.get('sharpe_ratio', 0))
+                }
+                
                 return {
                     'status': 'active',
-                    'holdings': metrics['holdings_with_metrics'],
-                    'portfolio_summary': {
-                        'total_investment': float(metrics['total_investment']),
-                        'current_value': float(metrics['current_value']),
-                        'total_returns': float(metrics['total_returns']),
-                        'returns_percentage': float(metrics['returns_percentage']),
-                        'stock_count': len(metrics['holdings_with_metrics']),
-                        'cagr': float(metrics['cagr']),
-                        'investment_period_days': metrics['investment_period_days']
-                    },
-                    'performance_metrics': {
-                        'best_performer': metrics['best_performer'],
-                        'worst_performer': metrics['worst_performer'],
-                        'volatility_score': float(metrics['volatility_score']),
-                        'sharpe_ratio': float(metrics['sharpe_ratio'])
-                    },
+                    'holdings': holdings_with_metrics,
+                    'portfolio_summary': portfolio_summary,
+                    'performance_metrics': performance_metrics,
                     'allocation_analysis': {
-                        'allocation_stats': metrics['allocation_stats'],
-                        'rebalancing_needed': metrics['rebalancing_needed']
+                        'allocation_stats': metrics.get('allocation_stats', {}),
+                        'rebalancing_needed': metrics.get('rebalancing_needed', False)
                     },
                     'data_quality': {
-                        'price_source': 'Live' if any('zerodha' in str(current_prices).lower() for _ in [1]) else 'Fallback',
+                        'price_source': 'Live' if self.zerodha_auth and self.zerodha_auth.is_authenticated() else 'Fallback',
                         'construction_validation': construction_result.get('validation', {}),
                         'last_updated': datetime.now().isoformat()
                     }
                 }
                 
-            except Exception as e:
-                print(f"⚠️ Could not calculate advanced metrics: {e}")
+            except Exception as metrics_error:
+                print(f"⚠️ Could not calculate advanced metrics: {metrics_error}")
                 
                 # Fallback to basic calculation
                 holdings_with_metrics = {}
@@ -359,11 +385,16 @@ class InvestmentService:
                         'investment_value': investment_value,
                         'current_value': holding_value,
                         'pnl': pnl,
-                        'pnl_percent': pnl_percent
+                        'pnl_percent': pnl_percent,
+                        'allocation_percent': 0  # Will calculate after totals
                     }
                     
                     total_investment += investment_value
                     current_value += holding_value
+                
+                # Calculate allocation percentages
+                for holding in holdings_with_metrics.values():
+                    holding['allocation_percent'] = (holding['current_value'] / current_value * 100) if current_value > 0 else 0
                 
                 total_returns = current_value - total_investment
                 returns_percent = (total_returns / total_investment) * 100 if total_investment > 0 else 0
@@ -377,6 +408,11 @@ class InvestmentService:
                         'total_returns': total_returns,
                         'returns_percentage': returns_percent,
                         'stock_count': len(holdings_with_metrics)
+                    },
+                    'data_quality': {
+                        'price_source': 'Fallback',
+                        'metrics_error': str(metrics_error),
+                        'last_updated': datetime.now().isoformat()
                     }
                 }
             
@@ -386,7 +422,13 @@ class InvestmentService:
                 'status': 'error',
                 'error': str(e),
                 'holdings': {},
-                'portfolio_summary': {'total_investment': 0, 'current_value': 0}
+                'portfolio_summary': {
+                    'total_investment': 0, 
+                    'current_value': 0,
+                    'total_returns': 0,
+                    'returns_percentage': 0,
+                    'stock_count': 0
+                }
             }
     
     # Helper methods

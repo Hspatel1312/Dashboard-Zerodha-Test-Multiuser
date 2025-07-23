@@ -7,13 +7,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/investment_db"
     REDIS_URL: str = "redis://localhost:6379/0"
     
-    # Zerodha API Configuration - Use your working credentials from notebook
+    # Zerodha API Configuration - Will use your hardcoded values as defaults
     ZERODHA_API_KEY: str = "femohcxeam7tjt1p"
     ZERODHA_API_SECRET: str = "xjudlehzrnblhs1wznjvb95uhgtny54f"
     ZERODHA_USER_ID: str = "MSC739"
     ZERODHA_PASSWORD: str = "Pranjal@1006"
     ZERODHA_TOTP_KEY: str = "PHHXNLG7ZPS3C4GCOF7HLGCM7DV6HRAB"
     ZERODHA_ACCESS_TOKEN_FILE: str = "zerodha_access_token.txt"
+    ZERODHA_REDIRECT_URL: str = "http://localhost:8000/auth/callback"
     
     # Security Configuration
     JWT_SECRET: str = "your_super_secret_jwt_key_change_this_in_production"
@@ -31,6 +32,14 @@ class Settings(BaseSettings):
     MIN_ALLOCATION: float = 4.00
     MAX_ALLOCATION: float = 7.00
     REBALANCING_THRESHOLD: int = 10000
+    
+    # Market Hours
+    MARKET_OPEN_TIME: str = "09:15"
+    MARKET_CLOSE_TIME: str = "15:30"
+    
+    # Frontend Configuration
+    API_BASE_URL: str = "http://localhost:8000/api"
+    FRONTEND_PORT: int = 8501
     
     class Config:
         env_file = ".env"
