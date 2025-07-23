@@ -1,6 +1,5 @@
 {
   "symbols": [
-    "AIIL",
     "LAURUSLABS",
     "MCX",
     "KIMS",
@@ -22,13 +21,6 @@
     "ECLERX"
   ],
   "data": [
-    {
-      "Symbol": "AIIL",
-      "Momentum": 1.470171126028174,
-      "Volatility": 0.0345201046232321,
-      "FITP": 0.5466101694915254,
-      "Score": 42.58883749265189
-    },
     {
       "Symbol": "LAURUSLABS",
       "Momentum": 0.8236856668511345,
@@ -163,8 +155,10 @@
       "Score": 18.729988910796852
     }
   ],
-  "fetch_time": "2025-07-23T15:27:01.156099",
-  "csv_hash": "4e58c23c",
+  "fetch_time": "2025-07-23T16:51:07.234231",
+  "csv_hash": "d9ab14a6",
   "symbol_column_used": "Symbol",
-  "source_url": "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv"
+  "source_url": "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv",
+  "total_rows": 19,
+  "unique_symbols": 19
 }

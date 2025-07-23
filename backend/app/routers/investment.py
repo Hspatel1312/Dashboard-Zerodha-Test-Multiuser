@@ -1,4 +1,5 @@
-# backend/app/routers/investment.py
+# backend/app/routers/investment.py - Verify these endpoints exist
+
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
@@ -117,57 +118,6 @@ async def check_rebalancing_needed():
             detail=f"Failed to check rebalancing: {str(e)}"
         )
 
-@router.post("/calculate-rebalancing")
-async def calculate_rebalancing_plan(request: RebalancingRequest):
-    """
-    Calculate rebalancing plan with optional additional investment
-    """
-    try:
-        if not investment_service:
-            raise HTTPException(status_code=500, detail="Investment service not initialized")
-        
-        plan = investment_service.calculate_rebalancing_plan(request.additional_investment)
-        return {
-            "success": True,
-            "data": plan
-        }
-    except Exception as e:
-        error_msg = str(e)
-        print(f"❌ Rebalancing plan calculation error: {error_msg}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
-        raise HTTPException(
-            status_code=500,
-            detail=error_msg
-        )
-
-@router.post("/execute-rebalancing")
-async def execute_rebalancing(request: RebalancingRequest):
-    """
-    Execute rebalancing plan
-    """
-    try:
-        if not investment_service:
-            raise HTTPException(status_code=500, detail="Investment service not initialized")
-        
-        # First calculate the plan
-        plan = investment_service.calculate_rebalancing_plan(request.additional_investment)
-        
-        # Then execute it
-        result = investment_service.execute_rebalancing(plan)
-        
-        return {
-            "success": True,
-            "data": result
-        }
-    except Exception as e:
-        error_msg = str(e)
-        print(f"❌ Rebalancing execution error: {error_msg}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
-        raise HTTPException(
-            status_code=500,
-            detail=error_msg
-        )
-
 @router.get("/portfolio-status")
 async def get_portfolio_status():
     """
@@ -250,8 +200,6 @@ async def investment_router_health():
             "POST /calculate-plan", 
             "POST /execute-initial",
             "GET /rebalancing-check",
-            "POST /calculate-rebalancing",
-            "POST /execute-rebalancing",
             "GET /portfolio-status",
             "GET /csv-stocks",
             "GET /system-orders"

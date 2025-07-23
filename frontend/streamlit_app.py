@@ -52,6 +52,15 @@ st.markdown("""
         background-color: #fffef8;
     }
     
+    .investment-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        color: white;
+        margin: 1rem 0;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    
     .metric-row {
         display: flex;
         justify-content: space-between;
@@ -66,6 +75,8 @@ API_BASE_URL = "http://127.0.0.1:8000"
 # Initialize session state
 if 'last_refresh' not in st.session_state:
     st.session_state.last_refresh = datetime.now()
+if 'investment_plan' not in st.session_state:
+    st.session_state.investment_plan = None
 
 class SimpleAPIClient:
     def __init__(self, base_url: str):
@@ -86,7 +97,7 @@ class SimpleAPIClient:
     def test_zerodha_connection(self) -> Dict:
         """Test Zerodha connection by getting Nifty price"""
         try:
-            response = requests.get(f"{self.base_url}/api/test-live-prices", timeout=30)
+            response = requests.get(f"{self.base_url}/api/test-nifty", timeout=30)
             if response.status_code == 200:
                 return response.json()
             else:
@@ -127,6 +138,72 @@ class SimpleAPIClient:
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
+    def get_investment_requirements(self) -> Dict:
+        """Get investment requirements"""
+        try:
+            response = requests.get(f"{self.base_url}/api/investment/requirements", timeout=30)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {'success': False, 'error': f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def calculate_investment_plan(self, investment_amount: float) -> Dict:
+        """Calculate investment plan"""
+        try:
+            data = {"investment_amount": investment_amount}
+            response = requests.post(
+                f"{self.base_url}/api/investment/calculate-plan",
+                json=data,
+                timeout=self.timeout
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                error_text = response.text
+                try:
+                    error_data = response.json()
+                    error_text = error_data.get('detail', response.text)
+                except:
+                    pass
+                return {'success': False, 'error': error_text}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def execute_initial_investment(self, investment_amount: float) -> Dict:
+        """Execute initial investment"""
+        try:
+            data = {"investment_amount": investment_amount}
+            response = requests.post(
+                f"{self.base_url}/api/investment/execute-initial",
+                json=data,
+                timeout=60
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                error_text = response.text
+                try:
+                    error_data = response.json()
+                    error_text = error_data.get('detail', response.text)
+                except:
+                    pass
+                return {'success': False, 'error': error_text}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def check_rebalancing_needed(self) -> Dict:
+        """Check if rebalancing is needed"""
+        try:
+            response = requests.get(f"{self.base_url}/api/investment/rebalancing-check", timeout=30)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {'success': False, 'error': f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
 # Initialize API client
 api_client = SimpleAPIClient(API_BASE_URL)
 
@@ -141,7 +218,9 @@ def main():
             "Select Page",
             [
                 "🏠 System Status",
+                "💰 Initial Investment",
                 "📊 Portfolio Overview", 
+                "⚖️ Rebalancing",
                 "📋 Order History",
                 "📄 CSV Stocks",
                 "⚙️ System Info"
@@ -160,8 +239,12 @@ def main():
     # Route to pages
     if page == "🏠 System Status":
         show_system_status()
+    elif page == "💰 Initial Investment":
+        show_initial_investment()
     elif page == "📊 Portfolio Overview":
         show_portfolio_overview()
+    elif page == "⚖️ Rebalancing":
+        show_rebalancing()
     elif page == "📋 Order History":
         show_order_history()
     elif page == "📄 CSV Stocks":
@@ -214,18 +297,263 @@ def show_system_status():
             st.markdown('<div class="status-card success-status">✅ <strong>Zerodha Live Data Working</strong></div>', unsafe_allow_html=True)
             
             # Show live prices
-            prices = zerodha_test.get('formatted_prices', {})
-            if prices:
-                st.write("**Live Prices Fetched:**")
-                for symbol, price in prices.items():
+            if 'nifty_price' in zerodha_test:
+                st.metric("📈 Nifty 50", f"{zerodha_test['nifty_price']:,.2f}")
+            elif 'alternative_data' in zerodha_test:
+                st.write("**Alternative Stock Prices:**")
+                for symbol, data in zerodha_test['alternative_data'].items():
                     clean_symbol = symbol.replace('NSE:', '')
-                    st.write(f"• {clean_symbol}: ₹{price:,.2f}")
+                    st.write(f"• {clean_symbol}: ₹{data['last_price']:,.2f}")
             
             profile_name = zerodha_test.get('profile_name', 'Unknown')
             st.info(f"Connected as: {profile_name}")
         else:
             error_msg = zerodha_test.get('error', 'Unknown error')
             st.markdown(f'<div class="status-card error-status">❌ <strong>Zerodha Connection Failed</strong><br>Error: {error_msg}</div>', unsafe_allow_html=True)
+
+def show_initial_investment():
+    """Initial investment interface"""
+    st.header("💰 Initial Investment Setup")
+    
+    # Check if already have portfolio
+    portfolio_status = api_client.get_portfolio_status()
+    if portfolio_status and portfolio_status.get('success'):
+        data = portfolio_status['data']
+        if data['status'] == 'active':
+            st.warning("⚠️ You already have an active portfolio. Use the Rebalancing page to make changes.")
+            
+            # Show current portfolio summary
+            summary = data['portfolio_summary']
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("💰 Current Value", f"₹{summary['current_value']:,.0f}")
+            with col2:
+                st.metric("📥 Total Invested", f"₹{summary['total_investment']:,.0f}")
+            with col3:
+                st.metric("📈 Total Returns", f"₹{summary['total_returns']:,.0f}")
+            
+            return
+    
+    # Get investment requirements
+    st.subheader("📋 Investment Requirements")
+    
+    with st.spinner("Getting investment requirements..."):
+        requirements = api_client.get_investment_requirements()
+    
+    if not requirements or not requirements.get('success'):
+        st.error(f"❌ Cannot get investment requirements: {requirements.get('error', 'Unknown error') if requirements else 'No response'}")
+        return
+    
+    req_data = requirements['data']
+    
+    # Show requirements
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("📊 Current Market Data")
+        
+        stocks_data = req_data['stocks_data']['stocks']
+        min_investment_info = req_data['minimum_investment']
+        
+        # Requirements summary
+        st.markdown(f"""
+        **Investment Requirements:**
+        - **Minimum Investment**: ₹{min_investment_info['minimum_investment']:,.0f}
+        - **Recommended Minimum**: ₹{min_investment_info['recommended_minimum']:,.0f}
+        - **Total Stocks**: {min_investment_info['total_stocks']}
+        - **Most Expensive Stock**: {min_investment_info['most_expensive_stock']['symbol']} at ₹{min_investment_info['most_expensive_stock']['price']:,.2f}
+        
+        **Strategy**: Equal weight allocation (4-7% per stock, targeting 5%)
+        """)
+        
+        # Show data quality
+        data_quality = req_data['data_quality']
+        st.info(f"**Data Source**: {data_quality['data_source']} | **Success Rate**: {data_quality['price_success_rate']:.1f}%")
+    
+    with col2:
+        st.subheader("💰 Investment Amount")
+        
+        min_amount = min_investment_info['minimum_investment']
+        recommended_amount = min_investment_info['recommended_minimum']
+        
+        # Quick amount buttons
+        st.write("**Quick Options:**")
+        col2a, col2b = st.columns(2)
+        
+        with col2a:
+            if st.button(f"Min\n₹{min_amount:,.0f}", use_container_width=True):
+                st.session_state.investment_amount = min_amount
+        
+        with col2b:
+            if st.button(f"Recommended\n₹{recommended_amount:,.0f}", use_container_width=True):
+                st.session_state.investment_amount = recommended_amount
+        
+        # Manual input
+        investment_amount = st.number_input(
+            "Investment Amount (₹)",
+            min_value=min_amount,
+            value=st.session_state.get('investment_amount', recommended_amount),
+            step=10000,
+            help=f"Minimum required: ₹{min_amount:,.0f}"
+        )
+        
+        st.session_state.investment_amount = investment_amount
+    
+    # Calculate investment plan
+    st.subheader("🧮 Investment Plan")
+    
+    if st.button("📊 Calculate Investment Plan", type="primary", use_container_width=True):
+        with st.spinner("Calculating optimal allocation..."):
+            plan_result = api_client.calculate_investment_plan(investment_amount)
+        
+        if plan_result and plan_result.get('success'):
+            st.session_state.investment_plan = plan_result['data']
+            st.success("✅ Investment plan calculated!")
+        else:
+            st.error(f"❌ Failed to calculate investment plan: {plan_result.get('error', 'Unknown error') if plan_result else 'No response'}")
+    
+    # Show investment plan
+    if 'investment_plan' in st.session_state:
+        plan = st.session_state.investment_plan
+        
+        # Plan summary
+        summary = plan['summary']
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("💰 Total Investment", f"₹{summary['total_investment_value']:,.0f}")
+        
+        with col2:
+            st.metric("📝 Total Orders", summary['total_orders'])
+        
+        with col3:
+            st.metric("💵 Remaining Cash", f"₹{summary['remaining_cash']:,.0f}")
+        
+        with col4:
+            st.metric("📊 Utilization", f"{summary['utilization_percent']:.1f}%")
+        
+        # Orders table
+        st.subheader("📋 Proposed Orders")
+        
+        orders_df = pd.DataFrame(plan['orders'])
+        orders_df['price_fmt'] = orders_df['price'].apply(lambda x: f"₹{x:.2f}")
+        orders_df['value_fmt'] = orders_df['value'].apply(lambda x: f"₹{x:,.0f}")
+        orders_df['allocation_fmt'] = orders_df['allocation_percent'].apply(lambda x: f"{x:.2f}%")
+        
+        display_orders = orders_df[['symbol', 'shares', 'price_fmt', 'value_fmt', 'allocation_fmt']].rename(columns={
+            'symbol': 'Stock',
+            'shares': 'Shares',
+            'price_fmt': 'Price',
+            'value_fmt': 'Investment',
+            'allocation_fmt': 'Allocation %'
+        })
+        
+        st.dataframe(display_orders, use_container_width=True, hide_index=True)
+        
+        # Validation results
+        validation = plan['validation']
+        if validation['stocks_in_range'] == len(plan['orders']):
+            st.success(f"✅ All {validation['stocks_in_range']} stocks within target allocation range (4-7%)")
+        else:
+            st.warning(f"⚠️ {validation['stocks_in_range']}/{len(plan['orders'])} stocks in target range. {len(validation['violations'])} violations.")
+            if validation['violations']:
+                for violation in validation['violations']:
+                    st.caption(f"• {violation}")
+        
+        # Execute investment
+        st.subheader("🚀 Execute Investment")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.info("💡 This will create system orders for tracking. No live trades will be placed on Zerodha.")
+        
+        with col2:
+            if st.button("🚀 Execute Initial Investment", type="primary", use_container_width=True):
+                with st.spinner("Executing investment..."):
+                    result = api_client.execute_initial_investment(investment_amount)
+                
+                if result and result.get('success'):
+                    st.success("✅ Initial investment executed successfully!")
+                    st.balloons()
+                    del st.session_state.investment_plan  # Clear the plan
+                    st.rerun()
+                else:
+                    st.error(f"❌ Failed to execute investment: {result.get('error', 'Unknown error') if result else 'No response'}")
+
+def show_rebalancing():
+    """Rebalancing interface"""
+    st.header("⚖️ Portfolio Rebalancing")
+    
+    # Check if we have a portfolio first
+    portfolio_status = api_client.get_portfolio_status()
+    if not portfolio_status or not portfolio_status.get('success'):
+        st.error("❌ Cannot load portfolio status for rebalancing")
+        return
+    
+    if portfolio_status['data']['status'] == 'empty':
+        st.info("📭 No portfolio found. Please complete initial investment first.")
+        if st.button("➡️ Go to Initial Investment"):
+            st.switch_page("💰 Initial Investment")
+        return
+    
+    # Check if rebalancing is needed
+    st.subheader("📊 Rebalancing Status")
+    
+    with st.spinner("Checking rebalancing requirements..."):
+        rebalancing_check = api_client.check_rebalancing_needed()
+    
+    if not rebalancing_check or not rebalancing_check.get('success'):
+        st.error("❌ Cannot check rebalancing requirements")
+        return
+    
+    rebal_data = rebalancing_check['data']
+    
+    # Show rebalancing status
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        if rebal_data['rebalancing_needed']:
+            st.markdown('<div class="status-card warning-status">⚠️ <strong>Rebalancing Needed</strong><br>Portfolio needs adjustment</div>', unsafe_allow_html=True)
+            st.write(f"**Reason**: {rebal_data['reason']}")
+            
+            if rebal_data.get('new_stocks'):
+                st.write(f"**New stocks to add**: {', '.join(rebal_data['new_stocks'][:5])}")
+            if rebal_data.get('removed_stocks'):
+                st.write(f"**Stocks to remove**: {', '.join(rebal_data['removed_stocks'][:5])}")
+        else:
+            st.markdown('<div class="status-card success-status">✅ <strong>Portfolio Balanced</strong><br>No rebalancing needed</div>', unsafe_allow_html=True)
+            st.write(f"**Reason**: {rebal_data['reason']}")
+    
+    with col2:
+        st.subheader("🔄 Rebalancing Options")
+        
+        if rebal_data['rebalancing_needed']:
+            st.info("Rebalancing functionality coming soon!")
+            st.write("**Future Features:**")
+            st.write("• Calculate new allocation")
+            st.write("• Generate buy/sell orders") 
+            st.write("• Execute rebalancing")
+        else:
+            st.success("No action needed")
+    
+    # Show current portfolio summary for context
+    portfolio_data = portfolio_status['data']
+    summary = portfolio_data['portfolio_summary']
+    
+    st.subheader("💰 Current Portfolio Summary")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("💰 Current Value", f"₹{summary['current_value']:,.0f}")
+    with col2:
+        st.metric("📥 Total Invested", f"₹{summary['total_investment']:,.0f}")
+    with col3:
+        st.metric("📈 Total Returns", f"₹{summary['total_returns']:,.0f}")
+    with col4:
+        st.metric("📊 Stock Count", summary['stock_count'])
 
 def show_portfolio_overview():
     """Portfolio overview built from orders"""
@@ -242,6 +570,8 @@ def show_portfolio_overview():
     
     if portfolio_data['status'] == 'empty':
         st.info("📭 No portfolio found. Please complete initial investment first.")
+        if st.button("➡️ Go to Initial Investment"):
+            st.switch_page("💰 Initial Investment")
         return
     elif portfolio_data['status'] == 'error':
         st.error(f"❌ Portfolio error: {portfolio_data['error']}")
@@ -275,20 +605,24 @@ def show_portfolio_overview():
         
         st.subheader("📈 Performance Metrics")
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             if 'cagr' in summary:
                 st.metric("📊 CAGR", f"{summary.get('cagr', 0):.2f}%")
         
         with col2:
+            if summary.get('investment_period_days'):
+                st.metric("📅 Days Invested", summary['investment_period_days'])
+        
+        with col3:
             best_performer = metrics.get('best_performer', {})
             if best_performer:
                 st.metric("🏆 Best Performer", 
                          best_performer.get('symbol', 'N/A'),
                          delta=f"{best_performer.get('percentage_return', 0):.2f}%")
         
-        with col3:
+        with col4:
             worst_performer = metrics.get('worst_performer', {})
             if worst_performer:
                 st.metric("📉 Worst Performer", 
@@ -309,7 +643,8 @@ def show_portfolio_overview():
                 'investment_value': holding.get('investment_value', 0),
                 'current_value': holding.get('current_value', 0),
                 'pnl': holding.get('pnl', 0),
-                'pnl_percent': holding.get('pnl_percent', 0)
+                'pnl_percent': holding.get('pnl_percent', 0),
+                'allocation_percent': holding.get('allocation_percent', 0)
             })
         
         df = pd.DataFrame(holdings_list)
@@ -320,7 +655,6 @@ def show_portfolio_overview():
         df['investment_fmt'] = df['investment_value'].apply(lambda x: f"₹{x:,.0f}")
         df['current_fmt'] = df['current_value'].apply(lambda x: f"₹{x:,.0f}")
         df['pnl_fmt'] = df['pnl'].apply(lambda x: f"₹{x:,.0f}")
-        df['allocation_percent'] = (df['current_value'] / df['current_value'].sum() * 100)
         df['allocation_fmt'] = df['allocation_percent'].apply(lambda x: f"{x:.2f}%")
         
         # Display table
@@ -392,6 +726,8 @@ def show_order_history():
     
     if not orders:
         st.info("📭 No orders found. Start with Initial Investment.")
+        if st.button("➡️ Go to Initial Investment"):
+            st.switch_page("💰 Initial Investment")
         return
     
     # Orders summary
@@ -624,13 +960,14 @@ def show_system_info():
     
     endpoints = [
         "/health - System health check",
-        "/api/test-live-prices - Test Zerodha live data",
-        "/api/investment/csv-stocks - Get CSV stocks",
-        "/api/investment/system-orders - Get order history", 
-        "/api/investment/portfolio-status - Get portfolio status",
+        "/api/test-nifty - Test Zerodha with Nifty price",
         "/api/investment/requirements - Get investment requirements",
         "/api/investment/calculate-plan - Calculate investment plan",
-        "/api/investment/execute-initial - Execute initial investment"
+        "/api/investment/execute-initial - Execute initial investment",
+        "/api/investment/rebalancing-check - Check rebalancing status",
+        "/api/investment/csv-stocks - Get CSV stocks",
+        "/api/investment/system-orders - Get order history", 
+        "/api/investment/portfolio-status - Get portfolio status"
     ]
     
     for endpoint in endpoints:

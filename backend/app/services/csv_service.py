@@ -15,17 +15,26 @@ class CSVService:
         self.zerodha_auth = zerodha_auth
         self.kite = zerodha_auth.get_kite_instance() if zerodha_auth else None
         self._cache_file = "csv_cache.json"
+        self._cache_duration = 300  # 5 minutes instead of 1 hour
         
-    def fetch_csv_data(self) -> Dict:
-        """Fetch and parse CSV data from GitHub with caching"""
+    def fetch_csv_data(self, force_refresh: bool = False) -> Dict:
+        """Fetch and parse CSV data from GitHub with optional force refresh"""
         try:
             print("📊 Fetching CSV data from GitHub...")
             
-            # Try to get cached data first
-            cached_data = self._get_cached_csv()
-            if cached_data:
-                print("✅ Using cached CSV data")
-                return cached_data
+            # Try to get cached data first (unless force refresh)
+            if not force_refresh:
+                cached_data = self._get_cached_csv()
+                if cached_data:
+                    print("✅ Using cached CSV data")
+                    # But check if we should still refresh based on time
+                    cached_time = datetime.fromisoformat(cached_data['fetch_time'])
+                    if (datetime.now() - cached_time).total_seconds() < self._cache_duration:
+                        return cached_data
+                    else:
+                        print("⏰ Cache expired, fetching fresh data...")
+            else:
+                print("🔄 Force refresh requested, bypassing cache...")
             
             response = requests.get(self.csv_url, timeout=30)
             response.raise_for_status()
@@ -58,20 +67,26 @@ class CSVService:
                     seen.add(symbol)
                     unique_symbols.append(symbol)
             
+            # Calculate new hash
+            new_hash = hashlib.md5(response.text.encode()).hexdigest()[:8]
+            
             # Create CSV snapshot
             csv_data = {
                 'symbols': unique_symbols,
                 'data': df.to_dict('records'),
                 'fetch_time': datetime.now().isoformat(),
-                'csv_hash': hashlib.md5(response.text.encode()).hexdigest()[:8],
+                'csv_hash': new_hash,
                 'symbol_column_used': symbol_column,
-                'source_url': self.csv_url
+                'source_url': self.csv_url,
+                'total_rows': len(df),
+                'unique_symbols': len(unique_symbols)
             }
             
-            # Cache the data
+            # Always cache the new data
             self._cache_csv_data(csv_data)
             
-            print(f"✅ CSV data fetched: {len(unique_symbols)} unique stocks")
+            print(f"✅ Fresh CSV data fetched: {len(unique_symbols)} unique stocks")
+            print(f"   Hash: {new_hash}")
             print(f"   Sample stocks: {', '.join(unique_symbols[:5])}{'...' if len(unique_symbols) > 5 else ''}")
             
             return csv_data
@@ -291,11 +306,11 @@ class CSVService:
         print(f"   Generated {len(fallback_prices)} fallback prices (reason: {reason})")
         return fallback_prices
     
-    def get_stocks_with_prices(self) -> Dict:
+    def get_stocks_with_prices(self, force_refresh: bool = False) -> Dict:
         """Get complete stock data with live prices"""
         try:
-            # Fetch CSV data
-            csv_data = self.fetch_csv_data()
+            # Fetch CSV data with force refresh option
+            csv_data = self.fetch_csv_data(force_refresh=force_refresh)
             
             # Get live prices with detailed status
             price_fetch_reason = "Unknown"
@@ -383,7 +398,9 @@ class CSVService:
                     'fetch_time': csv_data['fetch_time'],
                     'csv_hash': csv_data['csv_hash'],
                     'source_url': csv_data['source_url'],
-                    'symbol_column_used': csv_data.get('symbol_column_used', 'Symbol')
+                    'symbol_column_used': csv_data.get('symbol_column_used', 'Symbol'),
+                    'total_rows': csv_data.get('total_rows', 0),
+                    'force_refreshed': force_refresh
                 },
                 'price_data_status': {
                     'live_prices_used': live_prices_used,
@@ -403,6 +420,7 @@ class CSVService:
             print(f"   Success rate: {success_rate:.1f}%")
             print(f"   Data source: {market_data_source}")
             print(f"   Market status: {'OPEN' if self._is_market_open() else 'CLOSED'}")
+            print(f"   Force refreshed: {force_refresh}")
             
             return result
             
@@ -420,9 +438,9 @@ class CSVService:
                 cached_data = json.load(f)
             
             if not ignore_age:
-                # Check if cache is less than 1 hour old
+                # Check if cache is less than cache_duration old
                 cached_time = datetime.fromisoformat(cached_data['fetch_time'])
-                if (datetime.now() - cached_time).total_seconds() > 3600:
+                if (datetime.now() - cached_time).total_seconds() > self._cache_duration:
                     print("⚠️ Cached CSV data is stale")
                     return None
             
@@ -450,6 +468,7 @@ class CSVService:
             'csv_accessible': False,
             'market_open': self._is_market_open(),
             'last_check': datetime.now().isoformat(),
+            'cache_status': 'unknown',
             'errors': []
         }
         
@@ -474,5 +493,20 @@ class CSVService:
         except Exception as e:
             status['csv_accessible'] = False
             status['errors'].append(f"CSV access error: {str(e)}")
+        
+        # Check cache status
+        try:
+            cached_data = self._get_cached_csv()
+            if cached_data:
+                cached_time = datetime.fromisoformat(cached_data['fetch_time'])
+                age_seconds = (datetime.now() - cached_time).total_seconds()
+                if age_seconds < self._cache_duration:
+                    status['cache_status'] = f'fresh ({age_seconds:.0f}s old)'
+                else:
+                    status['cache_status'] = f'stale ({age_seconds:.0f}s old)'
+            else:
+                status['cache_status'] = 'no cache'
+        except Exception as e:
+            status['cache_status'] = f'cache error: {str(e)}'
         
         return status
