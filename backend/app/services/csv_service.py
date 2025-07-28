@@ -119,6 +119,342 @@ class CSVService:
             
             raise Exception(f"Failed to fetch CSV data and no cache available: {str(e)}")
     
+    def get_live_prices(self, symbols: List[str]) -> Dict[str, float]:
+        """Get live prices using Zerodha API - STRICT: No fake prices, real data only"""
+        if not symbols:
+            raise Exception("No symbols provided for price fetching")
+            
+        print(f"💰 Attempting to fetch live prices for {len(symbols)} stocks...")
+        print(f"🔍 First 5 symbols: {symbols[:5]}")
+        
+        # Check authentication status first - STRICT CHECK
+        if not self.zerodha_auth:
+            print("❌ No Zerodha auth service available")
+            raise Exception("PRICE_DATA_UNAVAILABLE: Zerodha authentication service not available")
+        
+        print(f"🔐 Auth service available: {bool(self.zerodha_auth)}")
+        
+        if not self.zerodha_auth.is_authenticated():
+            print("🔄 Zerodha not authenticated, attempting authentication...")
+            try:
+                result = self.zerodha_auth.authenticate()
+                if result:
+                    self.kite = self.zerodha_auth.get_kite_instance()
+                    print("✅ Authentication successful")
+                else:
+                    print("❌ Authentication failed")
+                    raise Exception("PRICE_DATA_UNAVAILABLE: Zerodha authentication failed")
+            except Exception as e:
+                print(f"❌ Zerodha authentication error: {e}")
+                raise Exception(f"PRICE_DATA_UNAVAILABLE: Authentication error - {str(e)}")
+        
+        if not self.kite:
+            print("❌ Zerodha API connection not available")
+            raise Exception("PRICE_DATA_UNAVAILABLE: No Zerodha API connection")
+        
+        print("✅ Zerodha authenticated and kite instance available")
+        
+        # Test with a single known stock first
+        try:
+            print("🧪 Testing connection with RELIANCE...")
+            test_quote = self.kite.quote(["NSE:RELIANCE"])
+            if test_quote and "NSE:RELIANCE" in test_quote:
+                test_price = test_quote["NSE:RELIANCE"].get("last_price", 0)
+                print(f"✅ Connection test successful - RELIANCE: ₹{test_price}")
+            else:
+                print("❌ Connection test failed - empty response")
+                raise Exception("PRICE_DATA_UNAVAILABLE: Zerodha API connection test failed")
+        except Exception as e:
+            print(f"❌ Connection test error: {e}")
+            raise Exception(f"PRICE_DATA_UNAVAILABLE: API test failed - {str(e)}")
+        
+        # Process symbols in parallel batches - REAL DATA ONLY
+        prices = {}
+        failed_symbols = []
+        
+        batch_size = 15  # Reduced batch size for better reliability
+        total_batches = (len(symbols) + batch_size - 1) // batch_size
+        
+        print(f"📊 Processing {total_batches} batches of {batch_size} symbols each")
+        
+        # Use ThreadPoolExecutor for parallel processing
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = []
+            
+            for batch_num in range(total_batches):
+                start_idx = batch_num * batch_size
+                end_idx = min(start_idx + batch_size, len(symbols))
+                batch_symbols = symbols[start_idx:end_idx]
+                
+                future = executor.submit(self._fetch_batch_prices_strict, batch_symbols, batch_num + 1, total_batches)
+                futures.append(future)
+            
+            # Collect results
+            for future in futures:
+                try:
+                    batch_prices, batch_failed = future.result(timeout=30)
+                    prices.update(batch_prices)
+                    failed_symbols.extend(batch_failed)
+                except Exception as e:
+                    print(f"❌ Batch processing error: {e}")
+        
+        # Calculate success rate
+        success_rate = len(prices) / len(symbols) * 100 if symbols else 0
+        
+        print(f"📊 Live price fetching results:")
+        print(f"   Successful: {len(prices)}/{len(symbols)} ({success_rate:.1f}%)")
+        print(f"   Failed: {len(failed_symbols)}")
+        
+        # STRICT: If we can't get reasonable success rate, fail completely
+        if len(prices) == 0:
+            print("❌ No live prices fetched - complete failure")
+            raise Exception("PRICE_DATA_UNAVAILABLE: Failed to fetch any live prices from Zerodha")
+        
+        # STRICT: If success rate is too low, this indicates a problem
+        if success_rate < 50:  # At least 50% success required
+            print(f"❌ Success rate too low ({success_rate:.1f}%) - data quality insufficient")
+            raise Exception(f"PRICE_DATA_UNAVAILABLE: Low success rate ({success_rate:.1f}%) - data unreliable")
+        
+        print(f"✅ Returning {len(prices)} REAL live prices from Zerodha")
+        return prices
+    
+    def _fetch_batch_prices_strict(self, symbols: List[str], batch_num: int, total_batches: int) -> tuple:
+        """Fetch prices for a batch of symbols - STRICT mode, no fallbacks"""
+        prices = {}
+        failed_symbols = []
+        
+        try:
+            print(f"   🔄 Processing batch {batch_num}/{total_batches}: {len(symbols)} symbols")
+            
+            # Prepare symbols for quote request
+            quote_symbols = []
+            symbol_mapping = {}
+            
+            for symbol in symbols:
+                clean_symbol = symbol.strip().upper()
+                nse_symbol = f"NSE:{clean_symbol}"
+                quote_symbols.append(nse_symbol)
+                symbol_mapping[nse_symbol] = clean_symbol
+            
+            print(f"   🔍 Requesting quotes for: {quote_symbols[:3]}{'...' if len(quote_symbols) > 3 else ''}")
+            
+            # Make the API call with timeout
+            quote_response = self.kite.quote(quote_symbols)
+            
+            print(f"   📊 Received {len(quote_response)} quote responses")
+            
+            for quote_key, quote_data in quote_response.items():
+                if quote_key in symbol_mapping:
+                    original_symbol = symbol_mapping[quote_key]
+                    
+                    # Extract price with STRICT validation
+                    last_price = quote_data.get('last_price', 0)
+                    
+                    # STRICT validation - must be real positive price
+                    if isinstance(last_price, (int, float)) and last_price > 0:
+                        # Additional validation - reasonable price range
+                        if 0.1 <= last_price <= 100000:  # ₹0.10 to ₹1,00,000 reasonable range
+                            prices[original_symbol] = float(last_price)
+                            print(f"   ✅ {original_symbol}: ₹{last_price:.2f} (LIVE)")
+                        else:
+                            failed_symbols.append(original_symbol)
+                            print(f"   ❌ {original_symbol}: Price out of range ₹{last_price}")
+                    else:
+                        failed_symbols.append(original_symbol)
+                        print(f"   ❌ {original_symbol}: Invalid price data {last_price}")
+            
+            # Add symbols that weren't in the response to failed list
+            for symbol in symbols:
+                if symbol not in prices and symbol not in failed_symbols:
+                    failed_symbols.append(symbol)
+                    print(f"   ❌ {symbol}: No data received from Zerodha")
+            
+        except Exception as e:
+            print(f"   ❌ Batch {batch_num} quote request failed: {e}")
+            failed_symbols.extend(symbols)
+        
+        return prices, failed_symbols
+    
+    def get_stocks_with_prices(self, force_refresh: bool = False) -> Dict:
+        """Get complete stock data with live prices - STRICT: Real data only"""
+        try:
+            # Fetch CSV data with force refresh option
+            csv_data = self.fetch_csv_data(force_refresh=force_refresh)
+            
+            # Try to get REAL live prices - no fallbacks
+            price_fetch_error = None
+            prices = {}
+            live_prices_used = False
+            market_data_source = "UNAVAILABLE"
+            
+            try:
+                print("🔄 Attempting to fetch LIVE prices from Zerodha...")
+                prices = self.get_live_prices(csv_data['symbols'])
+                live_prices_used = True
+                market_data_source = "Zerodha Live API"
+                print(f"✅ Successfully fetched {len(prices)} live prices")
+                
+            except Exception as price_error:
+                price_fetch_error = str(price_error)
+                print(f"❌ Live price fetching failed: {price_error}")
+                
+                # STRICT: No fallback to fake data
+                if "PRICE_DATA_UNAVAILABLE" in price_fetch_error:
+                    print("🚫 STRICT MODE: No fake prices - returning error state")
+                    
+                    return {
+                        'error': 'PRICE_DATA_UNAVAILABLE',
+                        'error_message': price_fetch_error,
+                        'csv_info': {
+                            'fetch_time': csv_data['fetch_time'],
+                            'csv_hash': csv_data['csv_hash'],
+                            'source_url': csv_data['source_url'],
+                            'total_symbols': len(csv_data['symbols'])
+                        },
+                        'price_data_status': {
+                            'live_prices_used': False,
+                            'zerodha_connected': False,
+                            'success_rate': 0,
+                            'market_data_source': 'UNAVAILABLE - Connection Failed',
+                            'market_open': self._is_market_open(),
+                            'error_reason': price_fetch_error,
+                            'last_check_time': self._last_check_time.isoformat() if self._last_check_time else None
+                        }
+                    }
+                else:
+                    # Re-raise the exception for other types of errors
+                    raise
+            
+            # Only proceed if we have REAL prices
+            if not prices:
+                raise Exception("PRICE_DATA_UNAVAILABLE: No valid price data obtained")
+            
+            # Combine CSV data with REAL prices only
+            stocks_data = []
+            excluded_count = 0
+            
+            for i, stock_info in enumerate(csv_data['data']):
+                # Get symbol from the data
+                symbol_column = csv_data.get('symbol_column_used', 'Symbol')
+                symbol = stock_info.get(symbol_column)
+                
+                if not symbol:
+                    # Try other common column names
+                    for col in ['Symbol', 'symbol', 'SYMBOL', 'Stock', 'stock']:
+                        if col in stock_info and stock_info[col]:
+                            symbol = stock_info[col]
+                            break
+                
+                if not symbol:
+                    excluded_count += 1
+                    continue
+                
+                symbol = str(symbol).strip().upper()
+                
+                # ONLY include stocks with REAL live prices
+                if symbol in prices and prices[symbol] > 0:
+                    stock_data = {
+                        'symbol': symbol,
+                        'price': prices[symbol],
+                        'price_type': 'LIVE',  # Mark as live data
+                        'momentum': stock_info.get('Momentum', stock_info.get('momentum', 0)),
+                        'volatility': stock_info.get('Volatility', stock_info.get('volatility', 0)),
+                        'score': stock_info.get('Score', stock_info.get('score', 0))
+                    }
+                    
+                    # Add any additional fields from CSV
+                    for key, value in stock_info.items():
+                        if key.lower() not in ['symbol', 'momentum', 'volatility', 'score'] and key not in stock_data:
+                            stock_data[key.lower()] = value
+                    
+                    stocks_data.append(stock_data)
+                else:
+                    print(f"   ⚠️ {symbol}: Excluded - no live price data available")
+                    excluded_count += 1
+            
+            if len(stocks_data) == 0:
+                raise Exception("PRICE_DATA_UNAVAILABLE: No stocks have valid live price data")
+            
+            # Calculate success rate
+            success_rate = (len(stocks_data) / len(csv_data['symbols'])) * 100
+            
+            result = {
+                'stocks': stocks_data,
+                'total_stocks': len(stocks_data),
+                'total_symbols_in_csv': len(csv_data['symbols']),
+                'excluded_symbols': excluded_count,
+                'csv_info': {
+                    'fetch_time': csv_data['fetch_time'],
+                    'csv_hash': csv_data['csv_hash'],
+                    'source_url': csv_data['source_url'],
+                    'symbol_column_used': csv_data.get('symbol_column_used', 'Symbol'),
+                    'total_rows': csv_data.get('total_rows', 0),
+                    'force_refreshed': force_refresh,
+                    'change_info': csv_data.get('change_info', {}),
+                    'columns': csv_data.get('columns', []),
+                    'content_size': csv_data.get('content_size', 0)
+                },
+                'price_data_status': {
+                    'live_prices_used': live_prices_used,
+                    'zerodha_connected': bool(self.zerodha_auth and self.zerodha_auth.is_authenticated()),
+                    'success_rate': success_rate,
+                    'last_updated': datetime.now().isoformat(),
+                    'market_data_source': market_data_source,
+                    'market_open': self._is_market_open(),
+                    'price_fetch_reason': "Live data fetched successfully",
+                    'last_check_time': self._last_check_time.isoformat() if self._last_check_time else None,
+                    'data_quality': 'HIGH - All prices from live API'
+                }
+            }
+            
+            print(f"✅ Complete stock data prepared with LIVE prices:")
+            print(f"   CSV symbols: {len(csv_data['symbols'])}")
+            print(f"   With live prices: {len(stocks_data)}")
+            print(f"   Excluded due to no live price: {excluded_count}")
+            print(f"   Success rate: {success_rate:.1f}%")
+            print(f"   Data source: {market_data_source}")
+            print(f"   Market status: {'OPEN' if self._is_market_open() else 'CLOSED'}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ Error preparing stock data: {e}")
+            
+            # If it's a price data unavailable error, return structured error
+            if "PRICE_DATA_UNAVAILABLE" in str(e):
+                return {
+                    'error': 'PRICE_DATA_UNAVAILABLE',
+                    'error_message': str(e),
+                    'stocks': [],
+                    'total_stocks': 0,
+                    'price_data_status': {
+                        'live_prices_used': False,
+                        'zerodha_connected': False,
+                        'success_rate': 0,
+                        'market_data_source': 'UNAVAILABLE',
+                        'error_reason': str(e)
+                    }
+                }
+            
+            raise Exception(f"Cannot prepare investment data: {str(e)}")
+    
+    def _is_market_open(self) -> bool:
+        """Check if market is currently open"""
+        now = datetime.now()
+        
+        # Check if it's a weekday (Monday=0, Sunday=6)
+        if now.weekday() >= 5:  # Saturday or Sunday
+            return False
+        
+        # Check market hours (9:15 AM to 3:30 PM IST)
+        market_open_time = time(9, 15)
+        market_close_time = time(15, 30)
+        current_time = now.time()
+        
+        return market_open_time <= current_time <= market_close_time
+    
+    # [Rest of the methods remain the same - _detect_changes, _get_cached_csv, etc.]
+    
     def _detect_changes(self, old_data: Optional[Dict], new_data: Dict) -> Dict:
         """Detect changes between old and new CSV data"""
         if not old_data:
@@ -195,350 +531,6 @@ class CSVService:
         
         return ', '.join(summary_parts)
     
-    def get_live_prices(self, symbols: List[str]) -> Dict[str, float]:
-        """Get live prices using Zerodha API with enhanced error handling and parallel processing"""
-        if not symbols:
-            raise Exception("No symbols provided for price fetching")
-            
-        print(f"💰 Fetching live prices for {len(symbols)} stocks...")
-        print(f"🔍 First 5 symbols: {symbols[:5]}")
-        
-        # Check if market is open
-        market_open = self._is_market_open()
-        print(f"📅 Market status: {'OPEN' if market_open else 'CLOSED'}")
-        
-        # Check authentication status first
-        if not self.zerodha_auth:
-            print("❌ No Zerodha auth service available")
-            return self._get_fallback_prices(symbols, "No auth service")
-        
-        print(f"🔐 Auth service available: {bool(self.zerodha_auth)}")
-        
-        if not self.zerodha_auth.is_authenticated():
-            print("🔄 Zerodha not authenticated, attempting authentication...")
-            try:
-                result = self.zerodha_auth.authenticate()
-                if result:
-                    self.kite = self.zerodha_auth.get_kite_instance()
-                    print("✅ Authentication successful")
-                else:
-                    print("❌ Authentication failed")
-                    return self._get_fallback_prices(symbols, "Authentication failed")
-            except Exception as e:
-                print(f"❌ Zerodha authentication error: {e}")
-                return self._get_fallback_prices(symbols, f"Auth error: {str(e)}")
-        
-        if not self.kite:
-            print("❌ Zerodha API connection not available")
-            return self._get_fallback_prices(symbols, "No kite instance")
-        
-        print("✅ Zerodha authenticated and kite instance available")
-        
-        # Test with a single known stock first
-        try:
-            print("🧪 Testing with RELIANCE...")
-            test_quote = self.kite.quote(["NSE:RELIANCE"])
-            if test_quote and "NSE:RELIANCE" in test_quote:
-                test_price = test_quote["NSE:RELIANCE"].get("last_price", 0)
-                print(f"✅ Test successful - RELIANCE: ₹{test_price}")
-            else:
-                print("❌ Test quote failed - empty response")
-                return self._get_fallback_prices(symbols, "Test quote failed")
-        except Exception as e:
-            print(f"❌ Test quote error: {e}")
-            return self._get_fallback_prices(symbols, f"Test error: {str(e)}")
-        
-        # Use parallel processing for better performance
-        prices = {}
-        failed_symbols = []
-        
-        # Process symbols in parallel batches
-        batch_size = 15  # Reduced batch size for better reliability
-        total_batches = (len(symbols) + batch_size - 1) // batch_size
-        
-        print(f"📊 Processing {total_batches} batches of {batch_size} symbols each")
-        
-        # Use ThreadPoolExecutor for parallel processing
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = []
-            
-            for batch_num in range(total_batches):
-                start_idx = batch_num * batch_size
-                end_idx = min(start_idx + batch_size, len(symbols))
-                batch_symbols = symbols[start_idx:end_idx]
-                
-                future = executor.submit(self._fetch_batch_prices_safe, batch_symbols, batch_num + 1, total_batches)
-                futures.append(future)
-            
-            # Collect results
-            for future in futures:
-                try:
-                    batch_prices, batch_failed = future.result(timeout=30)
-                    prices.update(batch_prices)
-                    failed_symbols.extend(batch_failed)
-                except Exception as e:
-                    print(f"❌ Batch processing error: {e}")
-        
-        # Calculate success rate
-        success_rate = len(prices) / len(symbols) * 100 if symbols else 0
-        
-        print(f"📊 Price fetching results:")
-        print(f"   Successful: {len(prices)}/{len(symbols)} ({success_rate:.1f}%)")
-        print(f"   Failed: {len(failed_symbols)}")
-        
-        if len(prices) == 0:
-            print("❌ No live prices fetched, using fallback")
-            return self._get_fallback_prices(symbols, "All price fetches failed")
-        
-        if success_rate < 40:  # Lower threshold for acceptable success rate
-            print(f"⚠️ Low success rate ({success_rate:.1f}%), supplementing with fallback")
-            fallback_prices = self._get_fallback_prices(failed_symbols, f"Low success rate: {success_rate:.1f}%")
-            prices.update(fallback_prices)
-        
-        print(f"✅ Returning {len(prices)} prices (live: {len(prices) - len(failed_symbols)}, fallback: {len(failed_symbols)})")
-        return prices
-    
-    def _fetch_batch_prices_safe(self, symbols: List[str], batch_num: int, total_batches: int) -> tuple:
-        """Safely fetch prices for a batch of symbols with timeout and error handling"""
-        prices = {}
-        failed_symbols = []
-        
-        try:
-            print(f"   🔄 Processing batch {batch_num}/{total_batches}: {len(symbols)} symbols")
-            
-            # Prepare symbols for quote request
-            quote_symbols = []
-            symbol_mapping = {}
-            
-            for symbol in symbols:
-                clean_symbol = symbol.strip().upper()
-                nse_symbol = f"NSE:{clean_symbol}"
-                quote_symbols.append(nse_symbol)
-                symbol_mapping[nse_symbol] = clean_symbol
-            
-            print(f"   🔍 Requesting quotes for: {quote_symbols[:3]}{'...' if len(quote_symbols) > 3 else ''}")
-            
-            # Make the API call with timeout
-            quote_response = self.kite.quote(quote_symbols)
-            
-            print(f"   📊 Received {len(quote_response)} quote responses")
-            
-            for quote_key, quote_data in quote_response.items():
-                if quote_key in symbol_mapping:
-                    original_symbol = symbol_mapping[quote_key]
-                    
-                    # Extract price with validation
-                    last_price = quote_data.get('last_price', 0)
-                    
-                    # Additional validation
-                    if isinstance(last_price, (int, float)) and last_price > 0:
-                        prices[original_symbol] = float(last_price)
-                        print(f"   ✅ {original_symbol}: ₹{last_price:.2f}")
-                    else:
-                        failed_symbols.append(original_symbol)
-                        print(f"   ⚠️ {original_symbol}: Invalid price data {last_price}")
-            
-            # Add symbols that weren't in the response to failed list
-            for symbol in symbols:
-                if symbol not in prices and symbol not in failed_symbols:
-                    failed_symbols.append(symbol)
-            
-        except Exception as e:
-            print(f"   ❌ Batch {batch_num} quote request failed: {e}")
-            failed_symbols.extend(symbols)
-        
-        return prices, failed_symbols
-    
-    def _is_market_open(self) -> bool:
-        """Check if market is currently open"""
-        now = datetime.now()
-        
-        # Check if it's a weekday (Monday=0, Sunday=6)
-        if now.weekday() >= 5:  # Saturday or Sunday
-            return False
-        
-        # Check market hours (9:15 AM to 3:30 PM IST)
-        market_open_time = time(9, 15)
-        market_close_time = time(15, 30)
-        current_time = now.time()
-        
-        return market_open_time <= current_time <= market_close_time
-    
-    def _get_fallback_prices(self, symbols: List[str], reason: str = "Unknown") -> Dict[str, float]:
-        """Get fallback prices with improved realism and reason tracking"""
-        print(f"🔄 Using fallback price generator: {reason}")
-        
-        # Generate more realistic price ranges based on actual Indian stock patterns
-        import random
-        random.seed(42)  # For consistent mock data
-        
-        fallback_prices = {}
-        for symbol in symbols:
-            # Generate price based on symbol characteristics for consistency
-            symbol_hash = hash(symbol) % 10000
-            
-            # Create more realistic price distribution
-            if symbol_hash < 2000:  # 20% - penny stocks
-                base_price = 20 + (symbol_hash % 180)  # ₹20-₹200
-            elif symbol_hash < 5000:  # 30% - small cap
-                base_price = 200 + (symbol_hash % 800)  # ₹200-₹1000
-            elif symbol_hash < 8000:  # 30% - mid cap
-                base_price = 1000 + (symbol_hash % 2000)  # ₹1000-₹3000
-            else:  # 20% - large cap
-                base_price = 3000 + (symbol_hash % 7000)  # ₹3000-₹10000
-            
-            # Add some daily variation
-            daily_variation = random.uniform(-5, 5)  # ±5%
-            final_price = base_price * (1 + daily_variation/100)
-            final_price = max(10, final_price)  # Ensure minimum price
-            
-            fallback_prices[symbol] = round(final_price, 2)
-        
-        print(f"   Generated {len(fallback_prices)} fallback prices (reason: {reason})")
-        return fallback_prices
-    
-    def get_stocks_with_prices(self, force_refresh: bool = False) -> Dict:
-        """Get complete stock data with live prices and enhanced change detection"""
-        try:
-            # Fetch CSV data with force refresh option
-            csv_data = self.fetch_csv_data(force_refresh=force_refresh)
-            
-            # Get live prices with detailed status
-            price_fetch_reason = "Unknown"
-            try:
-                prices = self.get_live_prices(csv_data['symbols'])
-                
-                # Determine if we got real live prices by checking variance and patterns
-                price_values = list(prices.values())
-                live_prices_used = self._detect_live_prices(price_values)
-                
-                if live_prices_used:
-                    market_data_source = "Zerodha Live API"
-                else:
-                    market_data_source = "Fallback Generator"
-                    
-            except Exception as price_error:
-                print(f"⚠️ Price fetching failed: {price_error}")
-                prices = self._get_fallback_prices(csv_data['symbols'], f"Error: {str(price_error)}")
-                live_prices_used = False
-                market_data_source = "Fallback Generator (Error)"
-                price_fetch_reason = str(price_error)
-            
-            # Combine data - only include stocks with valid prices
-            stocks_data = []
-            excluded_count = 0
-            
-            for i, stock_info in enumerate(csv_data['data']):
-                # Get symbol from the data
-                symbol_column = csv_data.get('symbol_column_used', 'Symbol')
-                symbol = stock_info.get(symbol_column)
-                
-                if not symbol:
-                    # Try other common column names
-                    for col in ['Symbol', 'symbol', 'SYMBOL', 'Stock', 'stock']:
-                        if col in stock_info and stock_info[col]:
-                            symbol = stock_info[col]
-                            break
-                
-                if not symbol:
-                    excluded_count += 1
-                    continue
-                
-                symbol = str(symbol).strip().upper()
-                
-                if symbol in prices and prices[symbol] > 0:
-                    stock_data = {
-                        'symbol': symbol,
-                        'price': prices[symbol],
-                        'momentum': stock_info.get('Momentum', stock_info.get('momentum', 0)),
-                        'volatility': stock_info.get('Volatility', stock_info.get('volatility', 0)),
-                        'score': stock_info.get('Score', stock_info.get('score', 0))
-                    }
-                    
-                    # Add any additional fields from CSV
-                    for key, value in stock_info.items():
-                        if key.lower() not in ['symbol', 'momentum', 'volatility', 'score'] and key not in stock_data:
-                            stock_data[key.lower()] = value
-                    
-                    stocks_data.append(stock_data)
-                else:
-                    print(f"   ⚠️ {symbol}: Excluded - no valid price data")
-                    excluded_count += 1
-            
-            if len(stocks_data) == 0:
-                raise Exception("No stocks have valid price data")
-            
-            # Calculate success rate
-            success_rate = (len(stocks_data) / len(csv_data['symbols'])) * 100
-            
-            result = {
-                'stocks': stocks_data,
-                'total_stocks': len(stocks_data),
-                'total_symbols_in_csv': len(csv_data['symbols']),
-                'excluded_symbols': excluded_count,
-                'csv_info': {
-                    'fetch_time': csv_data['fetch_time'],
-                    'csv_hash': csv_data['csv_hash'],
-                    'source_url': csv_data['source_url'],
-                    'symbol_column_used': csv_data.get('symbol_column_used', 'Symbol'),
-                    'total_rows': csv_data.get('total_rows', 0),
-                    'force_refreshed': force_refresh,
-                    'change_info': csv_data.get('change_info', {}),
-                    'columns': csv_data.get('columns', []),
-                    'content_size': csv_data.get('content_size', 0)
-                },
-                'price_data_status': {
-                    'live_prices_used': live_prices_used,
-                    'zerodha_connected': bool(self.zerodha_auth and self.zerodha_auth.is_authenticated()),
-                    'success_rate': success_rate,
-                    'last_updated': datetime.now().isoformat(),
-                    'market_data_source': market_data_source,
-                    'market_open': self._is_market_open(),
-                    'price_fetch_reason': price_fetch_reason if not live_prices_used else "Live data fetched successfully",
-                    'last_check_time': self._last_check_time.isoformat() if self._last_check_time else None
-                }
-            }
-            
-            print(f"✅ Complete stock data prepared:")
-            print(f"   CSV symbols: {len(csv_data['symbols'])}")
-            print(f"   With valid prices: {len(stocks_data)}")
-            print(f"   Excluded due to no price: {excluded_count}")
-            print(f"   Success rate: {success_rate:.1f}%")
-            print(f"   Data source: {market_data_source}")
-            print(f"   Market status: {'OPEN' if self._is_market_open() else 'CLOSED'}")
-            print(f"   Force refreshed: {force_refresh}")
-            print(f"   Changes detected: {csv_data.get('change_info', {}).get('has_changes', False)}")
-            
-            return result
-            
-        except Exception as e:
-            print(f"❌ Error preparing stock data: {e}")
-            raise Exception(f"Cannot prepare investment data: {str(e)}")
-    
-    def _detect_live_prices(self, price_values: List[float]) -> bool:
-        """Detect if prices are likely from live API vs fallback generator"""
-        if len(price_values) < 5:
-            return len(price_values) > 0
-        
-        try:
-            import statistics
-            
-            # Live prices should have higher variance and more realistic distribution
-            price_variance = statistics.variance(price_values)
-            price_mean = statistics.mean(price_values)
-            
-            # Fallback prices have predictable patterns
-            # Live prices should have more natural variance
-            variance_ratio = price_variance / (price_mean ** 2) if price_mean > 0 else 0
-            
-            # Live prices should have variance ratio > 0.1 typically
-            # Fallback prices tend to have lower, more uniform variance
-            return variance_ratio > 0.05
-            
-        except Exception:
-            # If calculation fails, assume live prices
-            return True
-    
     def _get_cached_csv(self, ignore_age: bool = False) -> Optional[Dict]:
         """Get cached CSV data if available and not too old"""
         try:
@@ -586,7 +578,8 @@ class CSVService:
             'cache_status': 'unknown',
             'change_detection_enabled': self._change_detection_enabled,
             'last_csv_check': self._last_check_time.isoformat() if self._last_check_time else None,
-            'errors': []
+            'errors': [],
+            'price_data_policy': 'STRICT - Real data only, no fallbacks'
         }
         
         # Check Zerodha status
@@ -594,12 +587,12 @@ class CSVService:
             try:
                 status['zerodha_authenticated'] = self.zerodha_auth.is_authenticated()
                 if not status['zerodha_authenticated']:
-                    status['errors'].append("Zerodha not authenticated")
+                    status['errors'].append("Zerodha not authenticated - Live prices unavailable")
             except Exception as e:
                 status['zerodha_authenticated'] = False
                 status['errors'].append(f"Zerodha auth error: {str(e)}")
         else:
-            status['errors'].append("Zerodha auth service not available")
+            status['errors'].append("Zerodha auth service not available - Live prices unavailable")
         
         # Check CSV accessibility
         try:
@@ -641,304 +634,3 @@ class CSVService:
             status['cache_info'] = None
         
         return status
-    
-    def check_for_changes(self) -> Dict:
-        """Explicitly check for CSV changes without forcing a full refresh"""
-        try:
-            print("🔍 Checking for CSV changes...")
-            
-            # Get current cached data
-            cached_data = self._get_cached_csv()
-            old_hash = cached_data.get('csv_hash') if cached_data else None
-            
-            # Fetch fresh data to compare
-            fresh_data = self.fetch_csv_data(force_refresh=True)
-            new_hash = fresh_data.get('csv_hash')
-            
-            # Get change information
-            change_info = fresh_data.get('change_info', {})
-            
-            result = {
-                'changes_detected': change_info.get('has_changes', False),
-                'change_type': change_info.get('change_type', 'unknown'),
-                'change_summary': change_info.get('summary', 'No summary available'),
-                'old_hash': old_hash,
-                'new_hash': new_hash,
-                'check_time': datetime.now().isoformat(),
-                'details': change_info.get('details', {}),
-                'fresh_data_available': True
-            }
-            
-            print(f"✅ Change check complete:")
-            print(f"   Changes detected: {result['changes_detected']}")
-            print(f"   Change type: {result['change_type']}")
-            print(f"   Summary: {result['change_summary']}")
-            
-            return result
-            
-        except Exception as e:
-            print(f"❌ Error checking for changes: {e}")
-            return {
-                'changes_detected': False,
-                'error': str(e),
-                'check_time': datetime.now().isoformat(),
-                'fresh_data_available': False
-            }
-    
-    def get_change_history(self, limit: int = 10) -> List[Dict]:
-        """Get history of CSV changes from cache files"""
-        try:
-            # This would typically read from a change log file
-            # For now, we'll return mock data based on cache info
-            
-            cached_data = self._get_cached_csv(ignore_age=True)
-            if not cached_data:
-                return []
-            
-            change_info = cached_data.get('change_info', {})
-            
-            # Return current change as history entry
-            if change_info.get('has_changes'):
-                return [{
-                    'timestamp': cached_data.get('fetch_time'),
-                    'hash': cached_data.get('csv_hash'),
-                    'change_type': change_info.get('change_type'),
-                    'summary': change_info.get('summary'),
-                    'details': change_info.get('details', {})
-                }]
-            
-            return []
-            
-        except Exception as e:
-            print(f"⚠️ Error getting change history: {e}")
-            return []
-    
-    def enable_change_detection(self, enabled: bool = True):
-        """Enable or disable change detection"""
-        self._change_detection_enabled = enabled
-        print(f"🔄 Change detection {'enabled' if enabled else 'disabled'}")
-    
-    def get_csv_metadata(self) -> Dict:
-        """Get detailed metadata about the current CSV"""
-        try:
-            cached_data = self._get_cached_csv()
-            if not cached_data:
-                return {'available': False}
-            
-            return {
-                'available': True,
-                'hash': cached_data.get('csv_hash'),
-                'fetch_time': cached_data.get('fetch_time'),
-                'source_url': cached_data.get('source_url'),
-                'total_symbols': len(cached_data.get('symbols', [])),
-                'total_rows': cached_data.get('total_rows', 0),
-                'columns': cached_data.get('columns', []),
-                'content_size': cached_data.get('content_size', 0),
-                'symbol_column': cached_data.get('symbol_column_used'),
-                'cache_version': cached_data.get('cache_version', '1.0'),
-                'change_detection_enabled': self._change_detection_enabled,
-                'last_check_time': self._last_check_time.isoformat() if self._last_check_time else None,
-                'change_info': cached_data.get('change_info', {})
-            }
-            
-        except Exception as e:
-            print(f"⚠️ Error getting CSV metadata: {e}")
-            return {'available': False, 'error': str(e)}
-    
-    def clear_cache(self) -> bool:
-        """Clear the CSV cache"""
-        try:
-            if os.path.exists(self._cache_file):
-                os.remove(self._cache_file)
-                print("🗑️ CSV cache cleared")
-                return True
-            return False
-        except Exception as e:
-            print(f"⚠️ Error clearing cache: {e}")
-            return False
-    
-    def get_cache_size(self) -> int:
-        """Get the size of the cache file in bytes"""
-        try:
-            if os.path.exists(self._cache_file):
-                return os.path.getsize(self._cache_file)
-            return 0
-        except Exception as e:
-            print(f"⚠️ Error getting cache size: {e}")
-            return 0
-    
-    def validate_csv_structure(self, csv_data: Dict) -> Dict:
-        """Validate the structure and content of CSV data"""
-        validation_result = {
-            'valid': True,
-            'errors': [],
-            'warnings': [],
-            'stats': {}
-        }
-        
-        try:
-            symbols = csv_data.get('symbols', [])
-            data = csv_data.get('data', [])
-            
-            # Check if we have symbols
-            if not symbols:
-                validation_result['valid'] = False
-                validation_result['errors'].append("No symbols found in CSV")
-                return validation_result
-            
-            # Check for duplicates
-            unique_symbols = set(symbols)
-            if len(unique_symbols) != len(symbols):
-                duplicate_count = len(symbols) - len(unique_symbols)
-                validation_result['warnings'].append(f"{duplicate_count} duplicate symbols found")
-            
-            # Validate symbol format
-            invalid_symbols = []
-            for symbol in symbols:
-                if not symbol or not isinstance(symbol, str) or len(symbol.strip()) == 0:
-                    invalid_symbols.append(symbol)
-            
-            if invalid_symbols:
-                validation_result['warnings'].append(f"{len(invalid_symbols)} invalid symbols found")
-            
-            # Check data consistency
-            if len(data) != csv_data.get('total_rows', 0):
-                validation_result['warnings'].append("Data row count mismatch")
-            
-            # Validate required columns
-            required_columns = ['Symbol', 'symbol', 'SYMBOL']
-            symbol_column = csv_data.get('symbol_column_used')
-            if symbol_column not in csv_data.get('columns', []):
-                validation_result['errors'].append(f"Symbol column '{symbol_column}' not found in data")
-            
-            # Statistics
-            validation_result['stats'] = {
-                'total_symbols': len(symbols),
-                'unique_symbols': len(unique_symbols),
-                'duplicate_symbols': len(symbols) - len(unique_symbols),
-                'invalid_symbols': len(invalid_symbols),
-                'total_columns': len(csv_data.get('columns', [])),
-                'data_rows': len(data)
-            }
-            
-        except Exception as e:
-            validation_result['valid'] = False
-            validation_result['errors'].append(f"Validation error: {str(e)}")
-        
-        return validation_result
-    
-    def export_csv_data(self, format: str = 'json') -> str:
-        """Export current CSV data in specified format"""
-        try:
-            cached_data = self._get_cached_csv()
-            if not cached_data:
-                raise Exception("No cached CSV data available")
-            
-            if format.lower() == 'json':
-                return json.dumps(cached_data, indent=2)
-            elif format.lower() == 'csv':
-                import pandas as pd
-                df = pd.DataFrame(cached_data['data'])
-                return df.to_csv(index=False)
-            else:
-                raise Exception(f"Unsupported export format: {format}")
-                
-        except Exception as e:
-            print(f"⚠️ Error exporting CSV data: {e}")
-            raise
-    
-    def get_symbol_details(self, symbol: str) -> Optional[Dict]:
-        """Get detailed information about a specific symbol"""
-        try:
-            cached_data = self._get_cached_csv()
-            if not cached_data:
-                return None
-            
-            # Find the symbol in the data
-            symbol_column = cached_data.get('symbol_column_used', 'Symbol')
-            
-            for row in cached_data.get('data', []):
-                if row.get(symbol_column, '').upper() == symbol.upper():
-                    return {
-                        'symbol': symbol,
-                        'data': row,
-                        'csv_hash': cached_data.get('csv_hash'),
-                        'fetch_time': cached_data.get('fetch_time'),
-                        'found': True
-                    }
-            
-            return {
-                'symbol': symbol,
-                'found': False,
-                'csv_hash': cached_data.get('csv_hash'),
-                'fetch_time': cached_data.get('fetch_time')
-            }
-            
-        except Exception as e:
-            print(f"⚠️ Error getting symbol details for {symbol}: {e}")
-            return None
-    
-    def compare_with_portfolio(self, portfolio_symbols: List[str]) -> Dict:
-        """Compare CSV symbols with current portfolio"""
-        try:
-            cached_data = self._get_cached_csv()
-            if not cached_data:
-                return {'error': 'No CSV data available'}
-            
-            csv_symbols = set(cached_data.get('symbols', []))
-            portfolio_symbols_set = set(portfolio_symbols)
-            
-            return {
-                'csv_symbols': list(csv_symbols),
-                'portfolio_symbols': portfolio_symbols,
-                'symbols_to_add': list(csv_symbols - portfolio_symbols_set),
-                'symbols_to_remove': list(portfolio_symbols_set - csv_symbols),
-                'common_symbols': list(csv_symbols & portfolio_symbols_set),
-                'alignment_percentage': len(csv_symbols & portfolio_symbols_set) / len(csv_symbols | portfolio_symbols_set) * 100 if csv_symbols | portfolio_symbols_set else 0,
-                'csv_hash': cached_data.get('csv_hash'),
-                'comparison_time': datetime.now().isoformat()
-            }
-            
-        except Exception as e:
-            print(f"⚠️ Error comparing with portfolio: {e}")
-            return {'error': str(e)}
-    
-    def schedule_periodic_check(self, interval_minutes: int = 5):
-        """Schedule periodic CSV checks (placeholder for background task)"""
-        print(f"📅 Scheduling CSV checks every {interval_minutes} minutes")
-        # This would typically integrate with a task scheduler like Celery or APScheduler
-        # For now, just log the intent
-        self._scheduled_check_interval = interval_minutes
-    
-    def get_performance_stats(self) -> Dict:
-        """Get performance statistics for the CSV service"""
-        try:
-            cached_data = self._get_cached_csv()
-            
-            stats = {
-                'cache_available': bool(cached_data),
-                'cache_size_bytes': self.get_cache_size(),
-                'last_fetch_time': cached_data.get('fetch_time') if cached_data else None,
-                'last_check_time': self._last_check_time.isoformat() if self._last_check_time else None,
-                'change_detection_enabled': self._change_detection_enabled,
-                'csv_url': self.csv_url,
-                'cache_duration_seconds': self._cache_duration,
-                'zerodha_auth_available': bool(self.zerodha_auth),
-                'zerodha_authenticated': self.zerodha_auth.is_authenticated() if self.zerodha_auth else False
-            }
-            
-            if cached_data:
-                stats.update({
-                    'symbols_count': len(cached_data.get('symbols', [])),
-                    'data_rows': len(cached_data.get('data', [])),
-                    'csv_hash': cached_data.get('csv_hash'),
-                    'content_size': cached_data.get('content_size', 0),
-                    'columns_count': len(cached_data.get('columns', [])),
-                    'cache_age_seconds': (datetime.now() - datetime.fromisoformat(cached_data['fetch_time'])).total_seconds()
-                })
-            
-            return stats
-            
-        except Exception as e:
-            print(f"⚠️ Error getting performance stats: {e}")
-            return {'error': str(e)}

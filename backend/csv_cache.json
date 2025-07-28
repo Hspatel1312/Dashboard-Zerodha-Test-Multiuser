@@ -155,7 +155,7 @@
       "Score": 18.729988910796852
     }
   ],
-  "fetch_time": "2025-07-28T17:01:39.680788",
+  "fetch_time": "2025-07-28T17:36:17.370558",
   "csv_hash": "b5484ea8",
   "symbol_column_used": "Symbol",
   "source_url": "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv",
@@ -177,6 +177,6 @@
     "summary": "Initial CSV data fetch",
     "details": {}
   },
-  "cached_at": "2025-07-28T17:01:39.680815",
+  "cached_at": "2025-07-28T17:36:17.370618",
   "cache_version": "2.0"
 }

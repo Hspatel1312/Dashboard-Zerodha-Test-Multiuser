@@ -298,7 +298,7 @@ async def force_csv_refresh():
                 },
                 "rebalancing_check": rebalancing_check,
                 "portfolio_impact": portfolio_impact,
-                "next_steps": self._get_next_steps(csv_changed, rebalancing_check, portfolio_impact)
+                "next_steps": get_next_steps(csv_changed, rebalancing_check, portfolio_impact)
             }
         }
     except Exception as e:
@@ -309,8 +309,8 @@ async def force_csv_refresh():
             detail=f"Failed to refresh CSV: {str(e)}"
         )
 
-def _get_next_steps(csv_changed: bool, rebalancing_check: dict, portfolio_impact: dict) -> list:
-    """Generate next steps based on CSV refresh results"""
+def get_next_steps(csv_changed: bool, rebalancing_check: dict, portfolio_impact: dict) -> list:
+    """Generate next steps based on CSV refresh results - FIXED: Added proper function definition"""
     steps = []
     
     if not csv_changed:

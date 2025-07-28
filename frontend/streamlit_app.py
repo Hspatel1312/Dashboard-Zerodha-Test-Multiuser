@@ -105,17 +105,22 @@ def show_welcome_page():
         st.markdown("### Welcome")
         st.markdown("Access your investment portfolio management system.")
         
-        with st.form("quick_access"):
+        # Fixed form with proper submit button
+        with st.form("quick_access", clear_on_submit=False):
             st.markdown("**Quick Access**")
             st.caption("For demo purposes - no actual authentication required")
             
             user_name = st.text_input("Name", placeholder="Enter your name")
             
-            if st.button("Enter Dashboard", use_container_width=True, key="login_submit"):
+            # This is the missing submit button that was causing the error
+            submitted = st.form_submit_button("Enter Dashboard", use_container_width=True)
+            
+            if submitted:
                 if user_name.strip():
                     st.session_state.user_authenticated = True
                     st.session_state.user_name = user_name.strip()
                     st.session_state.auth_time = datetime.now()
+                    st.success("Login successful! Redirecting...")
                     st.rerun()
                 else:
                     st.error("Please enter your name")
@@ -177,23 +182,6 @@ def show_navigation(session_manager):
     
     # Logout
     if st.button("🚪 Logout", type="secondary", key="sidebar_logout"):
-        session_manager.logout()
-        st.rerun()
-    
-    # Session info
-    st.caption(f"Session: {session_manager.get_session_duration()}").markdown("### ⚡ Quick Actions")
-    
-    if st.button("🔄 Refresh Data"):
-        st.cache_data.clear()
-        st.success("Data refreshed!")
-        
-    if st.button("📊 System Status"):
-        st.info("All systems operational")
-    
-    st.markdown("---")
-    
-    # Logout
-    if st.button("🚪 Logout", type="secondary"):
         session_manager.logout()
         st.rerun()
     

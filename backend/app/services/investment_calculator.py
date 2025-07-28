@@ -11,7 +11,7 @@ class InvestmentCalculator:
     def calculate_minimum_investment(self, stocks_data: List[Dict]) -> Dict:
         """
         Calculate minimum investment required for 4% allocation per stock
-        More sophisticated approach considering most expensive stock
+        STRICT: Only works with REAL price data
         """
         try:
             print(f"🧮 Calculating minimum investment for {len(stocks_data)} stocks...")
@@ -19,11 +19,25 @@ class InvestmentCalculator:
             if not stocks_data:
                 raise Exception("No stocks data provided")
             
+            # STRICT: Verify all stocks have real prices
+            invalid_stocks = []
+            for stock in stocks_data:
+                price = stock.get('price', 0)
+                price_type = stock.get('price_type', 'UNKNOWN')
+                
+                if price_type != 'LIVE':
+                    invalid_stocks.append(f"{stock.get('symbol', 'UNKNOWN')}: {price_type}")
+                elif not isinstance(price, (int, float)) or price <= 0:
+                    invalid_stocks.append(f"{stock.get('symbol', 'UNKNOWN')}: Invalid price {price}")
+            
+            if invalid_stocks:
+                raise Exception(f"PRICE_DATA_INVALID: Found {len(invalid_stocks)} stocks without valid live prices: {', '.join(invalid_stocks[:5])}")
+            
             # Find the most expensive stock
             most_expensive_stock = max(stocks_data, key=lambda x: x['price'])
             max_price = most_expensive_stock['price']
             
-            print(f"   Most expensive stock: {most_expensive_stock['symbol']} at ₹{max_price:,.2f}")
+            print(f"   Most expensive stock: {most_expensive_stock['symbol']} at ₹{max_price:,.2f} (LIVE)")
             
             # For the most expensive stock to have 4% allocation with at least 1 share:
             # min_investment = price / 0.04 = price * 25
@@ -44,11 +58,12 @@ class InvestmentCalculator:
                 stock_details.append({
                     'symbol': symbol,
                     'price': price,
+                    'price_type': 'LIVE',
                     'min_investment_for_4pct': min_investment_for_stock,
                     'min_shares': 1
                 })
                 
-                print(f"   {symbol}: ₹{price:.2f}/share → Min investment for 4%: ₹{min_investment_for_stock:,.0f}")
+                print(f"   {symbol}: ₹{price:.2f}/share (LIVE) → Min investment for 4%: ₹{min_investment_for_stock:,.0f}")
             
             result = {
                 'minimum_investment': min_investment_required,
@@ -59,12 +74,14 @@ class InvestmentCalculator:
                 'invalid_stocks': 0,
                 'stock_details': stock_details,
                 'most_expensive_stock': most_expensive_stock,
-                'calculation_basis': f"Based on most expensive stock ({most_expensive_stock['symbol']}) having {self.min_allocation_percent}% allocation"
+                'calculation_basis': f"Based on most expensive stock ({most_expensive_stock['symbol']}) having {self.min_allocation_percent}% allocation",
+                'data_quality': 'HIGH - All prices from live API'
             }
             
-            print(f"✅ Minimum investment calculated:")
+            print(f"✅ Minimum investment calculated with LIVE data:")
             print(f"   Absolute minimum: ₹{min_investment_required:,.0f}")
             print(f"   Recommended minimum: ₹{recommended_minimum:,.0f}")
+            print(f"   Data quality: HIGH - All live prices")
             
             return result
             
@@ -75,18 +92,32 @@ class InvestmentCalculator:
     def calculate_optimal_allocation(self, investment_amount: float, stocks_data: List[Dict]) -> Dict:
         """
         Calculate optimal allocation using sophisticated algorithm
-        Ensures each stock gets 4-7% allocation, as close to 5% as possible
+        STRICT: Only works with REAL price data
         """
         try:
             print(f"🎯 Calculating optimal allocation for ₹{investment_amount:,.0f}")
             print(f"   Target: {self.min_allocation_percent}%-{self.max_allocation_percent}% per stock, close to {self.target_allocation_percent}%")
+            
+            # STRICT: Verify all stocks have real prices
+            invalid_stocks = []
+            for stock in stocks_data:
+                price = stock.get('price', 0)
+                price_type = stock.get('price_type', 'UNKNOWN')
+                
+                if price_type != 'LIVE':
+                    invalid_stocks.append(f"{stock.get('symbol', 'UNKNOWN')}: {price_type}")
+                elif not isinstance(price, (int, float)) or price <= 0:
+                    invalid_stocks.append(f"{stock.get('symbol', 'UNKNOWN')}: Invalid price {price}")
+            
+            if invalid_stocks:
+                raise Exception(f"PRICE_DATA_INVALID: Found {len(invalid_stocks)} stocks without valid live prices: {', '.join(invalid_stocks[:5])}")
             
             # Phase 1: Initial allocation targeting 5% each
             target_per_stock = investment_amount * (self.target_allocation_percent / 100)
             allocations = []
             total_allocated = 0
             
-            print(f"📊 Phase 1: Initial allocation (₹{target_per_stock:,.0f} per stock)")
+            print(f"📊 Phase 1: Initial allocation (₹{target_per_stock:,.0f} per stock) - ALL LIVE PRICES")
             
             for stock in stocks_data:
                 symbol = stock['symbol']
@@ -116,6 +147,7 @@ class InvestmentCalculator:
                 allocation = {
                     'symbol': symbol,
                     'price': price,
+                    'price_type': 'LIVE',
                     'shares': optimal_shares,
                     'value': allocation_value,
                     'allocation_percent': allocation_percent,
@@ -127,7 +159,7 @@ class InvestmentCalculator:
                 allocations.append(allocation)
                 total_allocated += allocation_value
                 
-                print(f"   {symbol}: {optimal_shares} shares × ₹{price:.2f} = ₹{allocation_value:,.0f} ({allocation_percent:.2f}%)")
+                print(f"   {symbol}: {optimal_shares} shares × ₹{price:.2f} (LIVE) = ₹{allocation_value:,.0f} ({allocation_percent:.2f}%)")
             
             remaining_cash = investment_amount - total_allocated
             print(f"📊 After initial allocation: ₹{remaining_cash:,.0f} remaining")
@@ -148,13 +180,15 @@ class InvestmentCalculator:
                 'utilization_percent': (final_total / investment_amount) * 100,
                 'allocations': allocations,
                 'allocation_stats': self._calculate_allocation_stats(allocations),
-                'validation': self._validate_allocations(allocations, investment_amount)
+                'validation': self._validate_allocations(allocations, investment_amount),
+                'data_quality': 'HIGH - All prices from live API'
             }
             
-            print(f"✅ Optimal allocation calculated:")
+            print(f"✅ Optimal allocation calculated with LIVE data:")
             print(f"   Total allocated: ₹{final_total:,.0f} ({(final_total/investment_amount)*100:.2f}%)")
             print(f"   Remaining cash: ₹{final_remaining:,.0f}")
             print(f"   Stocks in range: {allocation_summary['validation']['stocks_in_range']}/{len(allocations)}")
+            print(f"   Data quality: HIGH - All live prices")
             
             return allocation_summary
             
@@ -230,7 +264,7 @@ class InvestmentCalculator:
             
             remaining_cash -= additional_value
             
-            print(f"   📈 Added {shares_to_add} shares to {allocation['symbol']}")
+            print(f"   📈 Added {shares_to_add} shares to {allocation['symbol']} (LIVE price)")
             print(f"      {best_candidate['current_distance']:.2f}% → {best_candidate['new_distance']:.2f}% distance from target")
             print(f"      New allocation: {allocation['allocation_percent']:.2f}%")
             
@@ -250,7 +284,7 @@ class InvestmentCalculator:
                             alloc['value'] += additional_value
                             alloc['allocation_percent'] = (alloc['value'] / total_investment) * 100
                             remaining_cash -= additional_value
-                            print(f"   🚀 Bulk added {max_additional} shares to {alloc['symbol']}")
+                            print(f"   🚀 Bulk added {max_additional} shares to {alloc['symbol']} (LIVE price)")
                             break
         
         print(f"   ✅ Optimization complete after {iteration} iterations")
