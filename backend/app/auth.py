@@ -1,4 +1,5 @@
-# backend/app/auth.py
+# backend/app/auth.py - FIXED VERSION
+
 import os
 import json
 import pyotp
@@ -93,54 +94,51 @@ class ZerodhaAuth:
         return False
     
     def _perform_auth_flow(self) -> str:
-        """Perform the complete Zerodha authentication flow"""
+        """Perform the complete Zerodha authentication flow using the WORKING method from notebook"""
         try:
+            # Use the EXACT method from your working Jupyter notebook
             http_session = requests.Session()
             
-            # Add realistic browser headers
-            http_session.headers.update({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-            })
+            # Step 1: Get login URL (EXACTLY like notebook)
+            url = http_session.get(url=f'https://kite.trade/connect/login?v=3&api_key={self.api_key}').url
+            print(f"🌐 Login URL obtained: {url}")
             
-            # Step 1: Get login URL
-            login_url = f'https://kite.trade/connect/login?v=3&api_key={self.api_key}'
-            print(f"🌐 Getting login URL: {login_url}")
-            
-            initial_response = http_session.get(url=login_url)
-            actual_url = initial_response.url
-            print(f"🔗 Redirected to: {actual_url}")
-            
-            # Step 2: Login with credentials
+            # Step 2: Login with credentials (EXACTLY like notebook)
             print(f"🔐 Logging in with user ID: {self.user_id}")
-            login_response = http_session.post(
+            response = http_session.post(
                 url='https://kite.zerodha.com/api/login',
-                data={
-                    'user_id': self.user_id, 
-                    'password': self.password
-                }
+                data={'user_id': self.user_id, 'password': self.password}
             )
             
-            print(f"📝 Login response status: {login_response.status_code}")
+            print(f"📝 Login response status: {response.status_code}")
             
+            # Parse response - EXACTLY like notebook
             try:
-                login_data = json.loads(login_response.content)
-            except json.JSONDecodeError:
-                print(f"❌ Failed to parse login response: {login_response.text}")
-                raise Exception("Invalid response from Zerodha login API")
+                resp_dict = json.loads(response.content)
+                print(f"📋 Login response parsed successfully")
+            except json.JSONDecodeError as e:
+                print(f"❌ Failed to parse login response: {e}")
+                print(f"❌ Raw response content type: {type(response.content)}")
+                print(f"❌ Raw response headers: {dict(response.headers)}")
+                
+                # Try to handle compressed response
+                try:
+                    import gzip
+                    decompressed = gzip.decompress(response.content)
+                    resp_dict = json.loads(decompressed.decode('utf-8'))
+                    print(f"✅ Successfully decompressed and parsed response")
+                except Exception as decomp_error:
+                    print(f"❌ Decompression failed: {decomp_error}")
+                    raise Exception("Could not parse login response")
             
-            print(f"📋 Login response: {login_data}")
-            
-            if login_data.get("status") != "success":
-                error_msg = login_data.get('message', 'Unknown login error')
+            if resp_dict.get("status") != "success":
+                error_msg = resp_dict.get('message', 'Unknown login error')
                 print(f"❌ Login failed: {error_msg}")
                 raise Exception(f"Zerodha login failed: {error_msg}")
 
-            # Step 3: TOTP verification
+            print(f"✅ Login successful, request_id: {resp_dict['data']['request_id']}")
+
+            # Step 3: TOTP verification (EXACTLY like notebook)
             totp_value = pyotp.TOTP(self.totp_key).now()
             print(f"🔑 Generated TOTP: {totp_value}")
             
@@ -148,51 +146,38 @@ class ZerodhaAuth:
                 url='https://kite.zerodha.com/api/twofa',
                 data={
                     'user_id': self.user_id,
-                    'request_id': login_data["data"]["request_id"],
+                    'request_id': resp_dict["data"]["request_id"],
                     'twofa_value': totp_value
                 }
             )
             
             print(f"📝 2FA response status: {twofa_response.status_code}")
-            
-            try:
-                twofa_data = json.loads(twofa_response.content)
-                print(f"📋 2FA response: {twofa_data}")
-            except json.JSONDecodeError:
-                print(f"⚠️ Could not parse 2FA response, continuing...")
 
-            # Step 4: Get authorization
+            # Step 4: Get authorization (EXACTLY like notebook)
             print(f"🎫 Getting authorization...")
+            url = url + "&skip_session=true"
+            final_response = http_session.get(url=url, allow_redirects=True).url
             
-            auth_url = actual_url + "&skip_session=true"
-            print(f"🔗 Auth URL: {auth_url}")
+            print(f"🔗 Final redirect URL: {final_response}")
             
-            final_response = http_session.get(url=auth_url, allow_redirects=True)
-            final_url = final_response.url
-            
-            print(f"📊 Final Status Code: {final_response.status_code}")
-            print(f"🔗 Final URL: {final_url}")
-            
-            # Step 5: Parse URL for request token
-            print(f"🔍 Parsing URL for request token...")
-            parsed_url = urlparse(final_url)
+            # Step 5: Parse URL for request token (EXACTLY like notebook)
+            parsed_url = urlparse(final_response)
             query_params = parse_qs(parsed_url.query)
             
             print(f"📋 Query Parameters: {query_params}")
             
-            request_token = None
-            if 'request_token' in query_params:
-                request_token = query_params['request_token'][0]
-                print(f"✅ Found request_token: {request_token}")
-            else:
-                print(f"❌ No request token found in URL: {final_url}")
-                raise Exception("No request token found in authentication response")
+            if 'request_token' not in query_params:
+                print(f"❌ No request token found in final URL: {final_response}")
+                raise Exception(f"No request token found: {final_response}")
 
-            # Step 6: Generate access token
+            request_token = query_params['request_token'][0]
+            print(f"✅ Found request_token: {request_token}")
+
+            # Step 6: Generate access token (EXACTLY like notebook)
             print("🔐 Generating access token...")
             try:
-                session_data = self.kite.generate_session(request_token, self.api_secret)
-                access_token = session_data["access_token"]
+                data = self.kite.generate_session(request_token, self.api_secret)
+                access_token = data["access_token"]
                 print(f"✅ Access token generated successfully")
                 return access_token
             except Exception as e:
@@ -312,6 +297,7 @@ class ZerodhaAuth:
         self._authenticated = False
         self.kite = None
         self.zerodha_profile_name = None
+        self._last_auth_attempt = None  # Reset cooldown
         
         # Attempt new authentication
         return self.authenticate()

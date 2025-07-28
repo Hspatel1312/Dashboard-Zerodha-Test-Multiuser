@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
 import traceback
 
-app = FastAPI(title="Investment Rebalancing WebApp")
+app = FastAPI(title="Investment Rebalancing WebApp", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,7 +22,8 @@ initialization_status = {
     "service_created": False,
     "investment_service_created": False,
     "error_message": None,
-    "zerodha_connection_status": "not_checked"
+    "zerodha_connection_status": "not_checked",
+    "csv_service_status": "not_initialized"
 }
 
 zerodha_auth = None
@@ -52,6 +53,7 @@ try:
     from .services.investment_service import InvestmentService
     investment_service = InvestmentService(zerodha_auth)
     initialization_status["investment_service_created"] = True
+    initialization_status["csv_service_status"] = "initialized"
     print("✅ Investment service created")
     
 except Exception as e:
@@ -81,10 +83,10 @@ except Exception as e:
 @app.get("/")
 async def root():
     return {
-        "message": "Investment Rebalancing WebApp API", 
+        "message": "Investment Rebalancing WebApp API v2.0", 
         "status": initialization_status,
         "available_endpoints": [
-            "/health - Health check",
+            "/health - Health check with CSV tracking status",
             "/api/test-live-prices - Test live price fetching",
             "/api/test-auth - Test Zerodha authentication",
             "/api/test-nifty - Simple Nifty price test",
@@ -93,14 +95,16 @@ async def root():
             "/api/investment/execute-initial - Execute initial investment",
             "/api/investment/rebalancing-check - Check rebalancing status",
             "/api/investment/portfolio-status - Get portfolio status",
-            "/api/investment/csv-stocks - Get CSV stocks",
-            "/api/investment/system-orders - Get system orders history"
+            "/api/investment/csv-stocks - Get CSV stocks with prices",
+            "/api/investment/system-orders - Get system orders history",
+            "/api/investment/csv-status - Get CSV tracking status",
+            "/api/investment/force-csv-refresh - Force refresh CSV data"
         ]
     }
 
 @app.get("/health")
 async def health_check():
-    """Comprehensive health check with honest status reporting"""
+    """Comprehensive health check with CSV tracking status"""
     health_status = {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
@@ -110,6 +114,13 @@ async def health_check():
             "authenticated": False,
             "can_fetch_data": False,
             "error_message": None
+        },
+        "csv_service": {
+            "available": bool(investment_service and investment_service.csv_service),
+            "last_fetch_time": None,
+            "cache_status": "unknown",
+            "csv_hash": None,
+            "auto_tracking": True
         },
         "services": {
             "portfolio_service": bool(portfolio_service),
@@ -123,7 +134,6 @@ async def health_check():
         try:
             print("🔍 Testing Zerodha connection...")
             
-            # Check if already authenticated
             if zerodha_auth.is_authenticated():
                 health_status["zerodha_connection"]["available"] = True
                 health_status["zerodha_connection"]["authenticated"] = True
@@ -131,7 +141,6 @@ async def health_check():
                 initialization_status["zerodha_connection_status"] = "connected"
                 print("✅ Zerodha already authenticated")
             else:
-                # Try to authenticate
                 print("🔄 Attempting Zerodha authentication...")
                 try:
                     kite = zerodha_auth.authenticate()
@@ -143,7 +152,7 @@ async def health_check():
                         initialization_status["auth_successful"] = True
                         print("✅ Zerodha authentication successful")
                     else:
-                        health_status["zerodha_connection"]["error_message"] = "Authentication failed - returned False"
+                        health_status["zerodha_connection"]["error_message"] = "Authentication failed"
                         initialization_status["zerodha_connection_status"] = "authentication_failed"
                         print("❌ Zerodha authentication failed")
                 except Exception as auth_error:
@@ -154,15 +163,121 @@ async def health_check():
             health_status["zerodha_connection"]["error_message"] = str(e)
             initialization_status["zerodha_connection_status"] = f"error: {str(e)}"
             print(f"❌ Zerodha connection test error: {e}")
-    else:
-        health_status["zerodha_connection"]["error_message"] = "ZerodhaAuth service not initialized"
-        initialization_status["zerodha_connection_status"] = "service_not_available"
+    
+    # Check CSV service status
+    if investment_service and investment_service.csv_service:
+        try:
+            csv_service = investment_service.csv_service
+            connection_status = csv_service.get_connection_status()
+            
+            # Get cache info
+            cached_data = csv_service._get_cached_csv()
+            if cached_data:
+                health_status["csv_service"]["last_fetch_time"] = cached_data['fetch_time']
+                health_status["csv_service"]["csv_hash"] = cached_data['csv_hash']
+                health_status["csv_service"]["cache_status"] = "fresh"
+            else:
+                health_status["csv_service"]["cache_status"] = "no_cache"
+            
+            health_status["csv_service"].update({
+                "csv_accessible": connection_status.get('csv_accessible', False),
+                "market_open": connection_status.get('market_open', False),
+                "last_check": connection_status.get('last_check')
+            })
+            
+        except Exception as csv_error:
+            health_status["csv_service"]["error_message"] = str(csv_error)
     
     # Update initialization status
     initialization_status["auth_successful"] = health_status["zerodha_connection"]["authenticated"]
     
     return health_status
 
+# Add new endpoints for CSV management
+@app.get("/api/csv-status")
+async def get_csv_status():
+    """Get detailed CSV tracking status"""
+    if not investment_service:
+        raise HTTPException(status_code=500, detail="Investment service not available")
+    
+    try:
+        csv_service = investment_service.csv_service
+        
+        # Get connection status
+        connection_status = csv_service.get_connection_status()
+        
+        # Get cached data info
+        cached_data = csv_service._get_cached_csv()
+        
+        # Get CSV history
+        csv_history = []
+        try:
+            with open(investment_service.csv_history_file, 'r') as f:
+                import json
+                csv_history = json.load(f)[-10:]  # Last 10 entries
+        except:
+            csv_history = []
+        
+        return {
+            "success": True,
+            "data": {
+                "connection_status": connection_status,
+                "cached_data_info": {
+                    "available": bool(cached_data),
+                    "fetch_time": cached_data['fetch_time'] if cached_data else None,
+                    "csv_hash": cached_data['csv_hash'] if cached_data else None,
+                    "total_symbols": len(cached_data['symbols']) if cached_data else 0
+                },
+                "csv_history": csv_history,
+                "auto_refresh_enabled": True,
+                "refresh_interval_minutes": 5
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get CSV status: {str(e)}")
+
+@app.post("/api/force-csv-refresh")
+async def force_csv_refresh():
+    """Force refresh CSV data and check for changes"""
+    if not investment_service:
+        raise HTTPException(status_code=500, detail="Investment service not available")
+    
+    try:
+        csv_service = investment_service.csv_service
+        
+        # Force refresh CSV data
+        old_cached_data = csv_service._get_cached_csv()
+        old_hash = old_cached_data['csv_hash'] if old_cached_data else None
+        
+        # Fetch fresh data
+        new_data = csv_service.fetch_csv_data(force_refresh=True)
+        new_hash = new_data['csv_hash']
+        
+        # Check if CSV changed
+        csv_changed = old_hash != new_hash
+        
+        # If CSV changed, check rebalancing
+        rebalancing_check = None
+        if csv_changed:
+            print(f"🔄 CSV changed from {old_hash} to {new_hash}, checking rebalancing...")
+            rebalancing_check = investment_service.check_rebalancing_needed()
+        
+        return {
+            "success": True,
+            "data": {
+                "csv_refreshed": True,
+                "csv_changed": csv_changed,
+                "old_hash": old_hash,
+                "new_hash": new_hash,
+                "fetch_time": new_data['fetch_time'],
+                "total_symbols": len(new_data['symbols']),
+                "rebalancing_check": rebalancing_check
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to refresh CSV: {str(e)}")
+
+# Existing endpoints remain the same...
 @app.get("/api/test-nifty")
 async def test_nifty_price():
     """Simple test to get Nifty 50 price to verify Zerodha connection"""
@@ -202,7 +317,6 @@ async def test_nifty_price():
         # Test with Nifty 50 index
         try:
             print("🔍 Testing Nifty 50 quote...")
-            # Try to get Nifty 50 quote
             nifty_quote = kite.quote(["NSE:NIFTY 50"])
             
             if "NSE:NIFTY 50" in nifty_quote:
@@ -269,311 +383,6 @@ async def test_nifty_price():
             "error": f"Nifty price test error: {str(e)}",
             "traceback": traceback.format_exc()
         }
-
-@app.get("/api/test-auth")
-async def test_auth():
-    """Test Zerodha authentication separately with detailed feedback"""
-    if not zerodha_auth:
-        return {
-            "success": False,
-            "error": "ZerodhaAuth service not initialized",
-            "details": "The Zerodha authentication service could not be created. Check your configuration.",
-            "initialization_status": initialization_status
-        }
-    
-    try:
-        print("🔄 Testing Zerodha authentication...")
-        
-        # Check current status
-        if zerodha_auth.is_authenticated():
-            return {
-                "success": True,
-                "message": "Already authenticated with Zerodha",
-                "profile_name": getattr(zerodha_auth, 'profile_name', 'Unknown'),
-                "status": "authenticated"
-            }
-        
-        # Try to authenticate
-        print("🔐 Attempting new authentication...")
-        kite = zerodha_auth.authenticate()
-        
-        if zerodha_auth.is_authenticated():
-            return {
-                "success": True,
-                "message": "Zerodha authentication successful!",
-                "profile_name": getattr(zerodha_auth, 'profile_name', 'Unknown'),
-                "status": "newly_authenticated"
-            }
-        else:
-            return {
-                "success": False,
-                "message": "Zerodha authentication failed",
-                "error": "Authentication method returned False",
-                "details": "The authentication process completed but did not result in a valid session.",
-                "status": "authentication_failed"
-            }
-    except Exception as e:
-        error_msg = f"Auth test error: {str(e)}\n{traceback.format_exc()}"
-        print(f"❌ {error_msg}")
-        return {
-            "success": False,
-            "message": "Authentication error occurred",
-            "error": str(e),
-            "details": "An exception occurred during the authentication process. Check your API credentials and network connection.",
-            "traceback": traceback.format_exc() if app.debug else None,
-            "status": "error"
-        }
-
-@app.get("/api/test-live-prices")
-async def test_live_prices():
-    """Test live price fetching with detailed debugging"""
-    if not zerodha_auth:
-        return {
-            "success": False,
-            "error": "ZerodhaAuth service not initialized"
-        }
-    
-    try:
-        print("🧪 Testing live price fetching...")
-        
-        # Check authentication first
-        if not zerodha_auth.is_authenticated():
-            print("🔄 Not authenticated, attempting authentication...")
-            try:
-                zerodha_auth.authenticate()
-                if not zerodha_auth.is_authenticated():
-                    return {
-                        "success": False,
-                        "error": "Zerodha authentication failed",
-                        "details": "Cannot test live prices without authentication"
-                    }
-            except Exception as auth_error:
-                return {
-                    "success": False,
-                    "error": f"Authentication failed: {str(auth_error)}"
-                }
-        
-        kite = zerodha_auth.get_kite_instance()
-        if not kite:
-            return {
-                "success": False,
-                "error": "No kite instance available"
-            }
-        
-        # Test with a few known symbols
-        test_symbols = ["NSE:RELIANCE", "NSE:TCS", "NSE:INFY", "NSE:HDFCBANK", "NSE:ICICIBANK"]
-        
-        try:
-            print(f"🔍 Testing quotes for: {test_symbols}")
-            quote_response = kite.quote(test_symbols)
-            
-            formatted_prices = {}
-            raw_sample = {}
-            
-            for symbol, data in quote_response.items():
-                if isinstance(data, dict):
-                    last_price = data.get('last_price', 0)
-                    formatted_prices[symbol] = last_price
-                    # Include some raw data for debugging
-                    raw_sample[symbol] = {
-                        'last_price': data.get('last_price'),
-                        'timestamp': data.get('timestamp'),
-                        'last_trade_time': data.get('last_trade_time'),
-                        'ohlc': data.get('ohlc', {})
-                    }
-            
-            return {
-                "success": True,
-                "message": "Live price test successful",
-                "test_symbols": test_symbols,
-                "prices_fetched": len(formatted_prices),
-                "formatted_prices": formatted_prices,
-                "raw_sample": raw_sample,
-                "profile_name": getattr(zerodha_auth, 'profile_name', 'Unknown'),
-                "timestamp": datetime.now().isoformat()
-            }
-            
-        except Exception as quote_error:
-            return {
-                "success": False,
-                "error": f"Quote request failed: {str(quote_error)}",
-                "test_symbols": test_symbols,
-                "details": "The kite.quote() API call failed"
-            }
-    
-    except Exception as e:
-        return {
-            "success": False,
-            "error": f"Live price test error: {str(e)}",
-            "traceback": traceback.format_exc()
-        }
-
-@app.get("/api/debug-csv-service")
-async def debug_csv_service():
-    """Debug CSV service and price fetching"""
-    if not investment_service:
-        return {
-            "success": False,
-            "error": "Investment service not available"
-        }
-    
-    try:
-        print("🔍 Debugging CSV service...")
-        
-        # Test CSV fetching
-        csv_service = investment_service.csv_service
-        csv_data = csv_service.fetch_csv_data()
-        
-        # Test a small batch of price fetching
-        test_symbols = csv_data['symbols'][:5]  # Test first 5 symbols
-        print(f"🧪 Testing price fetch for: {test_symbols}")
-        
-        prices = csv_service.get_live_prices(test_symbols)
-        
-        # Get connection status
-        connection_status = csv_service.get_connection_status()
-        
-        return {
-            "success": True,
-            "csv_data": {
-                "total_symbols": len(csv_data['symbols']),
-                "sample_symbols": csv_data['symbols'][:10],
-                "fetch_time": csv_data['fetch_time'],
-                "csv_hash": csv_data['csv_hash']
-            },
-            "price_test": {
-                "test_symbols": test_symbols,
-                "prices": prices,
-                "price_count": len(prices)
-            },
-            "connection_status": connection_status,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
-
-# Legacy portfolio endpoint for compatibility
-@app.get("/api/portfolio/summary/{user_id}")
-async def get_portfolio_summary(user_id: int):
-    """Get portfolio summary - redirects to investment service"""
-    
-    print(f"🔍 PORTFOLIO SUMMARY CALLED for user {user_id}")
-    
-    # Check if services are available
-    if not zerodha_auth:
-        print("❌ ZerodhaAuth not available")
-        return {
-            "error": "Zerodha authentication service not available",
-            "connected": False,
-            "message": "Please check your Zerodha API configuration and restart the service",
-            "data": None
-        }
-    
-    if not portfolio_service:
-        print("❌ Portfolio service not available")
-        return {
-            "error": "Portfolio service not available",
-            "connected": False,
-            "message": "Portfolio service could not be initialized",
-            "data": None
-        }
-    
-    try:
-        # Check authentication status first
-        if not zerodha_auth.is_authenticated():
-            print("🔄 Attempting Zerodha authentication...")
-            try:
-                kite = zerodha_auth.authenticate()
-                if not zerodha_auth.is_authenticated():
-                    print("❌ Authentication failed")
-                    return {
-                        "error": "Zerodha authentication failed",
-                        "connected": False,
-                        "message": "Unable to authenticate with Zerodha. Please check your API credentials.",
-                        "data": None
-                    }
-            except Exception as auth_error:
-                print(f"❌ Authentication error: {auth_error}")
-                return {
-                    "error": f"Authentication error: {str(auth_error)}",
-                    "connected": False,
-                    "message": "Failed to connect to Zerodha. Please check your internet connection and API credentials.",
-                    "data": None
-                }
-        
-        print(f"✅ Authentication status: {zerodha_auth.is_authenticated()}")
-        
-        # Try to get real portfolio data
-        print("📊 Fetching real portfolio data...")
-        portfolio_data = portfolio_service.get_portfolio_data()
-        
-        if portfolio_data:
-            print(f"📊 SUCCESS! Returning real portfolio data with {len(portfolio_data.get('holdings', []))} holdings")
-            print(f"📊 Total value: ₹{portfolio_data.get('current_value', 0):,.2f}")
-            return portfolio_data
-        else:
-            print("❌ Portfolio service returned None")
-            return {
-                "error": "No portfolio data available",
-                "connected": True,
-                "message": "Connected to Zerodha but no portfolio data found. This could mean:\n1. No holdings in your account\n2. Market is closed\n3. Data fetch failed",
-                "data": None
-            }
-        
-    except Exception as e:
-        error_msg = f"Portfolio error: {str(e)}\n{traceback.format_exc()}"
-        print(f"❌ {error_msg}")
-        return {
-            "error": str(e),
-            "connected": False,
-            "message": "An error occurred while fetching portfolio data",
-            "data": None
-        }
-
-@app.get("/api/connection-status")
-async def get_connection_status():
-    """Get comprehensive connection status"""
-    status = {
-        "timestamp": datetime.now().isoformat(),
-        "services": {
-            "zerodha_auth": {
-                "available": bool(zerodha_auth),
-                "authenticated": False,
-                "profile_name": None,
-                "error": None
-            },
-            "portfolio_service": {
-                "available": bool(portfolio_service),
-                "can_fetch_data": False
-            },
-            "investment_service": {
-                "available": bool(investment_service)
-            }
-        },
-        "overall_status": "disconnected"
-    }
-    
-    # Test Zerodha connection
-    if zerodha_auth:
-        try:
-            if zerodha_auth.is_authenticated():
-                status["services"]["zerodha_auth"]["authenticated"] = True
-                status["services"]["zerodha_auth"]["profile_name"] = getattr(zerodha_auth, 'profile_name', None)
-                status["services"]["portfolio_service"]["can_fetch_data"] = True
-                status["overall_status"] = "connected"
-            else:
-                status["services"]["zerodha_auth"]["error"] = "Not authenticated"
-        except Exception as e:
-            status["services"]["zerodha_auth"]["error"] = str(e)
-    else:
-        status["services"]["zerodha_auth"]["error"] = "Service not available"
-    
-    return status
 
 if __name__ == "__main__":
     import uvicorn

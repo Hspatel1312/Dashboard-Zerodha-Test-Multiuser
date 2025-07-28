@@ -52,9 +52,14 @@ st.markdown("""
         background-color: #fffef8;
     }
     
-    .investment-card {
+    .info-status {
+        border-left-color: #17a2b8;
+        background-color: #f0fcff;
+    }
+    
+    .csv-change-alert {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
+        padding: 1.5rem;
         border-radius: 15px;
         color: white;
         margin: 1rem 0;
@@ -65,6 +70,21 @@ st.markdown("""
         display: flex;
         justify-content: space-between;
         margin: 0.5rem 0;
+    }
+    
+    .rebalancing-needed {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+        padding: 1.5rem;
+        border-radius: 15px;
+        color: white;
+        margin: 1rem 0;
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.8; }
+        100% { opacity: 1; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -77,6 +97,12 @@ if 'last_refresh' not in st.session_state:
     st.session_state.last_refresh = datetime.now()
 if 'investment_plan' not in st.session_state:
     st.session_state.investment_plan = None
+if 'csv_change_detected' not in st.session_state:
+    st.session_state.csv_change_detected = False
+if 'last_csv_hash' not in st.session_state:
+    st.session_state.last_csv_hash = None
+if 'rebalancing_alert' not in st.session_state:
+    st.session_state.rebalancing_alert = None
 
 class SimpleAPIClient:
     def __init__(self, base_url: str):
@@ -204,11 +230,36 @@ class SimpleAPIClient:
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
+    def get_csv_status(self) -> Dict:
+        """Get CSV tracking status"""
+        try:
+            response = requests.get(f"{self.base_url}/api/investment/csv-status", timeout=30)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {'success': False, 'error': f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def force_csv_refresh(self) -> Dict:
+        """Force refresh CSV data"""
+        try:
+            response = requests.post(f"{self.base_url}/api/investment/force-csv-refresh", timeout=60)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {'success': False, 'error': f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
 # Initialize API client
 api_client = SimpleAPIClient(API_BASE_URL)
 
 def main():
     st.markdown('<h1 class="main-header">📈 Investment System Dashboard</h1>', unsafe_allow_html=True)
+    
+    # Check for CSV changes and rebalancing needs at the top
+    check_csv_changes_and_alerts()
     
     # Sidebar navigation
     with st.sidebar:
@@ -218,14 +269,20 @@ def main():
             "Select Page",
             [
                 "🏠 System Status",
+                "📊 CSV Tracking", 
                 "💰 Initial Investment",
-                "📊 Portfolio Overview", 
+                "📈 Portfolio Overview", 
                 "⚖️ Rebalancing",
                 "📋 Order History",
                 "📄 CSV Stocks",
                 "⚙️ System Info"
             ]
         )
+        
+        st.markdown("---")
+        
+        # CSV Status in Sidebar
+        show_csv_status_sidebar()
         
         st.markdown("---")
         
@@ -239,9 +296,11 @@ def main():
     # Route to pages
     if page == "🏠 System Status":
         show_system_status()
+    elif page == "📊 CSV Tracking":
+        show_csv_tracking()
     elif page == "💰 Initial Investment":
         show_initial_investment()
-    elif page == "📊 Portfolio Overview":
+    elif page == "📈 Portfolio Overview":
         show_portfolio_overview()
     elif page == "⚖️ Rebalancing":
         show_rebalancing()
@@ -251,6 +310,267 @@ def main():
         show_csv_stocks()
     elif page == "⚙️ System Info":
         show_system_info()
+
+def check_csv_changes_and_alerts():
+    """Check for CSV changes and show alerts"""
+    try:
+        csv_status = api_client.get_csv_status()
+        if csv_status and csv_status.get('success'):
+            data = csv_status['data']
+            current_csv = data.get('current_csv', {})
+            current_hash = current_csv.get('csv_hash')
+            
+            # Check if CSV hash changed
+            if st.session_state.last_csv_hash and st.session_state.last_csv_hash != current_hash:
+                st.session_state.csv_change_detected = True
+            
+            st.session_state.last_csv_hash = current_hash
+            
+            # Check rebalancing status
+            rebalancing_status = data.get('rebalancing_status', {})
+            if rebalancing_status.get('rebalancing_needed'):
+                st.session_state.rebalancing_alert = rebalancing_status
+            
+            # Show alerts
+            if st.session_state.csv_change_detected:
+                show_csv_change_alert()
+            
+            if st.session_state.rebalancing_alert and st.session_state.rebalancing_alert.get('rebalancing_needed'):
+                show_rebalancing_alert()
+                
+    except Exception as e:
+        # Silently handle errors in background checks
+        pass
+
+def show_csv_change_alert():
+    """Show CSV change detection alert"""
+    st.markdown("""
+    <div class="csv-change-alert">
+        <h3>🔄 CSV Data Updated!</h3>
+        <p>New stock data has been detected. Check the CSV Tracking page for details and potential rebalancing needs.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("📊 Check CSV Changes", key="csv_alert_button"):
+            st.switch_page("📊 CSV Tracking")
+
+def show_rebalancing_alert():
+    """Show rebalancing needed alert"""
+    rebalancing_info = st.session_state.rebalancing_alert
+    
+    st.markdown(f"""
+    <div class="rebalancing-needed">
+        <h3>⚖️ Rebalancing Needed!</h3>
+        <p><strong>Reason:</strong> {rebalancing_info.get('reason', 'Portfolio needs adjustment')}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col2:
+        if st.button("⚖️ View Rebalancing", key="rebalancing_alert_button"):
+            st.switch_page("⚖️ Rebalancing")
+    with col3:
+        if st.button("❌ Dismiss", key="dismiss_alert_button"):
+            st.session_state.rebalancing_alert = None
+            st.rerun()
+
+def show_csv_status_sidebar():
+    """Show CSV status in sidebar"""
+    try:
+        csv_status = api_client.get_csv_status()
+        if csv_status and csv_status.get('success'):
+            data = csv_status['data']
+            current_csv = data.get('current_csv', {})
+            
+            st.subheader("📊 CSV Status")
+            
+            if current_csv.get('available'):
+                st.success("✅ CSV Data Available")
+                st.caption(f"Hash: {current_csv.get('csv_hash', 'Unknown')[:8]}...")
+                st.caption(f"Stocks: {current_csv.get('total_symbols', 0)}")
+                
+                fetch_time = current_csv.get('fetch_time')
+                if fetch_time:
+                    fetch_dt = pd.to_datetime(fetch_time)
+                    st.caption(f"Updated: {fetch_dt.strftime('%H:%M:%S')}")
+            else:
+                st.error("❌ No CSV Data")
+            
+            # Show rebalancing status
+            rebalancing_status = data.get('rebalancing_status', {})
+            if rebalancing_status.get('rebalancing_needed'):
+                st.warning("⚖️ Rebalancing Needed")
+            else:
+                st.info("✅ Portfolio Aligned")
+        else:
+            st.error("❌ CSV Status Unknown")
+            
+    except Exception as e:
+        st.error("❌ CSV Check Failed")
+
+def show_csv_tracking():
+    """CSV tracking and change detection page"""
+    st.header("📊 CSV Data Tracking")
+    
+    # CSV Status Overview
+    with st.spinner("Loading CSV tracking data..."):
+        csv_status = api_client.get_csv_status()
+    
+    if not csv_status or not csv_status.get('success'):
+        st.error(f"❌ Cannot load CSV status: {csv_status.get('error', 'Unknown error') if csv_status else 'No response'}")
+        return
+    
+    data = csv_status['data']
+    current_csv = data.get('current_csv', {})
+    csv_history = data.get('csv_history', [])
+    connection_status = data.get('connection_status', {})
+    rebalancing_status = data.get('rebalancing_status', {})
+    
+    # Current CSV Status
+    st.subheader("📋 Current CSV Status")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if current_csv.get('available'):
+            st.metric("📊 CSV Status", "✅ Available")
+        else:
+            st.metric("📊 CSV Status", "❌ Not Available")
+    
+    with col2:
+        total_symbols = current_csv.get('total_symbols', 0)
+        st.metric("📈 Total Stocks", total_symbols)
+    
+    with col3:
+        csv_hash = current_csv.get('csv_hash', 'Unknown')
+        st.metric("🔖 Data Hash", csv_hash[:8] + "..." if len(csv_hash) > 8 else csv_hash)
+    
+    with col4:
+        fetch_time = current_csv.get('fetch_time')
+        if fetch_time:
+            fetch_dt = pd.to_datetime(fetch_time)
+            time_str = fetch_dt.strftime('%H:%M:%S')
+        else:
+            time_str = "Unknown"
+        st.metric("⏰ Last Update", time_str)
+    
+    # CSV Source Information
+    if current_csv.get('source_url'):
+        st.info(f"**Data Source:** {current_csv['source_url']}")
+    
+    # Force Refresh Section
+    st.subheader("🔄 Manual CSV Refresh")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        st.write("Force refresh CSV data to check for the latest changes.")
+        st.caption("This will fetch fresh data from the source and detect any changes.")
+    
+    with col2:
+        if st.button("🔄 Force Refresh CSV", type="primary", use_container_width=True):
+            with st.spinner("Refreshing CSV data..."):
+                refresh_result = api_client.force_csv_refresh()
+            
+            if refresh_result and refresh_result.get('success'):
+                refresh_data = refresh_result['data']
+                
+                if refresh_data.get('csv_changed'):
+                    st.success("✅ CSV data refreshed - Changes detected!")
+                    
+                    # Show change details
+                    change_details = refresh_data.get('change_details', {})
+                    st.write("**Change Details:**")
+                    st.write(f"• Old hash: {change_details.get('old_hash', 'Unknown')}")
+                    st.write(f"• New hash: {change_details.get('new_hash', 'Unknown')}")
+                    st.write(f"• Symbols: {change_details.get('old_symbols', 0)} → {change_details.get('new_symbols', 0)}")
+                    
+                    # Show next steps
+                    next_steps = refresh_data.get('next_steps', [])
+                    if next_steps:
+                        st.write("**Next Steps:**")
+                        for step in next_steps:
+                            st.write(f"• {step}")
+                    
+                    # Update session state
+                    st.session_state.csv_change_detected = True
+                    st.session_state.last_csv_hash = change_details.get('new_hash')
+                    
+                    # Check rebalancing
+                    rebalancing_check = refresh_data.get('rebalancing_check')
+                    if rebalancing_check and rebalancing_check.get('rebalancing_needed'):
+                        st.session_state.rebalancing_alert = rebalancing_check
+                        st.warning("⚖️ Rebalancing is now needed due to CSV changes!")
+                else:
+                    st.info("ℹ️ CSV data refreshed - No changes detected")
+                    st.write("The CSV data is up to date with no new changes.")
+            else:
+                st.error(f"❌ Failed to refresh CSV: {refresh_result.get('error', 'Unknown error') if refresh_result else 'No response'}")
+    
+    # Rebalancing Status
+    st.subheader("⚖️ Rebalancing Status")
+    
+    if rebalancing_status.get('rebalancing_needed'):
+        st.markdown('<div class="status-card warning-status">⚠️ <strong>Rebalancing Required</strong></div>', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.write(f"**Reason:** {rebalancing_status.get('reason', 'Unknown')}")
+            
+            new_stocks = rebalancing_status.get('new_stocks', [])
+            removed_stocks = rebalancing_status.get('removed_stocks', [])
+            
+            if new_stocks:
+                st.write(f"**New stocks to add:** {', '.join(new_stocks[:5])}{'...' if len(new_stocks) > 5 else ''}")
+            
+            if removed_stocks:
+                st.write(f"**Stocks to remove:** {', '.join(removed_stocks[:5])}{'...' if len(removed_stocks) > 5 else ''}")
+        
+        with col2:
+            if st.button("⚖️ Go to Rebalancing", use_container_width=True):
+                st.switch_page("⚖️ Rebalancing")
+    else:
+        st.markdown('<div class="status-card success-status">✅ <strong>Portfolio Aligned</strong></div>', unsafe_allow_html=True)
+        st.write(f"**Status:** {rebalancing_status.get('reason', 'Portfolio matches current CSV')}")
+    
+    # CSV History
+    if csv_history:
+        st.subheader("📈 CSV Change History")
+        
+        history_df = pd.DataFrame(csv_history)
+        history_df['timestamp'] = pd.to_datetime(history_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+        history_df['csv_hash'] = history_df['csv_hash'].apply(lambda x: x[:8] + "..." if len(x) > 8 else x)
+        
+        display_history = history_df[['timestamp', 'csv_hash']].rename(columns={
+            'timestamp': 'Timestamp',
+            'csv_hash': 'Data Hash'
+        })
+        
+        st.dataframe(display_history, use_container_width=True, hide_index=True)
+    else:
+        st.info("📭 No CSV history available")
+    
+    # Connection Status
+    st.subheader("🔗 Connection Status")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**CSV Source:**")
+        if connection_status.get('csv_accessible'):
+            st.success("✅ CSV source accessible")
+        else:
+            st.error("❌ CSV source not accessible")
+    
+    with col2:
+        st.write("**Market Status:**")
+        if connection_status.get('market_open'):
+            st.info("🟢 Market Open")
+        else:
+            st.info("🔴 Market Closed")
 
 def show_system_status():
     """System status dashboard"""
@@ -283,6 +603,14 @@ def show_system_status():
             st.write(f"• Available: {'✅' if zerodha_conn.get('available', False) else '❌'}")
             st.write(f"• Authenticated: {'✅' if zerodha_conn.get('authenticated', False) else '❌'}")
             st.write(f"• Can Fetch Data: {'✅' if zerodha_conn.get('can_fetch_data', False) else '❌'}")
+        
+        # Show CSV service status
+        csv_service = health_data.get('csv_service', {})
+        if csv_service.get('available'):
+            st.write("**CSV Service:**")
+            st.write(f"• Service Available: ✅")
+            st.write(f"• Last Fetch: {csv_service.get('last_fetch_time', 'Unknown')}")
+            st.write(f"• Cache Status: {csv_service.get('cache_status', 'Unknown')}")
     else:
         st.markdown(f'<div class="status-card error-status">❌ <strong>Backend Disconnected</strong><br>Error: {backend_status["error"]}</div>', unsafe_allow_html=True)
     
@@ -483,7 +811,7 @@ def show_initial_investment():
                     st.error(f"❌ Failed to execute investment: {result.get('error', 'Unknown error') if result else 'No response'}")
 
 def show_rebalancing():
-    """Rebalancing interface"""
+    """Rebalancing interface with CSV change awareness"""
     st.header("⚖️ Portfolio Rebalancing")
     
     # Check if we have a portfolio first
@@ -497,6 +825,36 @@ def show_rebalancing():
         if st.button("➡️ Go to Initial Investment"):
             st.switch_page("💰 Initial Investment")
         return
+    
+    # Check CSV status and changes
+    st.subheader("📊 CSV Status & Changes")
+    
+    with st.spinner("Checking CSV status and changes..."):
+        csv_status = api_client.get_csv_status()
+    
+    if csv_status and csv_status.get('success'):
+        csv_data = csv_status['data']
+        current_csv = csv_data.get('current_csv', {})
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if current_csv.get('available'):
+                st.success("✅ CSV Data Available")
+                st.caption(f"Hash: {current_csv.get('csv_hash', 'Unknown')[:8]}...")
+            else:
+                st.error("❌ CSV Data Not Available")
+        
+        with col2:
+            st.metric("📈 Current Stocks", current_csv.get('total_symbols', 0))
+        
+        with col3:
+            fetch_time = current_csv.get('fetch_time')
+            if fetch_time:
+                fetch_dt = pd.to_datetime(fetch_time)
+                st.metric("⏰ Last Update", fetch_dt.strftime('%H:%M'))
+            else:
+                st.metric("⏰ Last Update", "Unknown")
     
     # Check if rebalancing is needed
     st.subheader("📊 Rebalancing Status")
@@ -530,13 +888,26 @@ def show_rebalancing():
         st.subheader("🔄 Rebalancing Options")
         
         if rebal_data['rebalancing_needed']:
-            st.info("Rebalancing functionality coming soon!")
+            if st.button("🔄 Force CSV Refresh", use_container_width=True):
+                with st.spinner("Refreshing CSV data..."):
+                    refresh_result = api_client.force_csv_refresh()
+                
+                if refresh_result and refresh_result.get('success'):
+                    if refresh_result['data'].get('csv_changed'):
+                        st.success("✅ CSV refreshed - Changes detected!")
+                        st.rerun()
+                    else:
+                        st.info("ℹ️ CSV refreshed - No new changes")
+                else:
+                    st.error("❌ Failed to refresh CSV")
+            
+            st.info("💡 Rebalancing execution coming soon!")
             st.write("**Future Features:**")
             st.write("• Calculate new allocation")
             st.write("• Generate buy/sell orders") 
             st.write("• Execute rebalancing")
         else:
-            st.success("No action needed")
+            st.success("✅ No action needed")
     
     # Show current portfolio summary for context
     portfolio_data = portfolio_status['data']
@@ -822,39 +1193,59 @@ def show_csv_stocks():
     
     with col3:
         csv_hash = csv_info.get('csv_hash', 'Unknown')
-        st.metric("🔖 CSV Hash", csv_hash)
+        st.metric("🔖 CSV Hash", csv_hash[:8] + "..." if len(csv_hash) > 8 else csv_hash)
     
     # CSV Source Info
-    st.info(f"**CSV Source:** {csv_info.get('source_url', 'Unknown')}")
+    if csv_info.get('source_url'):
+        st.info(f"**CSV Source:** {csv_info['source_url']}")
     
-    # Stocks Table (without live prices)
+    # Price data status
+    price_status = data.get('price_data_status', {})
+    if price_status.get('live_prices_used'):
+        st.success(f"✅ Live prices from {price_status.get('market_data_source', 'Zerodha API')}")
+    else:
+        st.warning(f"⚠️ Using fallback prices - {price_status.get('price_fetch_reason', 'Unknown reason')}")
+    
+    # Stocks Table
     if stocks:
-        st.subheader("📋 Stock List")
+        st.subheader("📋 Stock List with Current Prices")
         
-        # Create simplified display without live prices
+        # Create display dataframe
         stocks_df = pd.DataFrame(stocks)
         
-        # Basic stock info only
-        display_columns = ['symbol']
+        # Format price column
+        stocks_df['price_fmt'] = stocks_df['price'].apply(lambda x: f"₹{x:.2f}")
         
-        # Add any additional fields from CSV
-        for col in ['momentum', 'volatility', 'score']:
-            if col in stocks_df.columns:
-                display_columns.append(col)
-                stocks_df[f'{col}_fmt'] = stocks_df[col].apply(lambda x: f"{x:.3f}" if isinstance(x, (int, float)) else str(x))
-                display_columns[-1] = f'{col}_fmt'
-        
-        # Rename columns for display
+        # Select display columns
+        display_columns = ['symbol', 'price_fmt']
         column_mapping = {
             'symbol': 'Stock Symbol',
-            'momentum_fmt': 'Momentum',
-            'volatility_fmt': 'Volatility', 
-            'score_fmt': 'Score'
+            'price_fmt': 'Current Price'
         }
+        
+        # Add additional fields from CSV if available
+        for col in ['momentum', 'volatility', 'score']:
+            if col in stocks_df.columns:
+                stocks_df[f'{col}_fmt'] = stocks_df[col].apply(lambda x: f"{x:.3f}" if isinstance(x, (int, float)) else str(x))
+                display_columns.append(f'{col}_fmt')
+                column_mapping[f'{col}_fmt'] = col.title()
         
         display_df = stocks_df[display_columns].rename(columns=column_mapping)
         
         st.dataframe(display_df, use_container_width=True, hide_index=True)
+        
+        # Price distribution chart
+        if len(stocks) > 5:
+            st.subheader("📊 Price Distribution")
+            
+            fig = px.histogram(
+                stocks_df,
+                x='price',
+                title='Stock Price Distribution',
+                nbins=20
+            )
+            fig.update_layout(xaxis_title="Price (₹)", yaxis_title="Number of Stocks")
+            st.plotly_chart(fig, use_container_width=True)
         
         # Simple stats
         st.subheader("📊 CSV Statistics")
@@ -862,27 +1253,20 @@ def show_csv_stocks():
         col1, col2 = st.columns(2)
         
         with col1:
-            st.write("**Stock Count by Sector:**")
-            if 'sector' in stocks_df.columns:
-                sector_counts = stocks_df['sector'].value_counts()
-                for sector, count in sector_counts.head(5).items():
-                    st.write(f"• {sector}: {count}")
-            else:
-                st.write("• Sector information not available")
+            st.write("**Price Statistics:**")
+            st.write(f"• Minimum price: ₹{stocks_df['price'].min():.2f}")
+            st.write(f"• Maximum price: ₹{stocks_df['price'].max():.2f}")
+            st.write(f"• Average price: ₹{stocks_df['price'].mean():.2f}")
+            st.write(f"• Median price: ₹{stocks_df['price'].median():.2f}")
         
         with col2:
-            st.write("**Score Distribution:**")
-            if 'score' in stocks_df.columns:
-                high_score = (stocks_df['score'] >= stocks_df['score'].quantile(0.75)).sum()
-                medium_score = ((stocks_df['score'] >= stocks_df['score'].quantile(0.25)) & 
-                              (stocks_df['score'] < stocks_df['score'].quantile(0.75))).sum()
-                low_score = (stocks_df['score'] < stocks_df['score'].quantile(0.25)).sum()
-                
-                st.write(f"• High Score (75%+): {high_score}")
-                st.write(f"• Medium Score (25-75%): {medium_score}")
-                st.write(f"• Low Score (<25%): {low_score}")
-            else:
-                st.write("• Score information not available")
+            st.write("**Data Quality:**")
+            st.write(f"• Total stocks: {len(stocks)}")
+            st.write(f"• Price success rate: {price_status.get('success_rate', 0):.1f}%")
+            st.write(f"• Data source: {price_status.get('market_data_source', 'Unknown')}")
+            if price_status.get('market_open') is not None:
+                market_status = "Open 🟢" if price_status['market_open'] else "Closed 🔴"
+                st.write(f"• Market status: {market_status}")
 
 def show_system_info():
     """System information and diagnostics"""
@@ -897,6 +1281,7 @@ def show_system_info():
         csv_result = api_client.get_csv_stocks()
         orders_result = api_client.get_system_orders()
         portfolio_result = api_client.get_portfolio_status()
+        csv_status = api_client.get_csv_status()
     
     # Create status summary
     checks = [
@@ -904,7 +1289,8 @@ def show_system_info():
         ("Zerodha Connection", zerodha_test.get('success', False)),
         ("CSV Data", csv_result.get('success', False)),
         ("Order System", orders_result.get('success', False)),
-        ("Portfolio Service", portfolio_result.get('success', False))
+        ("Portfolio Service", portfolio_result.get('success', False)),
+        ("CSV Tracking", csv_status.get('success', False))
     ]
     
     col1, col2 = st.columns(2)
@@ -954,20 +1340,69 @@ def show_system_info():
             
             if zerodha_conn.get('error_message'):
                 st.warning(f"**Zerodha Error:** {zerodha_conn['error_message']}")
+        
+        # CSV Service details
+        csv_service = health_data.get('csv_service', {})
+        if csv_service:
+            st.write("**CSV Service Details:**")
+            for key, value in csv_service.items():
+                if key != 'error_message':
+                    icon = "✅" if value else "❌"
+                    readable_key = key.replace('_', ' ').title()
+                    st.write(f"{icon} {readable_key}")
+            
+            if csv_service.get('error_message'):
+                st.warning(f"**CSV Service Error:** {csv_service['error_message']}")
+    
+    # CSV Tracking Details
+    if csv_status and csv_status.get('success'):
+        st.subheader("📊 CSV Tracking Details")
+        
+        csv_data = csv_status['data']
+        current_csv = csv_data.get('current_csv', {})
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**Current CSV:**")
+            st.write(f"• Available: {'✅' if current_csv.get('available') else '❌'}")
+            st.write(f"• Hash: {current_csv.get('csv_hash', 'Unknown')[:12]}...")
+            st.write(f"• Symbols: {current_csv.get('total_symbols', 0)}")
+            st.write(f"• Last Fetch: {current_csv.get('fetch_time', 'Unknown')}")
+        
+        with col2:
+            connection_status = csv_data.get('connection_status', {})
+            st.write("**Connection Status:**")
+            st.write(f"• CSV Accessible: {'✅' if connection_status.get('csv_accessible') else '❌'}")
+            st.write(f"• Market Open: {'✅' if connection_status.get('market_open') else '❌'}")
+            st.write(f"• Auto Tracking: {'✅' if csv_data.get('auto_tracking') else '❌'}")
+        
+        # CSV History
+        csv_history = csv_data.get('csv_history', [])
+        if csv_history:
+            st.write("**Recent CSV Changes:**")
+            for entry in csv_history[-3:]:  # Show last 3 entries
+                timestamp = pd.to_datetime(entry['timestamp']).strftime('%Y-%m-%d %H:%M')
+                st.write(f"• {timestamp}: {entry['csv_hash'][:8]}...")
     
     # Available Endpoints
     st.subheader("🌐 Available API Endpoints")
     
     endpoints = [
-        "/health - System health check",
+        "/health - System health check with CSV tracking",
         "/api/test-nifty - Test Zerodha with Nifty price",
+        "/api/csv-status - Get CSV tracking status",
+        "/api/force-csv-refresh - Force refresh CSV data",
         "/api/investment/requirements - Get investment requirements",
         "/api/investment/calculate-plan - Calculate investment plan",
         "/api/investment/execute-initial - Execute initial investment",
         "/api/investment/rebalancing-check - Check rebalancing status",
-        "/api/investment/csv-stocks - Get CSV stocks",
+        "/api/investment/csv-stocks - Get CSV stocks with prices",
         "/api/investment/system-orders - Get order history", 
-        "/api/investment/portfolio-status - Get portfolio status"
+        "/api/investment/portfolio-status - Get portfolio status",
+        "/api/investment/csv-status - Get detailed CSV status",
+        "/api/investment/force-csv-refresh - Force CSV refresh",
+        "/api/investment/execute-rebalancing - Execute rebalancing (coming soon)"
     ]
     
     for endpoint in endpoints:
@@ -979,12 +1414,35 @@ def show_system_info():
     config_info = {
         "API Base URL": API_BASE_URL,
         "Frontend Framework": "Streamlit",
+        "CSV Auto-Tracking": "Enabled",
+        "Rebalancing Alerts": "Enabled",
         "Last Refresh": st.session_state.last_refresh.strftime('%Y-%m-%d %H:%M:%S'),
         "Session Started": "Active"
     }
     
     for key, value in config_info.items():
         st.write(f"**{key}:** {value}")
+    
+    # Debug Information
+    with st.expander("🔧 Debug Information"):
+        st.write("**Session State:**")
+        debug_session = {
+            "Last CSV Hash": st.session_state.get('last_csv_hash', 'None'),
+            "CSV Change Detected": st.session_state.get('csv_change_detected', False),
+            "Rebalancing Alert": bool(st.session_state.get('rebalancing_alert')),
+            "Investment Plan": bool(st.session_state.get('investment_plan')),
+            "Last Refresh": st.session_state.get('last_refresh', 'Unknown')
+        }
+        
+        for key, value in debug_session.items():
+            st.write(f"• {key}: {value}")
+        
+        if st.button("🗑️ Clear Session State"):
+            for key in list(st.session_state.keys()):
+                if key not in ['last_refresh']:  # Keep some essential state
+                    del st.session_state[key]
+            st.success("✅ Session state cleared!")
+            st.rerun()
 
 if __name__ == "__main__":
     main()
