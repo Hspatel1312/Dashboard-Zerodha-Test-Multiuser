@@ -1,4 +1,4 @@
-# backend/app/services/investment_service.py
+# backend/app/services/investment_service.py - FIXED VERSION
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 import json
@@ -43,7 +43,7 @@ class InvestmentService:
             print(f"⚠️ Warning: Could not create directories: {e}")
     
     def get_investment_requirements(self) -> Dict:
-        """Get minimum investment requirements based on current CSV"""
+        """Get investment requirements for initial setup"""
         try:
             print("📋 Getting investment requirements...")
             
@@ -53,6 +53,24 @@ class InvestmentService:
             except Exception as e:
                 print(f"❌ Failed to get stocks with prices: {e}")
                 raise Exception(f"Unable to fetch stock data: {str(e)}")
+            
+            # Check if we got an error response (no live prices available)
+            if 'error' in stocks_data and stocks_data['error'] == 'PRICE_DATA_UNAVAILABLE':
+                print("🚫 PRICE_DATA_UNAVAILABLE - returning error response")
+                
+                # Return structured error response
+                return {
+                    'error': 'PRICE_DATA_UNAVAILABLE',
+                    'error_message': stocks_data.get('error_message', 'Live price data unavailable'),
+                    'csv_info': stocks_data.get('csv_info', {}),
+                    'price_data_status': stocks_data.get('price_data_status', {}),
+                    'data_quality': {
+                        'live_data_available': False,
+                        'zerodha_connected': bool(self.zerodha_auth and self.zerodha_auth.is_authenticated()) if self.zerodha_auth else False,
+                        'error_reason': stocks_data.get('error_message', 'Live price data unavailable'),
+                        'solution': 'Ensure Zerodha is connected and authenticated, then retry'
+                    }
+                }
             
             # Validate that we have data
             if stocks_data.get('total_stocks', 0) == 0:
@@ -89,6 +107,33 @@ class InvestmentService:
             
         except Exception as e:
             print(f"❌ Error getting investment requirements: {e}")
+            
+            # Check if it's a price data error
+            if "PRICE_DATA_UNAVAILABLE" in str(e):
+                # Try to get CSV info even if prices failed
+                try:
+                    csv_data = self.csv_service.fetch_csv_data(force_refresh=False)
+                    csv_info = {
+                        'fetch_time': csv_data['fetch_time'],
+                        'csv_hash': csv_data['csv_hash'],
+                        'source_url': csv_data['source_url'],
+                        'total_symbols': len(csv_data['symbols'])
+                    }
+                except:
+                    csv_info = {}
+                
+                return {
+                    'error': 'PRICE_DATA_UNAVAILABLE',
+                    'error_message': str(e),
+                    'csv_info': csv_info,
+                    'data_quality': {
+                        'live_data_available': False,
+                        'zerodha_connected': bool(self.zerodha_auth and self.zerodha_auth.is_authenticated()) if self.zerodha_auth else False,
+                        'error_reason': str(e),
+                        'solution': 'Ensure Zerodha is connected and authenticated, then retry'
+                    }
+                }
+            
             raise Exception(f"Cannot provide investment requirements: {str(e)}")
     
     def calculate_initial_investment_plan(self, investment_amount: float) -> Dict:
@@ -98,6 +143,23 @@ class InvestmentService:
             
             # Get stocks with prices
             stocks_data = self.csv_service.get_stocks_with_prices()
+            
+            # Check if we got an error response (no live prices available)
+            if 'error' in stocks_data and stocks_data['error'] == 'PRICE_DATA_UNAVAILABLE':
+                print("🚫 PRICE_DATA_UNAVAILABLE - cannot calculate plan")
+                
+                # Return structured error response
+                return {
+                    'error': 'PRICE_DATA_UNAVAILABLE',
+                    'error_message': stocks_data.get('error_message', 'Live price data unavailable'),
+                    'csv_info': stocks_data.get('csv_info', {}),
+                    'price_data_status': stocks_data.get('price_data_status', {}),
+                    'data_quality': {
+                        'live_data_available': False,
+                        'zerodha_connected': bool(self.zerodha_auth and self.zerodha_auth.is_authenticated()) if self.zerodha_auth else False,
+                        'error_reason': stocks_data.get('error_message', 'Live price data unavailable')
+                    }
+                }
             
             # Validate minimum investment
             min_investment_info = self.investment_calculator.calculate_minimum_investment(stocks_data['stocks'])
@@ -133,7 +195,11 @@ class InvestmentService:
                     'utilization_percent': allocation_result['utilization_percent']
                 },
                 'csv_info': stocks_data['csv_info'],
-                'data_quality': stocks_data['price_data_status'],
+                'data_quality': {
+                    'live_data_available': stocks_data['price_data_status']['live_prices_used'],
+                    'data_source': stocks_data['price_data_status']['market_data_source'],
+                    'data_quality_level': stocks_data['price_data_status'].get('data_quality', 'HIGH')
+                },
                 'validation': allocation_result['validation']
             }
             
@@ -146,12 +212,28 @@ class InvestmentService:
             
         except Exception as e:
             print(f"❌ Error calculating investment plan: {e}")
+            
+            # Check if it's a price data error
+            if "PRICE_DATA_UNAVAILABLE" in str(e):
+                return {
+                    'error': 'PRICE_DATA_UNAVAILABLE',
+                    'error_message': str(e),
+                    'data_quality': {
+                        'live_data_available': False,
+                        'error_reason': str(e)
+                    }
+                }
+            
             raise Exception(f"Cannot calculate investment plan: {str(e)}")
     
     def execute_initial_investment(self, investment_plan: Dict) -> Dict:
         """Execute initial investment plan"""
         try:
             print("🚀 Executing initial investment...")
+            
+            # Check if plan has price data errors
+            if 'error' in investment_plan and investment_plan['error'] == 'PRICE_DATA_UNAVAILABLE':
+                raise Exception("Cannot execute plan: Live price data unavailable")
             
             # Create system orders
             system_orders = []
@@ -189,7 +271,8 @@ class InvestmentService:
                 'total_investment': investment_plan['summary']['total_investment_value'],
                 'remaining_cash': investment_plan['summary']['remaining_cash'],
                 'execution_time': execution_time,
-                'utilization_percent': investment_plan['summary']['utilization_percent']
+                'utilization_percent': investment_plan['summary']['utilization_percent'],
+                'data_quality': investment_plan.get('data_quality', {})
             }
             
             print(f"✅ Initial investment executed: {len(system_orders)} orders")
@@ -298,12 +381,106 @@ class InvestmentService:
             symbols = list(construction_result['holdings'].keys())
             
             try:
-                current_prices = self.csv_service.get_live_prices(symbols)
+                # Try to get live prices
+                stocks_data = self.csv_service.get_stocks_with_prices()
+                
+                # Check if we got an error response (no live prices available)
+                if 'error' in stocks_data and stocks_data['error'] == 'PRICE_DATA_UNAVAILABLE':
+                    print("⚠️ Live prices unavailable, cannot calculate current values")
+                    
+                    # Return portfolio state without current values
+                    holdings_basic = {}
+                    total_investment = 0
+                    
+                    for symbol, holding in construction_result['holdings'].items():
+                        shares = holding['total_shares']
+                        avg_price = holding['avg_price']
+                        investment_value = holding['total_investment']
+                        
+                        holdings_basic[symbol] = {
+                            'shares': shares,
+                            'avg_price': avg_price,
+                            'current_price': 0,  # Unknown
+                            'investment_value': investment_value,
+                            'current_value': 0,  # Cannot calculate
+                            'pnl': 0,  # Cannot calculate
+                            'pnl_percent': 0,  # Cannot calculate
+                            'allocation_percent': 0
+                        }
+                        
+                        total_investment += investment_value
+                    
+                    return {
+                        'status': 'active',
+                        'holdings': holdings_basic,
+                        'portfolio_summary': {
+                            'total_investment': total_investment,
+                            'current_value': 0,  # Cannot calculate
+                            'total_returns': 0,  # Cannot calculate
+                            'returns_percentage': 0,  # Cannot calculate
+                            'stock_count': len(holdings_basic)
+                        },
+                        'data_quality': {
+                            'price_source': 'UNAVAILABLE',
+                            'live_data_available': False,
+                            'error_reason': stocks_data.get('error_message', 'Live price data unavailable'),
+                            'last_updated': datetime.now().isoformat()
+                        }
+                    }
+                
+                # Extract prices from stocks data
+                current_prices = {}
+                for stock in stocks_data.get('stocks', []):
+                    current_prices[stock['symbol']] = stock['price']
+                
             except Exception as e:
-                print(f"⚠️ Could not get live prices, using fallback: {e}")
-                current_prices = self.csv_service._get_fallback_prices(symbols, f"Error: {str(e)}")
+                print(f"⚠️ Could not get live prices, creating basic portfolio: {e}")
+                
+                # Create basic portfolio without current prices
+                holdings_basic = {}
+                total_investment = 0
+                
+                for symbol, holding in construction_result['holdings'].items():
+                    shares = holding['total_shares']
+                    avg_price = holding['avg_price']
+                    investment_value = holding['total_investment']
+                    
+                    holdings_basic[symbol] = {
+                        'shares': shares,
+                        'avg_price': avg_price,
+                        'current_price': avg_price,  # Use avg price as fallback
+                        'investment_value': investment_value,
+                        'current_value': investment_value,  # Use investment value
+                        'pnl': 0,
+                        'pnl_percent': 0,
+                        'allocation_percent': 0
+                    }
+                    
+                    total_investment += investment_value
+                
+                # Calculate allocation percentages
+                for holding in holdings_basic.values():
+                    holding['allocation_percent'] = (holding['current_value'] / total_investment * 100) if total_investment > 0 else 0
+                
+                return {
+                    'status': 'active',
+                    'holdings': holdings_basic,
+                    'portfolio_summary': {
+                        'total_investment': total_investment,
+                        'current_value': total_investment,
+                        'total_returns': 0,
+                        'returns_percentage': 0,
+                        'stock_count': len(holdings_basic)
+                    },
+                    'data_quality': {
+                        'price_source': 'Fallback (using avg prices)',
+                        'live_data_available': False,
+                        'error_reason': str(e),
+                        'last_updated': datetime.now().isoformat()
+                    }
+                }
             
-            # Calculate comprehensive metrics with better error handling
+            # Calculate comprehensive metrics with live prices
             try:
                 metrics = self.portfolio_metrics.calculate_comprehensive_metrics(
                     construction_result['holdings'],
@@ -354,7 +531,8 @@ class InvestmentService:
                         'rebalancing_needed': metrics.get('rebalancing_needed', False)
                     },
                     'data_quality': {
-                        'price_source': 'Live' if self.zerodha_auth and self.zerodha_auth.is_authenticated() else 'Fallback',
+                        'price_source': 'Live',
+                        'live_data_available': True,
                         'construction_validation': construction_result.get('validation', {}),
                         'last_updated': datetime.now().isoformat()
                     }
@@ -410,7 +588,8 @@ class InvestmentService:
                         'stock_count': len(holdings_with_metrics)
                     },
                     'data_quality': {
-                        'price_source': 'Fallback',
+                        'price_source': 'Live (Basic Calculation)',
+                        'live_data_available': True,
                         'metrics_error': str(metrics_error),
                         'last_updated': datetime.now().isoformat()
                     }
@@ -428,10 +607,14 @@ class InvestmentService:
                     'total_returns': 0,
                     'returns_percentage': 0,
                     'stock_count': 0
+                },
+                'data_quality': {
+                    'error': str(e),
+                    'last_updated': datetime.now().isoformat()
                 }
             }
     
-    # Helper methods
+    # Helper methods (keeping existing implementations)
     def _is_first_time_setup(self) -> bool:
         """Check if this is first time setup"""
         return not os.path.exists(self.portfolio_state_file)
@@ -544,7 +727,7 @@ class InvestmentService:
             },
             'zerodha_auth': {
                 'available': bool(self.zerodha_auth),
-                'status': self.zerodha_auth.get_auth_status() if self.zerodha_auth else {}
+                'authenticated': self.zerodha_auth.is_authenticated() if self.zerodha_auth else False
             },
             'files': {
                 'orders_file_exists': os.path.exists(self.orders_file),

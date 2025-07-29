@@ -1,4 +1,4 @@
-# backend/app/services/portfolio_service.py
+# backend/app/services/portfolio_service.py - FIXED VERSION
 
 class PortfolioService:
     def __init__(self, zerodha_auth):
@@ -190,7 +190,24 @@ class PortfolioService:
             print(f"❌ Error getting portfolio data: {e}")
             import traceback
             print(f"❌ Full error: {traceback.format_exc()}")
-            return None
+            return {
+                "error": "PORTFOLIO_DATA_UNAVAILABLE", 
+                "error_message": str(e),
+                "zerodha_connected": False,
+                "user_id": 1,
+                "current_value": 0,
+                "invested_value": 0,
+                "total_invested": 0,
+                "total_returns": 0,
+                "returns_percentage": 0,
+                "available_cash": 0,
+                "day_change": 0,
+                "day_change_percent": 0,
+                "holdings": [],
+                "allocation": [],
+                "total_holdings": 0,
+                "message": f"Unable to fetch portfolio data: {str(e)}"
+            }
     
     def get_connection_status(self):
         """Get honest connection status"""
