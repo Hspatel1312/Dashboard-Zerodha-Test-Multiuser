@@ -1,4 +1,4 @@
-# backend/app/services/portfolio_service.py - FIXED VERSION
+# backend/app/services/portfolio_service.py - IMPROVED VERSION
 
 class PortfolioService:
     def __init__(self, zerodha_auth):
@@ -6,14 +6,22 @@ class PortfolioService:
         self.kite = zerodha_auth.get_kite_instance() if zerodha_auth else None
     
     def get_portfolio_data(self):
-        """Get real portfolio data from Zerodha - Using the working method from your notebook"""
+        """Get portfolio data from Zerodha - Using the working method from your notebook"""
         if not self.zerodha_auth:
             print("❌ No Zerodha authentication service available")
             return None
         
         if not self.zerodha_auth.is_authenticated():
-            print("❌ Zerodha not authenticated")
-            return None
+            print("❌ Zerodha not authenticated, attempting authentication...")
+            try:
+                result = self.zerodha_auth.authenticate()
+                if not result:
+                    print("❌ Authentication failed")
+                    return None
+                self.kite = self.zerodha_auth.get_kite_instance()
+            except Exception as e:
+                print(f"❌ Authentication error: {e}")
+                return None
         
         if not self.kite:
             print("❌ No Zerodha connection available")
@@ -94,7 +102,10 @@ class PortfolioService:
                         "exchange": holding.get('exchange', 'NSE'),
                         "day_change": holding.get('day_change', 0),
                         "day_change_percentage": holding.get('day_change_percentage', 0),
-                        "close_price": holding.get('close_price', current_price)
+                        "close_price": holding.get('close_price', current_price),
+                        "pledged_status": "Pledged" if collateral_qty > 0 else "Free",
+                        "free_quantity": regular_qty + t1_qty,
+                        "pledged_quantity": collateral_qty
                     })
                     
                     total_investment += investment_value
@@ -162,11 +173,23 @@ class PortfolioService:
             
             day_change_percent = (day_change / current_value) * 100 if current_value > 0 else 0
             
+            # Calculate portfolio metrics
+            free_value = sum(
+                h['free_quantity'] * h['current_price'] 
+                for h in portfolio_holdings
+            )
+            pledged_value = sum(
+                h['pledged_quantity'] * h['current_price'] 
+                for h in portfolio_holdings
+            )
+            
             print(f"✅ Portfolio processed successfully:")
             print(f"   📊 Holdings: {len(portfolio_holdings)}")
             print(f"   💰 Current Value: ₹{current_value:,.2f}")
             print(f"   📈 Total Returns: ₹{total_returns:,.2f} ({returns_percentage:.2f}%)")
             print(f"   💵 Available Cash: ₹{available_cash:,.2f}")
+            print(f"   🔓 Free Shares Value: ₹{free_value:,.2f}")
+            print(f"   🔒 Pledged Shares Value: ₹{pledged_value:,.2f}")
             
             return {
                 "user_id": 1,
@@ -183,7 +206,14 @@ class PortfolioService:
                 "total_holdings": len(portfolio_holdings),
                 "zerodha_connected": True,
                 "data_source": "Zerodha Live API",
-                "zerodha_profile": self.zerodha_auth.profile_name
+                "zerodha_profile": self.zerodha_auth.profile_name,
+                "free_shares_value": free_value,
+                "pledged_shares_value": pledged_value,
+                "portfolio_breakdown": {
+                    "free_holdings": [h for h in portfolio_holdings if h['free_quantity'] > 0],
+                    "pledged_only_holdings": [h for h in portfolio_holdings if h['free_quantity'] == 0 and h['pledged_quantity'] > 0],
+                    "mixed_holdings": [h for h in portfolio_holdings if h['free_quantity'] > 0 and h['pledged_quantity'] > 0]
+                }
             }
             
         except Exception as e:
@@ -210,10 +240,12 @@ class PortfolioService:
             }
     
     def get_connection_status(self):
-        """Get honest connection status"""
+        """Get detailed connection status"""
         return {
             "zerodha_auth_available": bool(self.zerodha_auth),
             "zerodha_authenticated": self.zerodha_auth.is_authenticated() if self.zerodha_auth else False,
             "kite_instance_available": bool(self.kite),
-            "can_fetch_data": bool(self.zerodha_auth and self.zerodha_auth.is_authenticated() and self.kite)
+            "can_fetch_data": bool(self.zerodha_auth and self.zerodha_auth.is_authenticated() and self.kite),
+            "profile_name": self.zerodha_auth.profile_name if self.zerodha_auth else None,
+            "auth_status": self.zerodha_auth.get_auth_status() if self.zerodha_auth else {}
         }

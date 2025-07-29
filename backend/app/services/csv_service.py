@@ -1,4 +1,5 @@
-# backend/app/services/csv_service.py - FIXED VERSION
+# backend/app/services/csv_service.py - FIXED VERSION with proper Zerodha connection handling
+
 import requests
 import pandas as pd
 from typing import List, Dict, Optional
@@ -15,19 +16,18 @@ class CSVService:
     def __init__(self, zerodha_auth):
         self.csv_url = "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv"
         self.zerodha_auth = zerodha_auth
-        self.kite = zerodha_auth.get_kite_instance() if zerodha_auth else None
         self._cache_file = "csv_cache.json"
         self._cache_duration = 300  # 5 minutes
         self._change_detection_enabled = True
         self._last_check_time = None
         
     def get_stocks_with_prices(self, force_refresh: bool = False) -> Dict:
-        """Get complete stock data with live prices - STRICT: Real data only"""
+        """Get complete stock data with live prices - FIXED: Proper Zerodha connection handling"""
         try:
             # Fetch CSV data with force refresh option
             csv_data = self.fetch_csv_data(force_refresh=force_refresh)
             
-            # Try to get REAL live prices - no fallbacks
+            # Try to get REAL live prices - FIXED: Proper connection check
             price_fetch_error = None
             prices = {}
             live_prices_used = False
@@ -35,7 +35,13 @@ class CSVService:
             
             try:
                 print("🔄 Attempting to fetch LIVE prices from Zerodha...")
-                prices = self.get_live_prices(csv_data['symbols'])
+                
+                # FIXED: Ensure we have a valid Kite instance
+                kite = self._get_valid_kite_instance()
+                if not kite:
+                    raise Exception("PRICE_DATA_UNAVAILABLE: No valid Zerodha connection")
+                
+                prices = self.get_live_prices(csv_data['symbols'], kite)
                 live_prices_used = True
                 market_data_source = "Zerodha Live API"
                 print(f"✅ Successfully fetched {len(prices)} live prices")
@@ -59,12 +65,14 @@ class CSVService:
                         },
                         'price_data_status': {
                             'live_prices_used': False,
-                            'zerodha_connected': False,
+                            'zerodha_connected': self._check_zerodha_connection_status(),
                             'success_rate': 0,
                             'market_data_source': 'UNAVAILABLE - Connection Failed',
                             'market_open': self._is_market_open(),
                             'error_reason': price_fetch_error,
-                            'last_check_time': self._last_check_time.isoformat() if self._last_check_time else None
+                            'last_check_time': self._last_check_time.isoformat() if self._last_check_time else None,
+                            'kite_instance_available': bool(self._get_valid_kite_instance()),
+                            'auth_status': self.zerodha_auth.get_auth_status() if self.zerodha_auth else {}
                         }
                     }
                 else:
@@ -142,14 +150,15 @@ class CSVService:
                 },
                 'price_data_status': {
                     'live_prices_used': live_prices_used,
-                    'zerodha_connected': bool(self.zerodha_auth and self.zerodha_auth.is_authenticated()),
+                    'zerodha_connected': self._check_zerodha_connection_status(),
                     'success_rate': success_rate,
                     'last_updated': datetime.now().isoformat(),
                     'market_data_source': market_data_source,
                     'market_open': self._is_market_open(),
                     'price_fetch_reason': "Live data fetched successfully",
                     'last_check_time': self._last_check_time.isoformat() if self._last_check_time else None,
-                    'data_quality': 'HIGH - All prices from live API'
+                    'data_quality': 'HIGH - All prices from live API',
+                    'kite_instance_available': bool(self._get_valid_kite_instance())
                 }
             }
             
@@ -188,56 +197,107 @@ class CSVService:
                     'csv_info': csv_info,
                     'price_data_status': {
                         'live_prices_used': False,
-                        'zerodha_connected': bool(self.zerodha_auth and self.zerodha_auth.is_authenticated()) if self.zerodha_auth else False,
+                        'zerodha_connected': self._check_zerodha_connection_status(),
                         'success_rate': 0,
                         'market_data_source': 'UNAVAILABLE',
                         'market_open': self._is_market_open(),
                         'error_reason': str(e),
-                        'data_quality': 'UNAVAILABLE - No live prices'
+                        'data_quality': 'UNAVAILABLE - No live prices',
+                        'kite_instance_available': bool(self._get_valid_kite_instance()),
+                        'auth_status': self.zerodha_auth.get_auth_status() if self.zerodha_auth else {}
                     }
                 }
             
             raise Exception(f"Cannot prepare investment data: {str(e)}")
+    
+    def _get_valid_kite_instance(self):
+        """FIXED: Get a valid Kite instance with proper connection handling"""
+        try:
+            if not self.zerodha_auth:
+                print("❌ No Zerodha auth service available")
+                return None
+            
+            # Check if authenticated
+            if not self.zerodha_auth.is_authenticated():
+                print("🔄 Zerodha not authenticated, attempting authentication...")
+                try:
+                    result = self.zerodha_auth.authenticate()
+                    if not result:
+                        print("❌ Authentication failed")
+                        return None
+                except Exception as e:
+                    print(f"❌ Authentication error: {e}")
+                    return None
+            
+            # Get Kite instance
+            kite = self.zerodha_auth.get_kite_instance()
+            if not kite:
+                print("❌ No Kite instance available after authentication")
+                return None
+            
+            # Test the connection with a simple call
+            try:
+                profile = kite.profile()
+                print(f"✅ Kite instance validated with profile: {profile.get('user_name', 'Unknown')}")
+                return kite
+            except Exception as e:
+                print(f"❌ Kite instance validation failed: {e}")
+                # Try to refresh the token
+                try:
+                    print("🔄 Attempting to refresh token...")
+                    refreshed_kite = self.zerodha_auth.force_refresh_token()
+                    if refreshed_kite:
+                        print("✅ Token refreshed successfully")
+                        return refreshed_kite
+                    else:
+                        print("❌ Token refresh failed")
+                        return None
+                except Exception as refresh_error:
+                    print(f"❌ Token refresh error: {refresh_error}")
+                    return None
+                    
+        except Exception as e:
+            print(f"❌ Error getting valid Kite instance: {e}")
+            return None
+    
+    def _check_zerodha_connection_status(self) -> bool:
+        """Check current Zerodha connection status"""
+        try:
+            if not self.zerodha_auth:
+                return False
+            
+            if not self.zerodha_auth.is_authenticated():
+                return False
+            
+            kite = self._get_valid_kite_instance()
+            return bool(kite)
+            
+        except Exception as e:
+            print(f"⚠️ Error checking Zerodha connection: {e}")
+            return False
 
-    def get_live_prices(self, symbols: List[str]) -> Dict[str, float]:
-        """Get live prices using Zerodha API - STRICT: No fake prices, real data only"""
+    def get_live_prices(self, symbols: List[str], kite=None) -> Dict[str, float]:
+        """Get live prices using Zerodha API - FIXED: Accept kite instance parameter"""
         if not symbols:
             raise Exception("PRICE_DATA_UNAVAILABLE: No symbols provided for price fetching")
             
         print(f"💰 Attempting to fetch live prices for {len(symbols)} stocks...")
         print(f"🔍 First 5 symbols: {symbols[:5]}")
         
-        # Check authentication status first - STRICT CHECK
-        if not self.zerodha_auth:
-            print("❌ No Zerodha auth service available")
-            raise Exception("PRICE_DATA_UNAVAILABLE: Zerodha authentication service not available")
+        # Use provided kite instance or get a new one
+        if kite is None:
+            kite = self._get_valid_kite_instance()
         
-        print(f"🔐 Auth service available: {bool(self.zerodha_auth)}")
+        if not kite:
+            print("❌ No valid Kite instance available")
+            raise Exception("PRICE_DATA_UNAVAILABLE: No valid Zerodha API connection")
         
-        if not self.zerodha_auth.is_authenticated():
-            print("🔄 Zerodha not authenticated, attempting authentication...")
-            try:
-                result = self.zerodha_auth.authenticate()
-                if result:
-                    self.kite = self.zerodha_auth.get_kite_instance()
-                    print("✅ Authentication successful")
-                else:
-                    print("❌ Authentication failed")
-                    raise Exception("PRICE_DATA_UNAVAILABLE: Zerodha authentication failed")
-            except Exception as e:
-                print(f"❌ Zerodha authentication error: {e}")
-                raise Exception(f"PRICE_DATA_UNAVAILABLE: Authentication error - {str(e)}")
-        
-        if not self.kite:
-            print("❌ Zerodha API connection not available")
-            raise Exception("PRICE_DATA_UNAVAILABLE: No Zerodha API connection")
-        
-        print("✅ Zerodha authenticated and kite instance available")
+        print("✅ Zerodha connection verified and kite instance available")
         
         # Test with a single known stock first
         try:
             print("🧪 Testing connection with RELIANCE...")
-            test_quote = self.kite.quote(["NSE:RELIANCE"])
+            test_quote = kite.quote(["NSE:RELIANCE"])
             if test_quote and "NSE:RELIANCE" in test_quote:
                 test_price = test_quote["NSE:RELIANCE"].get("last_price", 0)
                 print(f"✅ Connection test successful - RELIANCE: ₹{test_price}")
@@ -266,7 +326,7 @@ class CSVService:
                 end_idx = min(start_idx + batch_size, len(symbols))
                 batch_symbols = symbols[start_idx:end_idx]
                 
-                future = executor.submit(self._fetch_batch_prices_strict, batch_symbols, batch_num + 1, total_batches)
+                future = executor.submit(self._fetch_batch_prices_strict, batch_symbols, batch_num + 1, total_batches, kite)
                 futures.append(future)
             
             # Collect results
@@ -298,8 +358,8 @@ class CSVService:
         print(f"✅ Returning {len(prices)} REAL live prices from Zerodha")
         return prices
 
-    def _fetch_batch_prices_strict(self, symbols: List[str], batch_num: int, total_batches: int) -> tuple:
-        """Fetch prices for a batch of symbols - STRICT mode, no fallbacks"""
+    def _fetch_batch_prices_strict(self, symbols: List[str], batch_num: int, total_batches: int, kite) -> tuple:
+        """Fetch prices for a batch of symbols - FIXED: Accept kite parameter"""
         prices = {}
         failed_symbols = []
         
@@ -319,7 +379,7 @@ class CSVService:
             print(f"   🔍 Requesting quotes for: {quote_symbols[:3]}{'...' if len(quote_symbols) > 3 else ''}")
             
             # Make the API call with timeout
-            quote_response = self.kite.quote(quote_symbols)
+            quote_response = kite.quote(quote_symbols)
             
             print(f"   📊 Received {len(quote_response)} quote responses")
             
@@ -498,7 +558,7 @@ class CSVService:
         status = {
             'zerodha_available': bool(self.zerodha_auth),
             'zerodha_authenticated': False,
-            'kite_instance': bool(self.kite),
+            'kite_instance': False,
             'csv_accessible': False,
             'market_open': self._is_market_open(),
             'last_check': datetime.now().isoformat(),
@@ -509,8 +569,15 @@ class CSVService:
         if self.zerodha_auth:
             try:
                 status['zerodha_authenticated'] = self.zerodha_auth.is_authenticated()
+                status['kite_instance'] = bool(self._get_valid_kite_instance())
+                
+                # Get detailed auth status
+                auth_status = self.zerodha_auth.get_auth_status()
+                status['auth_details'] = auth_status
+                
             except Exception as e:
                 status['zerodha_authenticated'] = False
+                status['auth_error'] = str(e)
         
         # Check CSV accessibility
         try:
@@ -518,5 +585,6 @@ class CSVService:
             status['csv_accessible'] = response.status_code == 200
         except Exception as e:
             status['csv_accessible'] = False
+            status['csv_error'] = str(e)
         
         return status

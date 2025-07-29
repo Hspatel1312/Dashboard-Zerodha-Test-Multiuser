@@ -1,8 +1,10 @@
-# backend/app/main.py
+# backend/app/main.py - FIXED VERSION with proper Zerodha initialization
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
 import traceback
+import asyncio
 
 app = FastAPI(title="Investment Rebalancing WebApp", version="2.0.0")
 
@@ -23,7 +25,8 @@ initialization_status = {
     "investment_service_created": False,
     "error_message": None,
     "zerodha_connection_status": "not_checked",
-    "csv_service_status": "not_initialized"
+    "csv_service_status": "not_initialized",
+    "kite_instance_available": False
 }
 
 zerodha_auth = None
@@ -43,13 +46,29 @@ try:
     initialization_status["auth_created"] = True
     print("✅ ZerodhaAuth instance created")
     
-    print("Step 3: Creating portfolio service...")
+    print("Step 3: Testing Zerodha authentication...")
+    try:
+        # Try authentication during startup
+        kite_instance = zerodha_auth.authenticate()
+        if kite_instance and zerodha_auth.is_authenticated():
+            initialization_status["auth_successful"] = True
+            initialization_status["zerodha_connection_status"] = "connected"
+            initialization_status["kite_instance_available"] = True
+            print(f"✅ Zerodha authentication successful: {zerodha_auth.profile_name}")
+        else:
+            print("⚠️ Zerodha authentication failed during startup - will retry on demand")
+            initialization_status["zerodha_connection_status"] = "authentication_failed"
+    except Exception as auth_error:
+        print(f"⚠️ Zerodha authentication error during startup: {auth_error}")
+        initialization_status["zerodha_connection_status"] = f"startup_error: {str(auth_error)}"
+    
+    print("Step 4: Creating portfolio service...")
     from .services.portfolio_service import PortfolioService
     portfolio_service = PortfolioService(zerodha_auth)
     initialization_status["service_created"] = True
     print("✅ Portfolio service created")
     
-    print("Step 4: Creating investment service...")
+    print("Step 5: Creating investment service...")
     from .services.investment_service import InvestmentService
     investment_service = InvestmentService(zerodha_auth)
     initialization_status["investment_service_created"] = True
@@ -63,7 +82,7 @@ except Exception as e:
 
 # Include routers AFTER services are created
 try:
-    print("Step 5: Setting up routers...")
+    print("Step 6: Setting up routers...")
     
     # Import and setup investment router
     from .routers.investment import router as investment_router
@@ -86,7 +105,7 @@ async def root():
         "message": "Investment Rebalancing WebApp API v2.0", 
         "status": initialization_status,
         "available_endpoints": [
-            "/health - Health check with CSV tracking status",
+            "/health - Health check with detailed Zerodha status",
             "/api/test-live-prices - Test live price fetching",
             "/api/test-auth - Test Zerodha authentication",
             "/api/test-nifty - Simple Nifty price test",
@@ -104,7 +123,7 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Comprehensive health check with CSV tracking status"""
+    """Comprehensive health check with enhanced Zerodha connection testing"""
     health_status = {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
@@ -113,7 +132,10 @@ async def health_check():
             "available": False,
             "authenticated": False,
             "can_fetch_data": False,
-            "error_message": None
+            "kite_instance_valid": False,
+            "profile_name": None,
+            "error_message": None,
+            "last_test_time": None
         },
         "csv_service": {
             "available": bool(investment_service and investment_service.csv_service),
@@ -129,40 +151,87 @@ async def health_check():
         }
     }
     
-    # Test Zerodha connection if available
+    # ENHANCED: Test Zerodha connection thoroughly
     if zerodha_auth:
         try:
-            print("🔍 Testing Zerodha connection...")
+            print("🔍 Testing Zerodha connection comprehensively...")
             
+            # Check if already authenticated
             if zerodha_auth.is_authenticated():
-                health_status["zerodha_connection"]["available"] = True
-                health_status["zerodha_connection"]["authenticated"] = True
-                health_status["zerodha_connection"]["can_fetch_data"] = True
-                initialization_status["zerodha_connection_status"] = "connected"
                 print("✅ Zerodha already authenticated")
-            else:
-                print("🔄 Attempting Zerodha authentication...")
-                try:
-                    kite = zerodha_auth.authenticate()
-                    if zerodha_auth.is_authenticated():
+                
+                # Test if Kite instance is actually working
+                kite = zerodha_auth.get_kite_instance()
+                if kite:
+                    try:
+                        # Test with a simple API call
+                        profile = kite.profile()
+                        print(f"✅ Kite instance working - Profile: {profile.get('user_name', 'Unknown')}")
+                        
                         health_status["zerodha_connection"]["available"] = True
                         health_status["zerodha_connection"]["authenticated"] = True
+                        health_status["zerodha_connection"]["kite_instance_valid"] = True
                         health_status["zerodha_connection"]["can_fetch_data"] = True
-                        initialization_status["zerodha_connection_status"] = "connected"
+                        health_status["zerodha_connection"]["profile_name"] = profile.get('user_name')
+                        health_status["zerodha_connection"]["last_test_time"] = datetime.now().isoformat()
+                        
+                        initialization_status["zerodha_connection_status"] = "connected_and_verified"
                         initialization_status["auth_successful"] = True
-                        print("✅ Zerodha authentication successful")
+                        initialization_status["kite_instance_available"] = True
+                        
+                    except Exception as kite_error:
+                        print(f"❌ Kite instance test failed: {kite_error}")
+                        health_status["zerodha_connection"]["authenticated"] = True
+                        health_status["zerodha_connection"]["kite_instance_valid"] = False
+                        health_status["zerodha_connection"]["error_message"] = f"Kite instance error: {str(kite_error)}"
+                        initialization_status["zerodha_connection_status"] = "authenticated_but_kite_failed"
+                        initialization_status["kite_instance_available"] = False
+                else:
+                    print("❌ No Kite instance available despite authentication")
+                    health_status["zerodha_connection"]["authenticated"] = True
+                    health_status["zerodha_connection"]["kite_instance_valid"] = False
+                    health_status["zerodha_connection"]["error_message"] = "No Kite instance available"
+                    initialization_status["zerodha_connection_status"] = "authenticated_but_no_kite"
+                    initialization_status["kite_instance_available"] = False
+            else:
+                print("🔄 Not authenticated, attempting authentication...")
+                try:
+                    kite = zerodha_auth.authenticate()
+                    if zerodha_auth.is_authenticated() and kite:
+                        # Test the new connection
+                        try:
+                            profile = kite.profile()
+                            print(f"✅ New authentication successful - Profile: {profile.get('user_name', 'Unknown')}")
+                            
+                            health_status["zerodha_connection"]["available"] = True
+                            health_status["zerodha_connection"]["authenticated"] = True
+                            health_status["zerodha_connection"]["kite_instance_valid"] = True
+                            health_status["zerodha_connection"]["can_fetch_data"] = True
+                            health_status["zerodha_connection"]["profile_name"] = profile.get('user_name')
+                            health_status["zerodha_connection"]["last_test_time"] = datetime.now().isoformat()
+                            
+                            initialization_status["zerodha_connection_status"] = "newly_connected"
+                            initialization_status["auth_successful"] = True
+                            initialization_status["kite_instance_available"] = True
+                            
+                        except Exception as new_kite_error:
+                            print(f"❌ New Kite instance test failed: {new_kite_error}")
+                            health_status["zerodha_connection"]["error_message"] = f"New auth failed: {str(new_kite_error)}"
+                            initialization_status["zerodha_connection_status"] = "auth_succeeded_but_kite_failed"
                     else:
+                        print("❌ Authentication attempt failed")
                         health_status["zerodha_connection"]["error_message"] = "Authentication failed"
                         initialization_status["zerodha_connection_status"] = "authentication_failed"
-                        print("❌ Zerodha authentication failed")
+                        
                 except Exception as auth_error:
+                    print(f"❌ Authentication error: {auth_error}")
                     health_status["zerodha_connection"]["error_message"] = str(auth_error)
-                    initialization_status["zerodha_connection_status"] = f"error: {str(auth_error)}"
-                    print(f"❌ Zerodha authentication error: {auth_error}")
+                    initialization_status["zerodha_connection_status"] = f"auth_error: {str(auth_error)}"
+                    
         except Exception as e:
+            print(f"❌ Health check Zerodha test error: {e}")
             health_status["zerodha_connection"]["error_message"] = str(e)
-            initialization_status["zerodha_connection_status"] = f"error: {str(e)}"
-            print(f"❌ Zerodha connection test error: {e}")
+            initialization_status["zerodha_connection_status"] = f"health_check_error: {str(e)}"
     
     # Check CSV service status
     if investment_service and investment_service.csv_service:
@@ -182,100 +251,128 @@ async def health_check():
             health_status["csv_service"].update({
                 "csv_accessible": connection_status.get('csv_accessible', False),
                 "market_open": connection_status.get('market_open', False),
-                "last_check": connection_status.get('last_check')
+                "last_check": connection_status.get('last_check'),
+                "kite_instance_available": connection_status.get('kite_instance', False)
             })
             
         except Exception as csv_error:
             health_status["csv_service"]["error_message"] = str(csv_error)
     
-    # Update initialization status
-    initialization_status["auth_successful"] = health_status["zerodha_connection"]["authenticated"]
-    
     return health_status
 
-# Add new endpoints for CSV management
-@app.get("/api/csv-status")
-async def get_csv_status():
-    """Get detailed CSV tracking status"""
-    if not investment_service:
-        raise HTTPException(status_code=500, detail="Investment service not available")
+@app.get("/api/test-auth")
+async def test_zerodha_auth():
+    """Test Zerodha authentication specifically"""
+    if not zerodha_auth:
+        return {
+            "success": False,
+            "error": "ZerodhaAuth service not initialized"
+        }
     
     try:
-        csv_service = investment_service.csv_service
+        print("🔐 Testing Zerodha authentication step by step...")
         
-        # Get connection status
-        connection_status = csv_service.get_connection_status()
+        # Get current auth status
+        auth_status = zerodha_auth.get_auth_status()
+        print(f"📋 Current auth status: {auth_status}")
         
-        # Get cached data info
-        cached_data = csv_service._get_cached_csv()
+        # Test authentication
+        if not zerodha_auth.is_authenticated():
+            print("🔄 Attempting authentication...")
+            kite = zerodha_auth.authenticate()
+            
+            if not kite:
+                return {
+                    "success": False,
+                    "error": "Authentication failed",
+                    "auth_status": zerodha_auth.get_auth_status()
+                }
         
-        # Get CSV history
-        csv_history = []
+        # Test Kite instance
+        kite = zerodha_auth.get_kite_instance()
+        if not kite:
+            return {
+                "success": False,
+                "error": "No Kite instance available",
+                "auth_status": zerodha_auth.get_auth_status()
+            }
+        
+        # Test API call
         try:
-            with open(investment_service.csv_history_file, 'r') as f:
-                import json
-                csv_history = json.load(f)[-10:]  # Last 10 entries
-        except:
-            csv_history = []
-        
-        return {
-            "success": True,
-            "data": {
-                "connection_status": connection_status,
-                "cached_data_info": {
-                    "available": bool(cached_data),
-                    "fetch_time": cached_data['fetch_time'] if cached_data else None,
-                    "csv_hash": cached_data['csv_hash'] if cached_data else None,
-                    "total_symbols": len(cached_data['symbols']) if cached_data else 0
+            profile = kite.profile()
+            margins = kite.margins()
+            
+            return {
+                "success": True,
+                "message": "Zerodha authentication working perfectly",
+                "profile": {
+                    "user_name": profile.get('user_name'),
+                    "user_id": profile.get('user_id'),
+                    "email": profile.get('email')
                 },
-                "csv_history": csv_history,
-                "auto_refresh_enabled": True,
-                "refresh_interval_minutes": 5
+                "margins": {
+                    "equity_cash": margins.get('equity', {}).get('available', {}).get('cash', 0)
+                },
+                "auth_status": zerodha_auth.get_auth_status(),
+                "timestamp": datetime.now().isoformat()
             }
-        }
+            
+        except Exception as api_error:
+            return {
+                "success": False,
+                "error": f"API test failed: {str(api_error)}",
+                "auth_status": zerodha_auth.get_auth_status(),
+                "kite_available": bool(kite)
+            }
+            
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get CSV status: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Authentication test error: {str(e)}",
+            "traceback": traceback.format_exc()
+        }
 
-@app.post("/api/force-csv-refresh")
-async def force_csv_refresh():
-    """Force refresh CSV data and check for changes"""
+@app.get("/api/test-live-prices")
+async def test_live_prices():
+    """Test live price fetching capability"""
     if not investment_service:
-        raise HTTPException(status_code=500, detail="Investment service not available")
+        return {
+            "success": False,
+            "error": "Investment service not available"
+        }
     
     try:
+        print("💰 Testing live price fetching...")
+        
+        # Test with a small set of symbols
+        test_symbols = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK"]
+        
         csv_service = investment_service.csv_service
+        kite = csv_service._get_valid_kite_instance()
         
-        # Force refresh CSV data
-        old_cached_data = csv_service._get_cached_csv()
-        old_hash = old_cached_data['csv_hash'] if old_cached_data else None
+        if not kite:
+            return {
+                "success": False,
+                "error": "No valid Kite instance for price testing",
+                "zerodha_status": zerodha_auth.get_auth_status() if zerodha_auth else "No auth service"
+            }
         
-        # Fetch fresh data
-        new_data = csv_service.fetch_csv_data(force_refresh=True)
-        new_hash = new_data['csv_hash']
-        
-        # Check if CSV changed
-        csv_changed = old_hash != new_hash
-        
-        # If CSV changed, check rebalancing
-        rebalancing_check = None
-        if csv_changed:
-            print(f"🔄 CSV changed from {old_hash} to {new_hash}, checking rebalancing...")
-            rebalancing_check = investment_service.check_rebalancing_needed()
+        prices = csv_service.get_live_prices(test_symbols, kite)
         
         return {
             "success": True,
-            "data": {
-                "csv_refreshed": True,
-                "csv_changed": csv_changed,
-                "old_hash": old_hash,
-                "new_hash": new_hash,
-                "fetch_time": new_data['fetch_time'],
-                "total_symbols": len(new_data['symbols']),
-                "rebalancing_check": rebalancing_check
-            }
+            "message": f"Successfully fetched {len(prices)} live prices",
+            "test_prices": prices,
+            "success_rate": f"{len(prices)}/{len(test_symbols)} ({len(prices)/len(test_symbols)*100:.1f}%)",
+            "timestamp": datetime.now().isoformat()
         }
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to refresh CSV: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Live price test failed: {str(e)}",
+            "traceback": traceback.format_exc()
+        }
 
 # Existing endpoints remain the same...
 @app.get("/api/test-nifty")

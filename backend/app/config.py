@@ -1,4 +1,4 @@
-# backend/app/config.py
+# backend/app/config.py - FIXED VERSION
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/investment_db"
     REDIS_URL: str = "redis://localhost:6379/0"
     
-    # Zerodha API Configuration - Will use your hardcoded values as defaults
+    # Zerodha API Configuration
     ZERODHA_API_KEY: str = "femohcxeam7tjt1p"
     ZERODHA_API_SECRET: str = "xjudlehzrnblhs1wznjvb95uhgtny54f"
     ZERODHA_USER_ID: str = "MSC739"
@@ -46,4 +46,5 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
         case_sensitive = False
 
+# Create the settings instance that will be imported
 settings = Settings()
