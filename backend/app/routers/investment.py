@@ -10,17 +10,9 @@ router = APIRouter(prefix="/investment", tags=["investment"])
 investment_service = None
 
 def get_investment_service():
-    """Dependency to get investment service with proper error handling"""
+    """Dependency to get investment service"""
     if not investment_service:
-        print("❌ Investment service dependency is None")
-        print(f"   investment_service type: {type(investment_service)}")
-        print(f"   investment_service value: {investment_service}")
-        raise HTTPException(
-            status_code=500, 
-            detail="Investment service not initialized. Please check server logs."
-        )
-    
-    print(f"✅ Investment service dependency OK: {type(investment_service)}")
+        raise HTTPException(status_code=500, detail="Investment service not initialized")
     return investment_service
 
 class InvestmentRequest(BaseModel):
@@ -33,22 +25,10 @@ class RebalancingRequest(BaseModel):
 async def get_investment_requirements():
     """Get investment requirements for initial setup"""
     try:
-        print("📋 GET /investment/requirements called")
-        
-        # Get investment service directly (not using dependency for better debugging)
         if not investment_service:
-            print("❌ investment_service is None in requirements endpoint")
-            raise HTTPException(
-                status_code=500, 
-                detail="Investment service not initialized - check main.py initialization"
-            )
-        
-        print(f"✅ Investment service available: {type(investment_service)}")
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
         
         requirements = investment_service.get_investment_requirements()
-        
-        print(f"✅ Requirements calculated successfully")
-        
         return {
             "success": True,
             "data": requirements
@@ -56,28 +36,19 @@ async def get_investment_requirements():
     except Exception as e:
         print(f"❌ Investment requirements error: {e}")
         print(f"❌ Traceback: {traceback.format_exc()}")
-        
-        # Return structured error response
-        error_detail = str(e)
-        if "Investment service not initialized" in error_detail:
-            error_detail = "Investment service not initialized. Server startup may have failed."
-        
         raise HTTPException(
             status_code=500, 
-            detail=error_detail
+            detail=f"Failed to get investment requirements: {str(e)}"
         )
 
 @router.post("/calculate-plan")
 async def calculate_investment_plan(request: InvestmentRequest):
     """Calculate initial investment plan for given amount"""
     try:
-        print(f"💰 POST /investment/calculate-plan called with amount: ₹{request.investment_amount:,.0f}")
-        
         if not investment_service:
             raise HTTPException(status_code=500, detail="Investment service not initialized")
         
         plan = investment_service.calculate_initial_investment_plan(request.investment_amount)
-        
         return {
             "success": True,
             "data": plan
@@ -95,8 +66,6 @@ async def calculate_investment_plan(request: InvestmentRequest):
 async def execute_initial_investment(request: InvestmentRequest):
     """Execute initial investment (calculate plan and store orders)"""
     try:
-        print(f"🚀 POST /investment/execute-initial called with amount: ₹{request.investment_amount:,.0f}")
-        
         if not investment_service:
             raise HTTPException(status_code=500, detail="Investment service not initialized")
         
@@ -123,13 +92,10 @@ async def execute_initial_investment(request: InvestmentRequest):
 async def check_rebalancing_needed():
     """Check if rebalancing is needed based on CSV changes"""
     try:
-        print("⚖️ GET /investment/rebalancing-check called")
-        
         if not investment_service:
             raise HTTPException(status_code=500, detail="Investment service not initialized")
         
         result = investment_service.check_rebalancing_needed()
-        
         return {
             "success": True,
             "data": result
@@ -146,13 +112,10 @@ async def check_rebalancing_needed():
 async def get_portfolio_status():
     """Get current system portfolio status (built from order history)"""
     try:
-        print("📊 GET /investment/portfolio-status called")
-        
         if not investment_service:
             raise HTTPException(status_code=500, detail="Investment service not initialized")
         
         status = investment_service.get_system_portfolio_status()
-        
         return {
             "success": True,
             "data": status
@@ -169,13 +132,10 @@ async def get_portfolio_status():
 async def get_csv_stocks():
     """Get current stocks from CSV with live prices"""
     try:
-        print("📄 GET /investment/csv-stocks called")
-        
         if not investment_service:
             raise HTTPException(status_code=500, detail="Investment service not initialized")
         
         stocks_data = investment_service.csv_service.get_stocks_with_prices()
-        
         return {
             "success": True,
             "data": stocks_data
@@ -192,13 +152,10 @@ async def get_csv_stocks():
 async def get_system_orders():
     """Get all system orders history"""
     try:
-        print("📋 GET /investment/system-orders called")
-        
         if not investment_service:
             raise HTTPException(status_code=500, detail="Investment service not initialized")
         
         orders = investment_service._load_system_orders()
-        
         return {
             "success": True,
             "data": {
@@ -218,8 +175,6 @@ async def get_system_orders():
 async def get_csv_tracking_status():
     """Get CSV tracking and change detection status"""
     try:
-        print("📊 GET /investment/csv-status called")
-        
         if not investment_service:
             raise HTTPException(status_code=500, detail="Investment service not initialized")
         
@@ -273,8 +228,6 @@ async def get_csv_tracking_status():
 async def force_csv_refresh():
     """Force refresh CSV data and check for changes"""
     try:
-        print("🔄 POST /investment/force-csv-refresh called")
-        
         if not investment_service:
             raise HTTPException(status_code=500, detail="Investment service not initialized")
         
@@ -357,7 +310,7 @@ async def force_csv_refresh():
         )
 
 def get_next_steps(csv_changed: bool, rebalancing_check: dict, portfolio_impact: dict) -> list:
-    """Generate next steps based on CSV refresh results"""
+    """Generate next steps based on CSV refresh results - FIXED: Added proper function definition"""
     steps = []
     
     if not csv_changed:
@@ -392,8 +345,6 @@ def get_next_steps(csv_changed: bool, rebalancing_check: dict, portfolio_impact:
 async def execute_rebalancing(request: RebalancingRequest):
     """Execute rebalancing with optional additional investment"""
     try:
-        print(f"⚖️ POST /investment/execute-rebalancing called")
-        
         if not investment_service:
             raise HTTPException(status_code=500, detail="Investment service not initialized")
         
@@ -440,7 +391,6 @@ async def investment_router_health():
         "router": "investment",
         "status": "active",
         "service_available": bool(investment_service),
-        "service_type": str(type(investment_service)) if investment_service else None,
         "endpoints": [
             "GET /requirements",
             "POST /calculate-plan", 
@@ -453,22 +403,4 @@ async def investment_router_health():
             "POST /force-csv-refresh",
             "POST /execute-rebalancing"
         ]
-    }
-
-# Debug endpoint
-@router.get("/debug")
-async def investment_router_debug():
-    """Debug endpoint for investment router"""
-    return {
-        "investment_service": {
-            "is_none": investment_service is None,
-            "type": str(type(investment_service)) if investment_service else "None",
-            "has_csv_service": bool(investment_service and hasattr(investment_service, 'csv_service')),
-            "has_zerodha_auth": bool(investment_service and hasattr(investment_service, 'zerodha_auth'))
-        },
-        "debug_info": {
-            "module_name": __name__,
-            "router_prefix": router.prefix,
-            "router_tags": router.tags
-        }
     }
