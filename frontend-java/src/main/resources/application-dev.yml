@@ -1,0 +1,20 @@
+server:
+  port: 8080
+
+spring:
+  profiles:
+    active: dev
+  web:
+    resources:
+      cache:
+        period: 0  # No cache in dev mode
+
+investment:
+  backend:
+    url: http://127.0.0.1:8000
+    timeout: 10000
+
+logging:
+  level:
+    com.investment: DEBUG
+    org.springframework.web: WARN

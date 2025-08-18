@@ -1,0 +1,94 @@
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Java/Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Node.js / React Build Artifacts
+frontend-java/src/main/frontend/node_modules/
+frontend-java/src/main/frontend/build/
+frontend-java/src/main/frontend/.env.local
+frontend-java/src/main/frontend/.env.development.local
+frontend-java/src/main/frontend/.env.test.local
+frontend-java/src/main/frontend/.env.production.local
+frontend-java/src/main/frontend/npm-debug.log*
+frontend-java/src/main/frontend/yarn-debug.log*
+frontend-java/src/main/frontend/yarn-error.log*
+
+# Node executable from Maven
+frontend-java/src/main/frontend/node/
+
+# Logs
+*.log
+logs/
+server.log
+
+# Runtime data (keep structure, ignore content changes)
+backend/csv_cache.json
+backend/csv_history.json
+backend/system_orders.json
+backend/system_portfolio_state.json
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Maven wrapper (but keep mvnw.cmd)
+.mvn/wrapper/maven-wrapper.properties
+.mvn/wrapper/MavenWrapperDownloader.java

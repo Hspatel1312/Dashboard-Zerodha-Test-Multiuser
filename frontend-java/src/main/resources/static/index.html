@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investment Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #000000 0%, #111111 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            text-align: center;
+            max-width: 800px;
+            padding: 2rem;
+        }
+        
+        .logo {
+            font-size: 4rem;
+            margin-bottom: 2rem;
+            filter: drop-shadow(0 0 20px rgba(0, 122, 255, 0.5));
+        }
+        
+        h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #007AFF 0%, #5856D6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 3rem;
+        }
+        
+        .card {
+            background: rgba(28, 28, 30, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 2rem 0;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #10B981;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .button {
+            background: linear-gradient(135deg, #007AFF 0%, #5856D6 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 1rem 2rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 0.5rem;
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 122, 255, 0.4);
+        }
+        
+        .api-status {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 12px;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">📈</div>
+        <h1>Investment Dashboard</h1>
+        <p class="subtitle">Premium Portfolio Management System</p>
+        
+        <div class="card">
+            <div class="status">
+                <div class="status-dot"></div>
+                <span>Java Frontend: Active</span>
+            </div>
+            
+            <div id="backend-status">
+                <div class="loading"></div>
+                <span>Checking Python Backend...</span>
+            </div>
+            
+            <div class="api-status" id="api-status" style="display: none;">
+                <strong>✅ Backend Connected</strong><br>
+                Python API is running on port 8001
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3 style="margin-bottom: 1rem;">Quick Actions</h3>
+            <button class="button" onclick="checkBackend()">Test Backend Connection</button>
+            <button class="button" onclick="openApi()">View API Docs</button>
+            <button class="button" onclick="showAuth()">Connect Zerodha</button>
+        </div>
+        
+        <div class="card" id="auth-section" style="display: none;">
+            <h3 style="margin-bottom: 1rem;">🔐 Zerodha Authentication</h3>
+            <p style="margin-bottom: 1rem; color: rgba(255, 255, 255, 0.7);">
+                Connect your Zerodha account to access live market data
+            </p>
+            
+            <!-- Auto Connect Section -->
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem;">
+                <h4 style="color: #10B981; margin-bottom: 0.5rem;">🚀 Quick Connect (Recommended)</h4>
+                <p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 1rem; font-size: 0.9rem;">
+                    Use automatic authentication with saved credentials - no manual token required!
+                </p>
+                <button class="button" onclick="autoAuthenticate()" style="background: linear-gradient(135deg, #10B981 0%, #059669 100%);">
+                    Auto Connect to Zerodha
+                </button>
+                <div id="auto-auth-result" style="margin-top: 1rem;"></div>
+                <p style="color: rgba(255, 255, 255, 0.6); font-size: 0.8rem; margin-top: 1rem;">
+                    Or use manual authentication below if auto-connect doesn't work
+                </p>
+            </div>
+            
+            <!-- Manual Authentication Section -->
+            <div style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 1.5rem;">
+                <h4 style="color: rgba(255, 255, 255, 0.7); margin-bottom: 1rem;">Manual Authentication Steps</h4>
+                
+                <!-- Step 1: Generate Login URL -->
+                <div id="step-1">
+                    <h4 style="color: #007AFF; margin-bottom: 0.5rem;">Step 1: Generate Login URL</h4>
+                    <button class="button" onclick="getLoginUrl()">Generate Login URL</button>
+                <div id="login-url" style="margin-top: 1rem; display: none;">
+                    <input type="text" id="login-input" placeholder="Login URL will appear here" readonly
+                           style="width: 100%; padding: 0.5rem; margin: 0.5rem 0; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: white;">
+                    <button class="button" onclick="openLogin()">Open Login Page</button>
+                </div>
+            </div>
+            
+            <!-- Step 2: Enter Request Token -->
+            <div id="step-2" style="margin-top: 2rem; display: none;">
+                <h4 style="color: #007AFF; margin-bottom: 0.5rem;">Step 2: Enter Request Token</h4>
+                <p style="color: rgba(255, 255, 255, 0.6); font-size: 0.9rem; margin-bottom: 1rem;">
+                    After logging in to Zerodha, copy the 'request_token' from the redirect URL and paste it below:<br>
+                    <strong style="color: #007AFF;">Look for:</strong> <code style="background: rgba(0,0,0,0.3); padding: 2px 4px; border-radius: 4px;">?request_token=YOUR_TOKEN_HERE&action=login&status=success</code>
+                </p>
+                <input type="text" id="request-token-input" placeholder="Enter request_token here" 
+                       style="width: 100%; padding: 0.5rem; margin: 0.5rem 0; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: white;">
+                <button class="button" onclick="exchangeToken()">Complete Authentication</button>
+                <div id="auth-result" style="margin-top: 1rem;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Check backend status on load
+        window.onload = function() {
+            checkBackend();
+        };
+        
+        function checkBackend() {
+            fetch('/api/auth-status')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('backend-status').innerHTML = 
+                        '<div style="color: #10B981;">✅ Backend Connected</div>';
+                    document.getElementById('api-status').style.display = 'block';
+                    
+                    if (data.authenticated) {
+                        document.getElementById('backend-status').innerHTML += 
+                            '<div style="color: #10B981; margin-top: 0.5rem;">🔐 Zerodha: Connected (' + data.profile_name + ')</div>';
+                    } else {
+                        document.getElementById('backend-status').innerHTML += 
+                            '<div style="color: #F59E0B; margin-top: 0.5rem;">🔒 Zerodha: Not Connected</div>';
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('backend-status').innerHTML = 
+                        '<div style="color: #EF4444;">❌ Backend Disconnected</div>';
+                    document.getElementById('api-status').style.display = 'none';
+                });
+        }
+        
+        function openApi() {
+            window.open('http://localhost:8001', '_blank');
+        }
+        
+        function showAuth() {
+            document.getElementById('auth-section').style.display = 'block';
+        }
+        
+        function getLoginUrl() {
+            fetch('/api/zerodha-login-url')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('login-input').value = data.login_url;
+                        document.getElementById('login-url').style.display = 'block';
+                        // Show step 2 after generating login URL
+                        document.getElementById('step-2').style.display = 'block';
+                    } else {
+                        alert('Failed to generate login URL: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    alert('Failed to generate login URL: ' + error.message);
+                });
+        }
+        
+        function openLogin() {
+            const url = document.getElementById('login-input').value;
+            if (url) {
+                window.open(url, '_blank');
+                // Focus on the request token input
+                setTimeout(() => {
+                    document.getElementById('request-token-input').focus();
+                }, 1000);
+            }
+        }
+        
+        function autoAuthenticate() {
+            const resultDiv = document.getElementById('auto-auth-result');
+            resultDiv.innerHTML = '<div style="color: #F59E0B;">🔄 Connecting automatically...</div>';
+            
+            fetch('/api/auto-authenticate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    resultDiv.innerHTML = '<div style="color: #10B981;">✅ Auto authentication successful! Profile: ' + (data.profile_name || 'Unknown') + '</div>';
+                    // Refresh the page status after successful authentication
+                    setTimeout(() => {
+                        checkBackend();
+                        document.getElementById('auth-section').style.display = 'none';
+                    }, 2000);
+                } else {
+                    resultDiv.innerHTML = '<div style="color: #EF4444;">❌ Auto authentication failed: ' + (data.error || 'Unknown error') + '</div><div style="color: #F59E0B; margin-top: 0.5rem;">Try manual authentication below.</div>';
+                }
+            })
+            .catch(error => {
+                resultDiv.innerHTML = '<div style="color: #EF4444;">❌ Error: ' + error.message + '</div><div style="color: #F59E0B; margin-top: 0.5rem;">Try manual authentication below.</div>';
+            });
+        }
+
+        function exchangeToken() {
+            const requestToken = document.getElementById('request-token-input').value.trim();
+            if (!requestToken) {
+                alert('Please enter the request token from the Zerodha redirect URL');
+                return;
+            }
+            
+            const resultDiv = document.getElementById('auth-result');
+            resultDiv.innerHTML = '<div style="color: #F59E0B;">🔄 Exchanging token...</div>';
+            
+            fetch('/api/exchange-token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    request_token: requestToken
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    resultDiv.innerHTML = '<div style="color: #10B981;">✅ Authentication successful! Profile: ' + (data.profile_name || 'Unknown') + '</div>';
+                    // Refresh the page status after successful authentication
+                    setTimeout(() => {
+                        checkBackend();
+                        document.getElementById('auth-section').style.display = 'none';
+                    }, 2000);
+                } else {
+                    resultDiv.innerHTML = '<div style="color: #EF4444;">❌ Authentication failed: ' + (data.error || 'Unknown error') + '</div>';
+                }
+            })
+            .catch(error => {
+                resultDiv.innerHTML = '<div style="color: #EF4444;">❌ Error: ' + error.message + '</div>';
+            });
+        }
+    </script>
+</body>
+</html>

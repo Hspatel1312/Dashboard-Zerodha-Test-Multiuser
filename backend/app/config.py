@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     ZERODHA_API_SECRET: str = "xjudlehzrnblhs1wznjvb95uhgtny54f"
     ZERODHA_USER_ID: str = "MSC739"
     ZERODHA_PASSWORD: str = "Pranjal@1006"
-    ZERODHA_TOTP_KEY: str = "PHHXNLG7ZPS3C4GCOF7HLGCM7DV6HRAB"
+    ZERODHA_TOTP_KEY: str = "4LU7P2XI3ULLL3RP7BCEQC5UGAZFSUHZ"
     ZERODHA_ACCESS_TOKEN_FILE: str = "zerodha_access_token.txt"
     ZERODHA_REDIRECT_URL: str = "http://localhost:8000/auth/callback"
     
