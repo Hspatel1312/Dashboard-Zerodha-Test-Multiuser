@@ -884,7 +884,7 @@ class InvestmentService:
             }
     
     def calculate_rebalancing_plan(self, additional_investment: float = 0.0) -> Dict:
-        """Calculate rebalancing plan for paper trading (allocation-based)"""
+        """Calculate rebalancing plan for paper trading (stock-list-based only, NOT allocation-drift-based)"""
         try:
             print(f"[INFO] Calculating PAPER TRADING rebalancing plan with additional investment: Rs.{additional_investment:,.0f}")
             
@@ -941,63 +941,75 @@ class InvestmentService:
             
             print(f"[INFO] Target portfolio: {len(target_portfolio)} stocks, Rs.{total_target_value:,.0f} total value")
             
-            # Step 7: Calculate buy/sell orders based on current paper portfolio vs target
+            # Step 7: Check for stock list changes ONLY (not allocation drift)
             buy_orders = []
             sell_orders = []
             
-            print(f"[INFO] Comparing target portfolio with current paper portfolio...")
+            print(f"[INFO] Checking for stock list changes (not allocation drift)...")
             
-            # Compare each target stock with current holdings
-            for symbol, target_info in target_portfolio.items():
-                target_shares = target_info['shares']
-                target_price = target_info['price']
-                current_shares = current_holdings.get(symbol, {}).get('shares', 0)
-                
-                print(f"   {symbol}: Target={target_shares}, Current={current_shares}")
-                
-                if target_shares > current_shares:
-                    # Need to buy more
-                    shares_to_buy = target_shares - current_shares
+            # Compare stock symbols only - NO allocation comparison
+            csv_symbols = set(stock['symbol'] for stock in csv_stocks)  # Use actual CSV stocks, not target portfolio
+            portfolio_symbols = set(current_holdings.keys())
+            
+            print(f"[INFO] CSV stocks: {sorted(csv_symbols)}")
+            print(f"[INFO] Portfolio stocks: {sorted(portfolio_symbols)}")
+            
+            # Find new stocks to add (in CSV but not in portfolio)
+            new_stocks = csv_symbols - portfolio_symbols
+            if new_stocks:
+                print(f"[INFO] New stocks to add: {sorted(new_stocks)}")
+                for symbol in new_stocks:
+                    target_info = target_portfolio[symbol]
                     buy_orders.append({
                         "symbol": symbol,
                         "action": "BUY",
-                        "shares": shares_to_buy,
-                        "price": target_price,
-                        "value": shares_to_buy * target_price,
-                        "reason": "Increase position for rebalancing"
+                        "shares": target_info['shares'],
+                        "price": target_info['price'],
+                        "value": target_info['value'],
+                        "reason": "New stock added to CSV list"
                     })
-                elif target_shares < current_shares:
-                    # Need to sell some
-                    shares_to_sell = current_shares - target_shares
-                    current_price = current_holdings[symbol]['current_price']
-                    sell_orders.append({
-                        "symbol": symbol,
-                        "action": "SELL",
-                        "shares": shares_to_sell,
-                        "price": current_price,
-                        "value": shares_to_sell * current_price,
-                        "reason": "Reduce position for rebalancing"
-                    })
-                # If target_shares == current_shares, no action needed
             
-            # Handle stocks in current portfolio but not in CSV (sell all)
-            csv_symbols = set(target_portfolio.keys())
-            for symbol, holding_info in current_holdings.items():
-                if symbol not in csv_symbols and holding_info['shares'] > 0:
-                    # Stock not in CSV anymore - sell all
-                    shares_to_sell = holding_info['shares']
-                    current_price = holding_info['current_price']
+            # Find stocks to remove (in portfolio but not in CSV)
+            removed_stocks = portfolio_symbols - csv_symbols
+            if removed_stocks:
+                print(f"[INFO] Stocks to remove: {sorted(removed_stocks)}")
+                for symbol in removed_stocks:
+                    if current_holdings[symbol]['shares'] > 0:
+                        holding_info = current_holdings[symbol]
+                        sell_orders.append({
+                            "symbol": symbol,
+                            "action": "SELL",
+                            "shares": holding_info['shares'],
+                            "price": holding_info['current_price'],
+                            "value": holding_info['shares'] * holding_info['current_price'],
+                            "reason": "Stock removed from CSV list"
+                        })
+            
+            # Handle additional investment by proportionally increasing existing positions
+            if additional_investment > 0:
+                print(f"[INFO] Adding proportional investment of Rs.{additional_investment:,.0f} to existing stocks")
+                
+                # Only add to stocks that are in both CSV and portfolio (common stocks)
+                common_stocks = csv_symbols & portfolio_symbols
+                
+                if common_stocks:
+                    # Calculate proportional additional investment per stock
+                    additional_per_stock = additional_investment / len(common_stocks)
                     
-                    sell_orders.append({
-                        "symbol": symbol,
-                        "action": "SELL",
-                        "shares": shares_to_sell,
-                        "price": current_price,
-                        "value": shares_to_sell * current_price,
-                        "reason": "Stock removed from CSV list"
-                    })
-                    
-                    print(f"   {symbol}: Not in CSV, selling all {shares_to_sell} shares")
+                    for symbol in common_stocks:
+                        target_info = target_portfolio[symbol]
+                        current_price = target_info['price']
+                        additional_shares = int(additional_per_stock / current_price)
+                        
+                        if additional_shares > 0:
+                            buy_orders.append({
+                                "symbol": symbol,
+                                "action": "BUY",
+                                "shares": additional_shares,
+                                "price": current_price,
+                                "value": additional_shares * current_price,
+                                "reason": f"Additional investment (Rs.{additional_per_stock:,.0f} allocated)"
+                            })
             
             total_buy_value = sum(order['value'] for order in buy_orders)
             total_sell_value = sum(order['value'] for order in sell_orders)
