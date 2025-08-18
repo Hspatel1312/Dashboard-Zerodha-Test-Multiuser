@@ -77,6 +77,36 @@ async def calculate_investment_plan(request: InvestmentRequest):
         error_msg = str(e)
         print(f"[ERROR] Investment plan calculation error: {error_msg}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        
+        # Handle minimum investment error with structured response
+        if "below minimum" in error_msg:
+            # Get minimum investment requirements to provide helpful info
+            try:
+                requirements = investment_service.get_investment_requirements()
+                minimum_required = requirements['minimum_investment']['minimum_investment']
+                recommended_minimum = requirements['minimum_investment']['recommended_minimum']
+                
+                return {
+                    "success": False,
+                    "error": "INVESTMENT_BELOW_MINIMUM",
+                    "message": f"Investment amount ₹{request.investment_amount:,.0f} is below minimum required",
+                    "details": {
+                        "requested_amount": request.investment_amount,
+                        "minimum_required": minimum_required,
+                        "recommended_minimum": recommended_minimum,
+                        "shortfall": minimum_required - request.investment_amount,
+                        "reason": "Expensive stocks require higher minimum investment for proper allocation"
+                    },
+                    "suggestions": [
+                        f"Increase investment to at least ₹{minimum_required:,.0f}",
+                        f"Recommended amount: ₹{recommended_minimum:,.0f} (with 20% buffer)",
+                        "This ensures every stock gets at least 1 share with proper allocation"
+                    ]
+                }
+            except:
+                # Fallback if requirements call fails
+                pass
+        
         raise HTTPException(
             status_code=400 if "below minimum" in error_msg else 500,
             detail=error_msg
@@ -103,6 +133,36 @@ async def execute_initial_investment(request: InvestmentRequest):
         error_msg = str(e)
         print(f"[ERROR] Initial investment execution error: {error_msg}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        
+        # Handle minimum investment error with structured response
+        if "below minimum" in error_msg:
+            # Get minimum investment requirements to provide helpful info
+            try:
+                requirements = investment_service.get_investment_requirements()
+                minimum_required = requirements['minimum_investment']['minimum_investment']
+                recommended_minimum = requirements['minimum_investment']['recommended_minimum']
+                
+                return {
+                    "success": False,
+                    "error": "INVESTMENT_BELOW_MINIMUM",
+                    "message": f"Cannot execute investment: Amount ₹{request.investment_amount:,.0f} is below minimum required",
+                    "details": {
+                        "requested_amount": request.investment_amount,
+                        "minimum_required": minimum_required,
+                        "recommended_minimum": recommended_minimum,
+                        "shortfall": minimum_required - request.investment_amount,
+                        "reason": "Expensive stocks require higher minimum investment for proper allocation"
+                    },
+                    "suggestions": [
+                        f"Increase investment to at least ₹{minimum_required:,.0f}",
+                        f"Recommended amount: ₹{recommended_minimum:,.0f} (with 20% buffer)",
+                        "This ensures every stock gets at least 1 share with proper allocation"
+                    ]
+                }
+            except:
+                # Fallback if requirements call fails
+                pass
+        
         raise HTTPException(
             status_code=400 if "below minimum" in error_msg else 500,
             detail=error_msg

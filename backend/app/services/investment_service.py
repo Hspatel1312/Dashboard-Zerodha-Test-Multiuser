@@ -835,52 +835,17 @@ class InvestmentService:
             print(f"CSV stocks: {len(current_csv_stocks)}")
             print(f"Portfolio stocks: {len(portfolio_stocks)}")
             
-            # Compare stocks and allocations
+            # Compare stocks - ONLY check if symbols match, no allocation checking
             if current_csv_stocks == portfolio_stocks:
-                print("[INFO] Stock list matches CSV - checking allocation balance...")
-                
-                # Check if allocations are within ±1.5% tolerance
-                target_allocation = 100.0 / len(portfolio_stocks)  # Equal weight
-                tolerance = 1.5  # ±1.5% tolerance
-                
-                allocation_issues = []
-                for symbol, holding in portfolio_status['holdings'].items():
-                    current_allocation = holding.get('allocation_percent', 0)
-                    deviation = abs(current_allocation - target_allocation)
-                    
-                    if deviation > tolerance:
-                        allocation_issues.append({
-                            'symbol': symbol,
-                            'current_allocation': current_allocation,
-                            'target_allocation': target_allocation,
-                            'deviation': deviation
-                        })
-                
-                if not allocation_issues:
-                    print("[SUCCESS] Portfolio stocks and allocations are balanced")
-                    return {
-                        "status": "BALANCED",
-                        "action_needed": "none",
-                        "message": "Portfolio is balanced and up-to-date",
-                        "portfolio_status": portfolio_status,
-                        "csv_stocks_count": len(current_csv_stocks),
-                        "portfolio_stocks_count": len(portfolio_stocks)
-                    }
-                else:
-                    print(f"[INFO] Portfolio stocks match but {len(allocation_issues)} allocations need rebalancing")
-                    for issue in allocation_issues[:3]:  # Show first 3
-                        print(f"   {issue['symbol']}: {issue['current_allocation']:.2f}% (deviation: {issue['deviation']:.2f}%)")
-                    
-                    return {
-                        "status": "REBALANCING_NEEDED",
-                        "action_needed": "rebalancing",
-                        "message": f"Portfolio needs rebalancing - {len(allocation_issues)} stocks have allocation drift beyond ±1.5%",
-                        "portfolio_status": portfolio_status,
-                        "csv_stocks_count": len(current_csv_stocks),
-                        "portfolio_stocks_count": len(portfolio_stocks),
-                        "allocation_issues": allocation_issues,
-                        "rebalancing_reason": "allocation_drift"
-                    }
+                print("[SUCCESS] Stock list matches CSV - portfolio is up-to-date")
+                return {
+                    "status": "BALANCED",
+                    "action_needed": "none",
+                    "message": "Portfolio is balanced and up-to-date",
+                    "portfolio_status": portfolio_status,
+                    "csv_stocks_count": len(current_csv_stocks),
+                    "portfolio_stocks_count": len(portfolio_stocks)
+                }
             
             else:
                 print("[INFO] Portfolio doesn't match CSV - rebalancing needed")

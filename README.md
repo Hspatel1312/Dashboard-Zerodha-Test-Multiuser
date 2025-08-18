@@ -94,6 +94,53 @@ http://localhost:8080
 └── Every stock gets at least 1 share guaranteed
 ```
 
+## 🔄 **System Working Logic**
+
+### **Initial Investment Flow:**
+1. **Minimum Investment Check** - Uses ±2% flexibility to determine minimum (₹3.95L)
+2. **Stock List Fetch** - Retrieves 21 stocks from CSV including GOLDBEES
+3. **Dynamic Allocation** - GOLDBEES: 50%, Other 20 stocks: 2.5% each
+4. **Order Generation** - Creates buy orders ensuring every stock gets ≥1 share
+5. **Portfolio Creation** - Stores system orders and creates portfolio state
+
+### **Rebalancing Decision Logic:**
+```
+🔍 Rebalancing Trigger = Stock List Changes ONLY
+
+✅ TRIGGERS Rebalancing:
+├── New stock added to CSV
+├── Stock removed from CSV  
+└── Stock symbol changes
+
+❌ DOES NOT Trigger Rebalancing:
+├── Price fluctuations
+├── Allocation drift (2.1% vs 2.5%)
+├── Portfolio value changes
+└── Market movements
+```
+
+### **Rebalancing Execution Flow:**
+1. **Stock List Comparison** - Compare CSV stocks vs Portfolio stocks
+2. **Portfolio Value Calculation** - Calculate current portfolio worth
+3. **Target Allocation** - Determine new allocation based on GOLDBEES presence
+4. **Order Generation** - Create buy/sell orders to match target allocation
+5. **Execution** - Execute orders and update portfolio state
+
+### **Error Handling & User Experience:**
+```
+💡 Below Minimum Investment (< ₹3.95L):
+├── Structured error response with suggestions
+├── Shows exact shortfall amount
+├── Provides recommended minimum with buffer
+└── Explains why minimum is required
+
+✅ Valid Investment (≥ ₹3.95L):
+├── High utilization (99%+ capital deployed)
+├── Balanced allocation across all stocks
+├── Every stock gets at least 1 share
+└── Optimal risk distribution
+```
+
 ## 🎨 UI Preview
 
 The dashboard features:
@@ -173,17 +220,25 @@ The dashboard features:
 - ✅ **Authentication:** Manual token flow with callback endpoint
 - ✅ **Rebalancing Logic:** Stock list change triggers (not allocation drift)
 
-**Allocation Flexibility Optimization (Latest):**
+**Allocation Flexibility Optimization:**
 - ✅ **±2% Flexibility:** Upgraded from ±1.5% to ±2% allocation flexibility
 - ✅ **78% Reduction in Minimum Investment:** From ₹17.8L to ₹3.95L required
 - ✅ **Maximum Allocation Strategy:** Uses 4.5% max allocation for expensive stocks
 - ✅ **Affordable for Retail Investors:** Under ₹4L minimum investment
 - ✅ **High Utilization:** 99.93% capital utilization with ₹5L investment
 
+**System Logic & Error Handling (Latest):**
+- ✅ **Simplified Rebalancing:** Only triggers on stock list changes, not allocation drift
+- ✅ **Improved Error Handling:** Structured responses for below-minimum investment
+- ✅ **Consistent Status:** Investment status and rebalancing check now aligned
+- ✅ **User-Friendly Messages:** Clear explanations and actionable suggestions
+- ✅ **Portfolio Status Logic:** BALANCED when stock symbols match CSV
+
 **Key Files Modified:**
-- `backend/app/services/investment_calculator.py` - GOLDBEES allocation logic
+- `backend/app/services/investment_calculator.py` - ±2% flexibility & GOLDBEES allocation logic
+- `backend/app/services/investment_service.py` - Simplified rebalancing logic (symbols-only)
+- `backend/app/routers/investment.py` - Improved error handling for minimum investment
 - `backend/app/services/csv_service.py` - NaN handling for ETF data  
-- `backend/app/services/investment_service.py` - Updated rebalancing triggers
 - `backend/app/main.py` - Auth callback endpoint
 - `backend/app/auth.py` - Manual authentication support
 
@@ -262,7 +317,8 @@ The dashboard features:
 - **±2% Flexibility:** Target ±2% range for optimal allocation (e.g., 2.5% target = 0.5% to 4.5%)
 - **Minimum investment:** Uses maximum allocation (4.5%) for expensive stocks = ₹3.95L total
 - **Utilization:** Achieves 99.93% capital utilization with optimized allocation
-- Rebalancing trigger: Only on stock list changes, not allocation drift
+- **Rebalancing trigger:** ONLY stock list changes (add/remove stocks), NOT allocation drift
+- **Status logic:** Portfolio is BALANCED if stock symbols match CSV, regardless of allocations
 
 **Data Processing:**
 - NaN handling: GOLDBEES ETF data cleaned (momentum=0, volatility=0, score=0)
