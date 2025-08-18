@@ -23,16 +23,7 @@ git status --short
 
 echo.
 echo [INFO] Creating commit...
-git commit -m "Update investment dashboard - automated push
-
-- All latest changes to the investment dashboard
-- Backend calculations and services updates
-- Frontend configuration and source updates
-- Documentation and script updates
-- Project configuration and cleanup
-
-Generated with Claude Code - Automated Push
-Co-Authored-By: Claude <noreply@anthropic.com>"
+git commit -m "Update investment dashboard - automated push" -m "All latest changes to the investment dashboard" -m "Backend calculations and services updates" -m "Frontend configuration and source updates" -m "Generated with Claude Code"
 
 if %ERRORLEVEL% EQU 0 (
     echo.
