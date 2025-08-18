@@ -31,6 +31,9 @@ import {
   TrendingUp as BuyIcon,
   TrendingDown as SellIcon,
   Info as InfoIcon,
+  Replay as RetryIcon,
+  Error as FailedIcon,
+  CheckCircle as SuccessIcon,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -39,7 +42,12 @@ import toast from 'react-hot-toast';
 import LoadingScreen from '../../components/UI/LoadingScreen';
 
 // Hooks
-import { useSystemOrders, useResetSystemOrdersMutation } from '../../hooks/useApi';
+import { 
+  useSystemOrders, 
+  useResetSystemOrdersMutation, 
+  useFailedOrders, 
+  useRetryFailedOrdersMutation 
+} from '../../hooks/useApi';
 
 const Orders = () => {
   const [page, setPage] = useState(0);
@@ -47,13 +55,36 @@ const Orders = () => {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   const { data: systemOrders, isLoading: ordersLoading, refetch: refetchOrders } = useSystemOrders();
+  const { data: failedOrdersData, isLoading: failedOrdersLoading, refetch: refetchFailedOrders } = useFailedOrders();
   const resetOrdersMutation = useResetSystemOrdersMutation();
+  const retryOrdersMutation = useRetryFailedOrdersMutation();
 
   const orders = systemOrders?.data?.orders || [];
+  const failedOrders = failedOrdersData?.data?.failed_orders || [];
+  const canRetryAll = failedOrdersData?.data?.can_retry_all || false;
 
   const handleRefresh = () => {
     refetchOrders();
+    refetchFailedOrders();
     toast.success('Orders refreshed');
+  };
+
+  const handleRetryOrder = (orderId) => {
+    retryOrdersMutation.mutate([orderId], {
+      onSuccess: () => {
+        refetchOrders();
+        refetchFailedOrders();
+      }
+    });
+  };
+
+  const handleRetryAllOrders = () => {
+    retryOrdersMutation.mutate(null, { // null means retry all
+      onSuccess: () => {
+        refetchOrders();
+        refetchFailedOrders();
+      }
+    });
   };
 
   const handleResetOrders = () => {
@@ -138,6 +169,25 @@ const Orders = () => {
           </Box>
           
           <Box sx={{ display: 'flex', gap: 2 }}>
+            {failedOrders.length > 0 && canRetryAll && (
+              <Tooltip title="Retry All Failed Orders">
+                <Button
+                  variant="contained"
+                  startIcon={<RetryIcon />}
+                  onClick={handleRetryAllOrders}
+                  disabled={retryOrdersMutation.isLoading}
+                  sx={{
+                    background: 'linear-gradient(135deg, #FF9500 0%, #FF6B00 100%)',
+                    color: 'white',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #FF6B00 0%, #FF4500 100%)',
+                    },
+                  }}
+                >
+                  {retryOrdersMutation.isLoading ? 'Retrying...' : `Retry All (${failedOrders.length})`}
+                </Button>
+              </Tooltip>
+            )}
             <Tooltip title="Reset All Orders (Testing)">
               <Button
                 variant="outlined"
@@ -202,10 +252,10 @@ const Orders = () => {
           >
             <CardContent sx={{ py: 2 }}>
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                Buy Orders
+                Executed Orders
               </Typography>
               <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                {orders.filter(order => order.action?.toLowerCase() === 'buy').length}
+                {orders.filter(order => order.status !== 'FAILED' && order.status !== 'FAILED_MAX_RETRIES').length}
               </Typography>
             </CardContent>
           </Card>
@@ -219,10 +269,10 @@ const Orders = () => {
           >
             <CardContent sx={{ py: 2 }}>
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                Sell Orders
+                Failed Orders
               </Typography>
               <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                {orders.filter(order => order.action?.toLowerCase() === 'sell').length}
+                {orders.filter(order => order.status === 'FAILED' || order.status === 'FAILED_MAX_RETRIES').length}
               </Typography>
             </CardContent>
           </Card>
@@ -263,6 +313,9 @@ const Orders = () => {
                         </TableCell>
                         <TableCell sx={{ color: 'rgba(255, 255, 255, 0.9)', fontWeight: 600 }}>
                           Status
+                        </TableCell>
+                        <TableCell sx={{ color: 'rgba(255, 255, 255, 0.9)', fontWeight: 600 }}>
+                          Actions
                         </TableCell>
                       </TableRow>
                     </TableHead>
@@ -329,15 +382,83 @@ const Orders = () => {
                             </Typography>
                           </TableCell>
                           <TableCell>
-                            <Chip
-                              label={order.status || 'Executed'}
-                              size="small"
-                              sx={{
-                                background: 'rgba(16, 185, 129, 0.2)',
-                                color: '#10B981',
-                                border: '1px solid rgba(16, 185, 129, 0.4)',
-                              }}
-                            />
+                            {order.status === 'FAILED' ? (
+                              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                <Chip
+                                  icon={<FailedIcon />}
+                                  label="FAILED"
+                                  size="small"
+                                  sx={{
+                                    background: 'rgba(239, 68, 68, 0.2)',
+                                    color: '#EF4444',
+                                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                                  }}
+                                />
+                                {order.failure_reason && (
+                                  <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.7rem' }}>
+                                    {order.failure_reason}
+                                  </Typography>
+                                )}
+                              </Box>
+                            ) : order.status === 'FAILED_MAX_RETRIES' ? (
+                              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                <Chip
+                                  icon={<FailedIcon />}
+                                  label="MAX RETRIES"
+                                  size="small"
+                                  sx={{
+                                    background: 'rgba(156, 163, 175, 0.2)',
+                                    color: '#9CA3AF',
+                                    border: '1px solid rgba(156, 163, 175, 0.4)',
+                                  }}
+                                />
+                                {order.failure_reason && (
+                                  <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.7rem' }}>
+                                    {order.failure_reason}
+                                  </Typography>
+                                )}
+                              </Box>
+                            ) : (
+                              <Chip
+                                icon={<SuccessIcon />}
+                                label={order.status || 'EXECUTED'}
+                                size="small"
+                                sx={{
+                                  background: 'rgba(16, 185, 129, 0.2)',
+                                  color: '#10B981',
+                                  border: '1px solid rgba(16, 185, 129, 0.4)',
+                                }}
+                              />
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {order.status === 'FAILED' && order.can_retry ? (
+                              <Tooltip title={`Retry order for ${order.symbol}`}>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleRetryOrder(order.order_id)}
+                                  disabled={retryOrdersMutation.isLoading}
+                                  sx={{
+                                    background: 'rgba(255, 149, 0, 0.2)',
+                                    color: '#FF9500',
+                                    border: '1px solid rgba(255, 149, 0, 0.4)',
+                                    '&:hover': {
+                                      background: 'rgba(255, 149, 0, 0.3)',
+                                    },
+                                  }}
+                                >
+                                  <RetryIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            ) : order.status === 'FAILED_MAX_RETRIES' ? (
+                              <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                                Cannot retry
+                              </Typography>
+                            ) : (
+                              <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                                -
+                              </Typography>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}

@@ -6,84 +6,84 @@
       "total_investment": 17798.0
     },
     "LAURUSLABS": {
-      "shares": 11,
+      "shares": 14,
       "avg_price": 865.65,
-      "total_investment": 9522.15
+      "total_investment": 12119.1
     },
     "NAVINFLUOR": {
-      "shares": 1,
+      "shares": 2,
       "avg_price": 5042.5,
-      "total_investment": 5042.5
+      "total_investment": 10085.0
     },
     "ASTERDM": {
-      "shares": 16,
+      "shares": 20,
       "avg_price": 624.5,
-      "total_investment": 9992.0
+      "total_investment": 12490.0
     },
     "KIMS": {
-      "shares": 13,
+      "shares": 16,
       "avg_price": 761.75,
-      "total_investment": 9902.75
+      "total_investment": 12188.0
     },
     "JMFINANCIL": {
-      "shares": 53,
+      "shares": 67,
       "avg_price": 186.31,
-      "total_investment": 9874.43
+      "total_investment": 12482.77
     },
     "AIIL": {
-      "shares": 3,
+      "shares": 4,
       "avg_price": 2967.3,
-      "total_investment": 8901.900000000001
+      "total_investment": 11869.2
     },
     "MCX": {
-      "shares": 1,
+      "shares": 2,
       "avg_price": 8309.0,
-      "total_investment": 8309.0
+      "total_investment": 16618.0
     },
     "RADICO": {
-      "shares": 3,
+      "shares": 4,
       "avg_price": 2851.3,
-      "total_investment": 8553.900000000001
+      "total_investment": 11405.2
     },
     "NH": {
-      "shares": 5,
+      "shares": 7,
       "avg_price": 1834.1,
-      "total_investment": 9170.5
+      "total_investment": 12838.699999999999
     },
     "ANANDRATHI": {
-      "shares": 3,
+      "shares": 4,
       "avg_price": 2789.1,
-      "total_investment": 8367.3
+      "total_investment": 11156.4
     },
     "SARDAEN": {
-      "shares": 17,
+      "shares": 21,
       "avg_price": 581.25,
-      "total_investment": 9881.25
+      "total_investment": 12206.25
     },
     "EIDPARRY": {
-      "shares": 8,
+      "shares": 10,
       "avg_price": 1177.0,
-      "total_investment": 9416.0
+      "total_investment": 11770.0
     },
     "RAMCOCEM": {
-      "shares": 9,
+      "shares": 11,
       "avg_price": 1087.3,
-      "total_investment": 9785.699999999999
+      "total_investment": 11960.3
     },
     "SYRMA": {
-      "shares": 13,
+      "shares": 17,
       "avg_price": 715.2,
-      "total_investment": 9297.6
+      "total_investment": 12158.400000000001
     },
     "AMBER": {
-      "shares": 1,
+      "shares": 2,
       "avg_price": 7438.5,
-      "total_investment": 7438.5
+      "total_investment": 14877.0
     },
     "ECLERX": {
-      "shares": 2,
+      "shares": 3,
       "avg_price": 3912.5,
-      "total_investment": 7825.0
+      "total_investment": 11737.5
     },
     "GODFRYPHLP": {
       "shares": 1,
@@ -91,38 +91,28 @@
       "total_investment": 9651.0
     },
     "AADHARHFC": {
-      "shares": 19,
+      "shares": 24,
       "avg_price": 505.05,
-      "total_investment": 9595.95
+      "total_investment": 12121.2
     },
     "ASAHIINDIA": {
-      "shares": 11,
+      "shares": 14,
       "avg_price": 867.9,
-      "total_investment": 9546.9
+      "total_investment": 12150.6
     },
     "GOLDBEES": {
-      "shares": 2416,
+      "shares": 3021,
       "avg_price": 82.75,
-      "total_investment": 199924.0
+      "total_investment": 249987.75
     }
   },
-  "last_updated": "2025-08-18T16:57:10.526654",
-  "csv_info": {
-    "fetch_time": "2025-08-18T16:52:12.727917",
-    "csv_hash": "8c7baa3a",
-    "source_url": "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv",
-    "symbol_column_used": "Symbol",
-    "total_rows": 21,
-    "force_refreshed": false,
-    "change_info": {},
-    "columns": [
-      "Symbol",
-      "Momentum",
-      "Volatility",
-      "FITP",
-      "Score"
-    ],
-    "content_size": 781
-  },
-  "type": "INITIAL_INVESTMENT"
+  "last_updated": "2025-08-18T18:47:27.210147",
+  "csv_info": {},
+  "type": "REBALANCED_PORTFOLIO",
+  "total_orders_processed": 21,
+  "construction_summary": {
+    "total_cash_outflow": 499670.37,
+    "first_order_date": "2025-08-18T18:45:40.958407",
+    "last_order_date": "2025-08-18T18:47:27.051362"
+  }
 }

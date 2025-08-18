@@ -1,7 +1,7 @@
 # backend/app/routers/investment.py
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import traceback
 
 router = APIRouter(prefix="/investment", tags=["investment"])
@@ -20,6 +20,9 @@ class InvestmentRequest(BaseModel):
 
 class RebalancingRequest(BaseModel):
     additional_investment: float = 0.0
+
+class RetryOrdersRequest(BaseModel):
+    order_ids: Optional[List[int]] = None  # If None, retry all failed orders
 
 @router.get("/status")
 async def get_investment_status():
@@ -559,6 +562,42 @@ async def get_zerodha_portfolio():
             detail=f"Failed to get Zerodha portfolio: {str(e)}"
         )
 
+@router.get("/failed-orders")
+async def get_failed_orders():
+    """Get all failed orders that can be retried"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        failed_orders_result = investment_service.get_failed_orders()
+        return failed_orders_result
+    except Exception as e:
+        print(f"[ERROR] Failed orders error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get failed orders: {str(e)}"
+        )
+
+@router.post("/retry-orders")
+async def retry_failed_orders(request: RetryOrdersRequest):
+    """Retry failed orders - either specific orders by ID or all failed orders"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        print(f"[INFO] Retry orders request: {request}")
+        
+        retry_result = investment_service.retry_failed_orders(request.order_ids)
+        return retry_result
+    except Exception as e:
+        print(f"[ERROR] Retry orders error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retry orders: {str(e)}"
+        )
+
 # Health check for this router
 @router.get("/health")
 async def investment_router_health():
@@ -578,6 +617,8 @@ async def investment_router_health():
             "GET /portfolio-comparison",
             "GET /rebalancing-portfolio-value",
             "GET /zerodha-portfolio",
-            "GET /system-orders"
+            "GET /system-orders",
+            "GET /failed-orders",
+            "POST /retry-orders"
         ]
     }

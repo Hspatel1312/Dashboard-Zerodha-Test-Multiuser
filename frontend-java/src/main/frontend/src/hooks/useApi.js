@@ -54,6 +54,11 @@ const api = {
 
   // Health endpoint
   getHealthStatus: () => axios.get('/health').then(res => res.data),
+
+  // Failed orders and retry endpoints
+  getFailedOrders: () => axios.get('/investment/failed-orders').then(res => res.data),
+  retryFailedOrders: (orderIds = null) => 
+    axios.post('/investment/retry-orders', { order_ids: orderIds }).then(res => res.data),
 };
 
 // Custom hooks for queries
@@ -342,6 +347,54 @@ export const useResetSystemOrdersMutation = () => {
     },
     onError: () => {
       toast.error('Failed to reset system orders');
+    },
+  });
+};
+
+export const useFailedOrders = () => {
+  return useQuery(
+    'failedOrders',
+    api.getFailedOrders,
+    {
+      refetchInterval: 10000, // Refetch every 10 seconds
+      staleTime: 5000, // Consider stale after 5 seconds
+      retry: 1,
+      onError: (error) => {
+        console.error('Failed orders fetch failed:', error);
+      },
+    }
+  );
+};
+
+export const useRetryFailedOrdersMutation = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation(api.retryFailedOrders, {
+    onSuccess: (data) => {
+      if (data.success) {
+        const { successful_retries, failed_retries, retried_count } = data.data;
+        
+        if (successful_retries > 0 && failed_retries === 0) {
+          toast.success(`🎉 All ${successful_retries} orders retried successfully!`);
+        } else if (successful_retries > 0 && failed_retries > 0) {
+          toast.success(`✅ ${successful_retries} orders succeeded, ❌ ${failed_retries} failed`);
+        } else if (failed_retries > 0) {
+          toast.error(`❌ All ${failed_retries} retry attempts failed`);
+        } else {
+          toast.info('No orders to retry');
+        }
+        
+        // Invalidate related queries to refresh the UI
+        queryClient.invalidateQueries('failedOrders');
+        queryClient.invalidateQueries('systemOrders');
+        queryClient.invalidateQueries('portfolioStatus');
+      } else {
+        toast.error(data.error || 'Failed to retry orders');
+      }
+    },
+    onError: (error) => {
+      console.error('Retry orders error:', error);
+      toast.error('Failed to retry orders');
     },
   });
 };

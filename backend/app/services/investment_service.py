@@ -255,11 +255,13 @@ class InvestmentService:
                     'price': order['price'],
                     'value': order['value'],
                     'allocation_percent': order['allocation_percent'],
-                    'status': 'EXECUTED_SYSTEM',
                     'execution_time': execution_time,
                     'session_type': 'INITIAL_INVESTMENT'
                 }
-                system_orders.append(system_order)
+                
+                # Execute the order (PAPER trading simulation)
+                executed_order = self._execute_single_order(system_order, "PAPER")
+                system_orders.append(executed_order)
                 order_id += 1
             
             # Save orders
@@ -641,7 +643,7 @@ class InvestmentService:
         return max(order['order_id'] for order in orders) + 1
     
     def _save_system_orders(self, new_orders: List[Dict]):
-        """Save system orders to file"""
+        """Save system orders to file (append new orders)"""
         try:
             existing_orders = self._load_system_orders()
             all_orders = existing_orders + new_orders
@@ -652,6 +654,17 @@ class InvestmentService:
             print(f"[INFO] Saved {len(new_orders)} new orders (total: {len(all_orders)})")
         except Exception as e:
             print(f"[ERROR] Error saving system orders: {e}")
+            raise
+    
+    def _update_system_orders(self, updated_orders: List[Dict]):
+        """Update existing system orders (replace entire orders list)"""
+        try:
+            with open(self.orders_file, 'w') as f:
+                json.dump(updated_orders, f, indent=2)
+            
+            print(f"[INFO] Updated {len(updated_orders)} orders")
+        except Exception as e:
+            print(f"[ERROR] Error updating system orders: {e}")
             raise
     
     def _load_system_orders(self) -> List[Dict]:
@@ -1194,3 +1207,197 @@ class InvestmentService:
         except Exception as e:
             print(f"[ERROR] Error executing rebalancing: {e}")
             raise Exception(f"Cannot execute rebalancing: {str(e)}")
+    
+    def _execute_single_order(self, order: Dict, order_type: str = "PAPER") -> Dict:
+        """Execute a single order with proper status tracking (for future live trading)"""
+        try:
+            print(f"[INFO] Executing {order_type} order: {order['action']} {order['shares']} {order['symbol']} @ Rs.{order['price']:.2f}")
+            
+            # Simulate order execution - will be replaced with actual Zerodha API calls
+            # For PAPER trading: all orders succeed (simulation)
+            # For LIVE trading: this will be replaced with actual Zerodha API calls
+            execution_success = True
+            failure_reason = None
+            
+            # Update order status based on execution result
+            if execution_success:
+                order['status'] = 'EXECUTED_SYSTEM' if order_type == "PAPER" else 'EXECUTED_LIVE'
+                order['execution_time'] = datetime.now().isoformat()
+                print(f"[SUCCESS] Order executed successfully: {order['symbol']}")
+            else:
+                order['status'] = 'FAILED'
+                order['execution_time'] = datetime.now().isoformat()
+                order['failure_reason'] = failure_reason
+                order['retry_count'] = order.get('retry_count', 0)
+                order['can_retry'] = True
+                print(f"[ERROR] Order failed: {order['symbol']} - {failure_reason}")
+            
+            return order
+            
+        except Exception as e:
+            print(f"[ERROR] Exception during order execution: {e}")
+            order['status'] = 'FAILED'
+            order['execution_time'] = datetime.now().isoformat()
+            order['failure_reason'] = f"System error: {str(e)}"
+            order['retry_count'] = order.get('retry_count', 0)
+            order['can_retry'] = True
+            return order
+    
+    def get_failed_orders(self) -> Dict:
+        """Get all failed orders that can be retried"""
+        try:
+            orders = self._load_system_orders()
+            failed_orders = [
+                order for order in orders 
+                if order.get('status') == 'FAILED' and order.get('can_retry', True)
+            ]
+            
+            # Group by session type and reason
+            failed_by_session = {}
+            failed_by_reason = {}
+            
+            for order in failed_orders:
+                session = order.get('session_type', 'UNKNOWN')
+                reason = order.get('failure_reason', 'Unknown error')
+                
+                if session not in failed_by_session:
+                    failed_by_session[session] = []
+                failed_by_session[session].append(order)
+                
+                if reason not in failed_by_reason:
+                    failed_by_reason[reason] = []
+                failed_by_reason[reason].append(order)
+            
+            return {
+                'success': True,
+                'data': {
+                    'failed_orders': failed_orders,
+                    'failed_count': len(failed_orders),
+                    'failed_by_session': failed_by_session,
+                    'failed_by_reason': failed_by_reason,
+                    'total_value': sum(order['value'] for order in failed_orders),
+                    'can_retry_all': len(failed_orders) > 0
+                }
+            }
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to get failed orders: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'data': {'failed_orders': [], 'failed_count': 0, 'can_retry_all': False}
+            }
+    
+    def retry_failed_orders(self, order_ids: list = None) -> Dict:
+        """Retry failed orders - either specific orders or all failed orders"""
+        try:
+            print(f"[INFO] Starting order retry process...")
+            
+            orders = self._load_system_orders()
+            
+            # Filter orders to retry
+            if order_ids:
+                orders_to_retry = [
+                    order for order in orders 
+                    if order.get('order_id') in order_ids 
+                    and order.get('status') == 'FAILED' 
+                    and order.get('can_retry', True)
+                ]
+                print(f"[INFO] Retrying specific orders: {order_ids}")
+            else:
+                orders_to_retry = [
+                    order for order in orders 
+                    if order.get('status') == 'FAILED' 
+                    and order.get('can_retry', True)
+                ]
+                print(f"[INFO] Retrying all failed orders")
+            
+            if not orders_to_retry:
+                return {
+                    'success': True,
+                    'message': 'No failed orders found to retry',
+                    'data': {
+                        'retried_count': 0,
+                        'successful_retries': 0,
+                        'failed_retries': 0,
+                        'orders': []
+                    }
+                }
+            
+            print(f"[INFO] Found {len(orders_to_retry)} orders to retry")
+            
+            # Execute retry for each order
+            retry_results = []
+            successful_retries = 0
+            failed_retries = 0
+            
+            for order in orders_to_retry:
+                print(f"[INFO] Retrying order {order['order_id']}: {order['action']} {order['symbol']}")
+                
+                # Increment retry count
+                order['retry_count'] = order.get('retry_count', 0) + 1
+                order['last_retry_time'] = datetime.now().isoformat()
+                
+                # Check retry limits
+                max_retries = 3
+                if order['retry_count'] > max_retries:
+                    print(f"[WARNING] Order {order['order_id']} exceeded max retries ({max_retries})")
+                    order['can_retry'] = False
+                    order['status'] = 'FAILED_MAX_RETRIES'
+                    failed_retries += 1
+                    retry_results.append({
+                        'order_id': order['order_id'],
+                        'symbol': order['symbol'],
+                        'success': False,
+                        'reason': f"Exceeded maximum retry attempts ({max_retries})"
+                    })
+                    continue
+                
+                # Execute the order
+                retried_order = self._execute_single_order(order, "PAPER")  # Change to "LIVE" for actual trading
+                
+                if retried_order['status'] in ['EXECUTED_SYSTEM', 'EXECUTED_LIVE']:
+                    successful_retries += 1
+                    retry_results.append({
+                        'order_id': order['order_id'],
+                        'symbol': order['symbol'],
+                        'success': True,
+                        'reason': 'Retry successful'
+                    })
+                else:
+                    failed_retries += 1
+                    retry_results.append({
+                        'order_id': order['order_id'],
+                        'symbol': order['symbol'],
+                        'success': False,
+                        'reason': retried_order.get('failure_reason', 'Retry failed')
+                    })
+            
+            # Save updated orders (replace entire orders list, don't append)
+            self._update_system_orders(orders)
+            
+            # Update portfolio state if any orders succeeded
+            if successful_retries > 0:
+                print(f"[INFO] Updating portfolio state after {successful_retries} successful retries")
+                self._update_portfolio_state_from_all_orders(orders, {})
+            
+            print(f"[SUCCESS] Retry complete: {successful_retries} successful, {failed_retries} failed")
+            
+            return {
+                'success': True,
+                'message': f'Retry completed: {successful_retries} successful, {failed_retries} failed',
+                'data': {
+                    'retried_count': len(orders_to_retry),
+                    'successful_retries': successful_retries,
+                    'failed_retries': failed_retries,
+                    'orders': retry_results
+                }
+            }
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to retry orders: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'message': 'Failed to retry orders due to system error'
+            }

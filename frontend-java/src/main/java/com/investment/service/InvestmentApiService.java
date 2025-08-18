@@ -240,6 +240,34 @@ public class InvestmentApiService {
     }
 
     /**
+     * Get failed orders
+     */
+    public Mono<JsonNode> getFailedOrders() {
+        return webClient.get()
+                .uri("/api/investment/failed-orders")
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(15))
+                .onErrorResume(this::handleError);
+    }
+
+    /**
+     * Retry failed orders
+     */
+    public Mono<JsonNode> retryFailedOrders(java.util.List<Integer> orderIds) {
+        Map<String, Object> request = new java.util.HashMap<>();
+        request.put("order_ids", orderIds); // null means retry all
+        
+        return webClient.post()
+                .uri("/api/investment/retry-orders")
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(30))
+                .onErrorResume(this::handleError);
+    }
+
+    /**
      * Handle API errors
      */
     private Mono<JsonNode> handleError(Throwable error) {

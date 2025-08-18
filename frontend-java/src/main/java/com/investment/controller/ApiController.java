@@ -167,6 +167,27 @@ public class ApiController {
                 .map(ResponseEntity::ok);
     }
 
+    @GetMapping("/investment/failed-orders")
+    public Mono<ResponseEntity<JsonNode>> getFailedOrders() {
+        log.info("Getting failed orders");
+        return investmentApiService.getFailedOrders()
+                .map(ResponseEntity::ok);
+    }
+
+    @PostMapping("/investment/retry-orders")
+    public Mono<ResponseEntity<JsonNode>> retryFailedOrders(@RequestBody(required = false) Map<String, Object> request) {
+        java.util.List<Integer> orderIds = null;
+        if (request != null && request.containsKey("order_ids")) {
+            Object orderIdsObj = request.get("order_ids");
+            if (orderIdsObj instanceof java.util.List) {
+                orderIds = (java.util.List<Integer>) orderIdsObj;
+            }
+        }
+        log.info("Retrying failed orders: {}", orderIds != null ? orderIds : "all");
+        return investmentApiService.retryFailedOrders(orderIds)
+                .map(ResponseEntity::ok);
+    }
+
     @GetMapping("/health")
     public Mono<ResponseEntity<JsonNode>> getHealthStatus() {
         log.info("Getting health status");

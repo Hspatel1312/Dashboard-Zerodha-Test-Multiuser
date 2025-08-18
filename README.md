@@ -30,6 +30,7 @@ http://localhost:8080
 - 🥇 **GOLDBEES Integration** - Automatic 50% gold allocation when GOLDBEES ETF is present
 - 🔐 **Zerodha Integration** - Manual & automatic authentication flows  
 - 📊 **Dynamic Portfolio Allocation** - Smart allocation based on stock composition
+- 🔄 **Order Retry System** - Individual and batch retry for failed orders
 - 📱 **Responsive Design** - Works on all devices
 - ⚡ **Fast Performance** - Optimized for speed
 - 🎯 **Smart Rebalancing** - Only triggers on stock list changes, not drift
@@ -227,6 +228,15 @@ The dashboard features:
 - ✅ **Affordable for Retail Investors:** Under ₹4L minimum investment
 - ✅ **High Utilization:** 99.93% capital utilization with ₹5L investment
 
+**Order Retry System (New):**
+- ✅ **Failed Order Detection:** Automatic identification of failed orders
+- ✅ **Individual Retry:** Per-order retry buttons with real-time updates
+- ✅ **Batch Retry All:** Single-click retry for all failed orders
+- ✅ **Retry Limits:** Maximum 3 attempts per order with smart status tracking
+- ✅ **Enhanced UI:** Red failed status, failure reasons, and retry controls
+- ✅ **No Duplicates:** Fixed retry logic to update existing orders, not create new ones
+- ✅ **Production Ready:** Artificial failure simulation removed for production use
+
 **System Logic & Error Handling (Latest):**
 - ✅ **Simplified Rebalancing:** Only triggers on stock list changes, not allocation drift
 - ✅ **Improved Error Handling:** Structured responses for below-minimum investment
@@ -236,11 +246,15 @@ The dashboard features:
 
 **Key Files Modified:**
 - `backend/app/services/investment_calculator.py` - ±2% flexibility & GOLDBEES allocation logic
-- `backend/app/services/investment_service.py` - Simplified rebalancing logic (symbols-only)
-- `backend/app/routers/investment.py` - Improved error handling for minimum investment
+- `backend/app/services/investment_service.py` - Retry system & simplified rebalancing logic (symbols-only)
+- `backend/app/routers/investment.py` - Retry endpoints & improved error handling
 - `backend/app/services/csv_service.py` - NaN handling for ETF data  
 - `backend/app/main.py` - Auth callback endpoint
 - `backend/app/auth.py` - Manual authentication support
+- `frontend-java/src/main/java/com/investment/service/InvestmentApiService.java` - Retry API methods
+- `frontend-java/src/main/java/com/investment/controller/ApiController.java` - Retry endpoints
+- `frontend-java/src/main/frontend/src/hooks/useApi.js` - Retry React hooks
+- `frontend-java/src/main/frontend/src/pages/Orders/Orders.js` - Retry UI components
 
 ### **Important Paths & Installations:**
 
@@ -304,6 +318,39 @@ The dashboard features:
 - **Investment Status:** http://127.0.0.1:8000/api/investment/status
 - **CSV Stocks (with GOLDBEES):** http://127.0.0.1:8000/api/investment/csv-stocks
 
+## 🔄 **Order Retry System**
+
+### **Comprehensive Failed Order Management:**
+```
+🔧 Order Retry Features:
+├── Individual Order Retry - Retry specific failed orders
+├── Batch Retry All - Retry all failed orders at once
+├── Retry Limits - Maximum 3 attempts per order
+├── Status Tracking - Real-time retry count and timestamps
+└── Failure Analysis - Detailed failure reasons and suggestions
+```
+
+### **Retry UI Components:**
+- **Failed Orders Summary** - Count and status in dashboard
+- **Individual Retry Buttons** - Per-order retry controls
+- **"Retry All" Button** - Batch retry for multiple failures
+- **Enhanced Status Display** - Red failed status with failure reasons
+- **Real-time Updates** - Automatic UI refresh after retry attempts
+
+### **Order Status Lifecycle:**
+```
+📊 Order States:
+├── EXECUTED_SYSTEM ✅ - Successfully executed (PAPER trading)
+├── EXECUTED_LIVE ✅ - Successfully executed (Live trading)
+├── FAILED ❌ - Order failed, can be retried
+└── FAILED_MAX_RETRIES ⚠️ - Exceeded retry limit
+```
+
+### **Failure Simulation (Testing Only):**
+- **15% Failure Rate** - Configurable for testing retry functionality
+- **Multiple Failure Types** - Network timeout, insufficient funds, market closed
+- **Production Ready** - Failure simulation disabled in production builds
+
 ### **🔧 Key Implementation Details:**
 
 **Authentication Flow:**
@@ -319,6 +366,13 @@ The dashboard features:
 - **Utilization:** Achieves 99.93% capital utilization with optimized allocation
 - **Rebalancing trigger:** ONLY stock list changes (add/remove stocks), NOT allocation drift
 - **Status logic:** Portfolio is BALANCED if stock symbols match CSV, regardless of allocations
+
+**Order Execution & Retry Logic:**
+- **PAPER Trading:** All orders succeed by default (simulation)
+- **LIVE Trading:** Ready for Zerodha API integration with real failure handling
+- **Retry Mechanism:** Updates existing orders instead of creating duplicates
+- **Failure Tracking:** Comprehensive retry count, timestamps, and failure reasons
+- **Smart Updates:** Uses `_update_system_orders()` to prevent duplicate orders
 
 **Data Processing:**
 - NaN handling: GOLDBEES ETF data cleaned (momentum=0, volatility=0, score=0)
