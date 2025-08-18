@@ -1,13 +1,17 @@
-# 🚀 Investment Dashboard - Premium UI
+# 🚀 Investment Dashboard - Premium UI with GOLDBEES Integration
 
-A modern investment rebalancing dashboard with Apple/Tesla-inspired design.
+A modern investment rebalancing dashboard with Apple/Tesla-inspired design and advanced GOLDBEES ETF support.
 
 ## ⚡ Quick Start
 
 ### 1. Start Python Backend
 ```bash
+START-PYTHON-BACKEND.bat
+```
+Or manually:
+```bash
 cd backend
-python -c "import uvicorn; uvicorn.run('app.main:app', host='127.0.0.1', port=8001, reload=True)"
+python -c "import uvicorn; uvicorn.run('app.main:app', host='127.0.0.1', port=8000, reload=True)"
 ```
 
 ### 2. Start Java Frontend
@@ -20,13 +24,15 @@ cd frontend-java
 ### 3. Open Dashboard
 http://localhost:8080
 
-## 🎯 Features
+## 🎯 Key Features
 
 - ✨ **Premium Dark UI** - Apple/Tesla inspired design
-- 🔐 **Zerodha Integration** - Secure authentication flow  
-- 📊 **Live Portfolio Tracking** - Real-time data and charts
+- 🥇 **GOLDBEES Integration** - Automatic 50% gold allocation when GOLDBEES ETF is present
+- 🔐 **Zerodha Integration** - Manual & automatic authentication flows  
+- 📊 **Dynamic Portfolio Allocation** - Smart allocation based on stock composition
 - 📱 **Responsive Design** - Works on all devices
 - ⚡ **Fast Performance** - Optimized for speed
+- 🎯 **Smart Rebalancing** - Only triggers on stock list changes, not drift
 
 ## 🛠️ Requirements
 
@@ -38,12 +44,38 @@ http://localhost:8080
 
 ```
 ├── backend/                    # Python FastAPI backend
+│   ├── app/services/          # Core business logic
+│   │   ├── investment_calculator.py  # GOLDBEES & dynamic allocation logic
+│   │   ├── csv_service.py            # Stock data with NaN handling
+│   │   └── investment_service.py     # Investment & rebalancing engine
+│   └── main.py               # API endpoints & authentication
 ├── frontend-java/             # Java Spring Boot + React frontend
-│   ├── src/main/java/        # Java controllers and services
-│   ├── src/main/resources/   # Static web resources
+│   ├── src/main/java/        # Java controllers and services  
+│   ├── src/main/frontend/    # React.js components
 │   └── mvnw.cmd             # Maven wrapper (no Maven install needed)
 └── START-DASHBOARD.bat       # One-click startup script
 ```
+
+## 🥇 GOLDBEES Integration
+
+### **Automatic Portfolio Allocation:**
+- **With GOLDBEES:** 50% GOLDBEES ETF + remaining 50% equally distributed among other stocks
+- **Without GOLDBEES:** Traditional equal-weight allocation (e.g., 5% per stock)
+
+### **Example Scenarios:**
+```
+📊 Portfolio with GOLDBEES (21 stocks total):
+├── GOLDBEES: 50% allocation
+└── Other 20 stocks: 2.5% each (50% ÷ 20)
+
+📊 Portfolio without GOLDBEES (20 stocks):
+└── All 20 stocks: 5% each (100% ÷ 20)
+```
+
+### **Smart Features:**
+- **NaN Handling:** GOLDBEES ETF data automatically cleaned and processed
+- **Dynamic Calculation:** Minimum investment adjusts based on portfolio composition
+- **Live Pricing:** Real-time ETF prices via Zerodha API
 
 ## 🎨 UI Preview
 
@@ -61,8 +93,19 @@ The dashboard features:
 - Make sure "Add to PATH" is checked during installation
 
 **Backend connection issues?**
-- Ensure Python backend is running on port 8001
-- Check http://localhost:8001 shows API response
+- Ensure Python backend is running on port 8000 (not 8001)
+- Check http://localhost:8000 shows API response
+- Check http://localhost:8000/api/investment/status for health
+
+**GOLDBEES not showing?**
+- Ensure GOLDBEES is present in your CSV stock list
+- System automatically detects and applies 50% allocation
+- Check logs for NaN handling messages
+
+**Authentication issues?**
+- Use manual authentication flow if automatic fails
+- CAPTCHA errors require manual token flow
+- Check that API credentials are configured in config.py
 
 **Build failures?**
 - The startup script uses `-Dskip.npm=true` to avoid React build issues
@@ -70,9 +113,10 @@ The dashboard features:
 
 ## 📞 Support
 
-- Check that both Python (port 8001) and Java (port 8080) services are running
+- Check that both Python (port 8000) and Java (port 8080) services are running
 - Use `START-DASHBOARD.bat` for the simplest startup experience
 - The dashboard will guide you through Zerodha authentication
+- GOLDBEES support is automatic when present in stock data
 
 ---
 
@@ -96,12 +140,28 @@ The dashboard features:
 - Backend API services
 - Configuration files
 
-## 🤖 **Claude Code Context & Paths**
+## 🤖 **Claude Code Context & Recent Updates**
 
 ### **For Future Claude Code Sessions:**
 
 **Quick Context to Provide:**
-> "This is an investment dashboard with Python FastAPI backend (port 8001) and Java Spring Boot frontend (port 8080). All dependencies are installed and configured. Use START-DASHBOARD.bat to start the complete system."
+> "This is an investment dashboard with Python FastAPI backend (port 8000) and Java Spring Boot frontend (port 8080). Features GOLDBEES ETF integration with 50% allocation, dynamic portfolio allocation, and smart rebalancing. All dependencies are installed and configured. Use START-DASHBOARD.bat to start the complete system."
+
+### **🥇 Recent Major Updates (Latest Session):**
+
+**GOLDBEES Integration (Completed):**
+- ✅ **Dynamic Allocation System:** 50% GOLDBEES + equal distribution of remaining 50%
+- ✅ **NaN Value Handling:** Proper JSON serialization for GOLDBEES ETF data
+- ✅ **Investment Calculator:** Updated for mixed allocation strategies
+- ✅ **Authentication:** Manual token flow with callback endpoint
+- ✅ **Rebalancing Logic:** Stock list change triggers (not allocation drift)
+
+**Key Files Modified:**
+- `backend/app/services/investment_calculator.py` - GOLDBEES allocation logic
+- `backend/app/services/csv_service.py` - NaN handling for ETF data  
+- `backend/app/services/investment_service.py` - Updated rebalancing triggers
+- `backend/app/main.py` - Auth callback endpoint
+- `backend/app/auth.py` - Manual authentication support
 
 ### **Important Paths & Installations:**
 
@@ -141,21 +201,44 @@ The dashboard features:
 - **Manual Maven:** `cd frontend-java && mvnw.cmd spring-boot:run`
 
 **Known Working Configurations:**
-- Backend runs on port 8001 (not 8000)
+- Backend runs on port 8000 (corrected from 8001)
+- GOLDBEES ETF integration fully working
 - React dependencies fixed (use-gesture → @use-gesture/react)
 - Portfolio icon fixed (Portfolio → AccountBalance)
 - All missing React components created
 - Maven wrapper properly configured
+- NaN value handling implemented for ETF data
+- Authentication supports both manual and automatic flows
 - Disk space requirements: ~3GB for full build
 
 **Troubleshooting:**
 - If npm install hangs: Use `-Dskip.npm=true` flag
 - If React build fails: Dependencies are pre-installed
 - If Maven wrapper fails: Use system Maven or run directly
-- If ports conflict: Backend must be on 8001, frontend on 8080
+- If ports conflict: Backend must be on 8000, frontend on 8080
 
 ### **Working URLs:**
 - **Dashboard:** http://localhost:8080
-- **Backend API:** http://127.0.0.1:8001
-- **API Docs:** http://127.0.0.1:8001/docs
-- **Health Check:** http://127.0.0.1:8001/health
+- **Backend API:** http://127.0.0.1:8000
+- **API Docs:** http://127.0.0.1:8000/docs
+- **Health Check:** http://127.0.0.1:8000/health
+- **Investment Status:** http://127.0.0.1:8000/api/investment/status
+- **CSV Stocks (with GOLDBEES):** http://127.0.0.1:8000/api/investment/csv-stocks
+
+### **🔧 Key Implementation Details:**
+
+**Authentication Flow:**
+- Manual authentication via callback: `http://localhost:8000/auth/callback`
+- Automatic authentication (may fail with CAPTCHA)
+- Token validation without full re-authentication on startup
+
+**Portfolio Allocation Logic:**
+- GOLDBEES detection: Automatic when "GOLDBEES" symbol found in CSV
+- Dynamic allocation: 50% GOLDBEES + equal split for remaining stocks
+- Minimum investment: Calculated based on most expensive stock and allocation %
+- Rebalancing trigger: Only on stock list changes, not allocation drift
+
+**Data Processing:**
+- NaN handling: GOLDBEES ETF data cleaned (momentum=0, volatility=0, score=0)
+- Live prices: All stocks including GOLDBEES fetched via Zerodha API
+- JSON serialization: NaN → null conversion for proper API responses
