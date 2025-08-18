@@ -107,19 +107,33 @@ class CSVService:
                 
                 # ONLY include stocks with REAL live prices
                 if symbol in prices and prices[symbol] > 0:
+                    # Helper function to handle NaN values
+                    def safe_get_numeric(data, *keys, default=0):
+                        for key in keys:
+                            if key in data:
+                                value = data[key]
+                                if pd.isna(value) or (isinstance(value, float) and value != value):  # NaN check
+                                    continue
+                                return float(value) if value is not None else default
+                        return default
+                    
                     stock_data = {
                         'symbol': symbol,
                         'price': prices[symbol],
                         'price_type': 'LIVE',  # Mark as live data
-                        'momentum': stock_info.get('Momentum', stock_info.get('momentum', 0)),
-                        'volatility': stock_info.get('Volatility', stock_info.get('volatility', 0)),
-                        'score': stock_info.get('Score', stock_info.get('score', 0))
+                        'momentum': safe_get_numeric(stock_info, 'Momentum', 'momentum'),
+                        'volatility': safe_get_numeric(stock_info, 'Volatility', 'volatility'), 
+                        'score': safe_get_numeric(stock_info, 'Score', 'score')
                     }
                     
-                    # Add any additional fields from CSV
+                    # Add any additional fields from CSV (with NaN handling)
                     for key, value in stock_info.items():
                         if key.lower() not in ['symbol', 'momentum', 'volatility', 'score'] and key not in stock_data:
-                            stock_data[key.lower()] = value
+                            # Handle NaN values for additional fields
+                            if pd.isna(value) or (isinstance(value, float) and value != value):
+                                stock_data[key.lower()] = None  # Convert NaN to None for JSON serialization
+                            else:
+                                stock_data[key.lower()] = value
                     
                     stocks_data.append(stock_data)
                 else:
@@ -372,7 +386,13 @@ class CSVService:
             
             for symbol in symbols:
                 clean_symbol = symbol.strip().upper()
-                nse_symbol = f"NSE:{clean_symbol}"
+                
+                # Special handling for GOLDBEES (ETF)
+                if clean_symbol == "GOLDBEES":
+                    nse_symbol = f"NSE:{clean_symbol}"
+                else:
+                    nse_symbol = f"NSE:{clean_symbol}"
+                
                 quote_symbols.append(nse_symbol)
                 symbol_mapping[nse_symbol] = clean_symbol
             

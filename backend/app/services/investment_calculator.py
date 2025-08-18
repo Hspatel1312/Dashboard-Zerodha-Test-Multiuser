@@ -4,9 +4,59 @@ import math
 
 class InvestmentCalculator:
     def __init__(self):
-        self.min_allocation_percent = 3.5  # 5% - 1.5% = 3.5%
-        self.target_allocation_percent = 5.0  # 5%
-        self.max_allocation_percent = 6.5  # 5% + 1.5% = 6.5%
+        # Default allocations (when no GOLDBEES)
+        self.default_min_allocation_percent = 3.5  # 5% - 1.5% = 3.5%
+        self.default_target_allocation_percent = 5.0  # 5%
+        self.default_max_allocation_percent = 6.5  # 5% + 1.5% = 6.5%
+        
+        # GOLDBEES allocation settings
+        self.goldbees_allocation_percent = 50.0  # 50% allocation to GOLDBEES
+        self.goldbees_symbol = "GOLDBEES"
+    
+    def _detect_goldbees_and_calculate_allocations(self, stocks_data: List[Dict]) -> Dict:
+        """
+        Detect if GOLDBEES is present and calculate allocation percentages
+        """
+        has_goldbees = any(stock.get('symbol') == self.goldbees_symbol for stock in stocks_data)
+        
+        if has_goldbees:
+            # GOLDBEES present: 50% to GOLDBEES, remaining 50% equally among other stocks
+            non_goldbees_stocks = len([stock for stock in stocks_data if stock.get('symbol') != self.goldbees_symbol])
+            remaining_allocation = 100.0 - self.goldbees_allocation_percent  # 50%
+            
+            if non_goldbees_stocks == 0:
+                # Only GOLDBEES - give it 100%
+                target_allocation_per_stock = self.goldbees_allocation_percent
+                min_allocation_per_stock = self.goldbees_allocation_percent - 1.5
+                max_allocation_per_stock = self.goldbees_allocation_percent + 1.5
+            else:
+                # Normal case: other stocks get equal share of remaining 50%
+                target_allocation_per_stock = remaining_allocation / non_goldbees_stocks  # e.g., 50% / 19 stocks = 2.63% each
+                min_allocation_per_stock = target_allocation_per_stock - 1.5
+                max_allocation_per_stock = target_allocation_per_stock + 1.5
+            
+            return {
+                'has_goldbees': True,
+                'goldbees_allocation': self.goldbees_allocation_percent,
+                'target_allocation_per_stock': target_allocation_per_stock,
+                'min_allocation_per_stock': max(0.5, min_allocation_per_stock),  # Minimum 0.5%
+                'max_allocation_per_stock': max_allocation_per_stock,
+                'non_goldbees_stocks': non_goldbees_stocks,
+                'allocation_strategy': f"GOLDBEES: {self.goldbees_allocation_percent}%, Others: {target_allocation_per_stock:.2f}% each"
+            }
+        else:
+            # No GOLDBEES: equal allocation for all stocks
+            target_allocation_per_stock = 100.0 / len(stocks_data)  # e.g., 100% / 20 = 5% each
+            
+            return {
+                'has_goldbees': False,
+                'goldbees_allocation': 0,
+                'target_allocation_per_stock': target_allocation_per_stock,
+                'min_allocation_per_stock': target_allocation_per_stock - 1.5,
+                'max_allocation_per_stock': target_allocation_per_stock + 1.5,
+                'non_goldbees_stocks': len(stocks_data),
+                'allocation_strategy': f"Equal weight: {target_allocation_per_stock:.2f}% each"
+            }
     
     def calculate_minimum_investment(self, stocks_data: List[Dict]) -> Dict:
         """
@@ -33,37 +83,71 @@ class InvestmentCalculator:
             if invalid_stocks:
                 raise Exception(f"PRICE_DATA_INVALID: Found {len(invalid_stocks)} stocks without valid live prices: {', '.join(invalid_stocks[:5])}")
             
-            # Find the most expensive stock
-            most_expensive_stock = max(stocks_data, key=lambda x: x['price'])
+            # Detect GOLDBEES and calculate dynamic allocations
+            allocation_info = self._detect_goldbees_and_calculate_allocations(stocks_data)
+            print(f"   Allocation strategy: {allocation_info['allocation_strategy']}")
+            
+            # Find the most expensive non-GOLDBEES stock for calculation
+            if allocation_info['has_goldbees']:
+                # For GOLDBEES scenario, check both GOLDBEES and most expensive regular stock
+                goldbees_stock = next((stock for stock in stocks_data if stock.get('symbol') == self.goldbees_symbol), None)
+                non_goldbees_stocks = [stock for stock in stocks_data if stock.get('symbol') != self.goldbees_symbol]
+                
+                # Calculate minimum based on GOLDBEES (50% allocation)
+                goldbees_min_investment = goldbees_stock['price'] * (100 / (self.goldbees_allocation_percent - 1.5))  # 48.5%
+                
+                # Calculate minimum based on most expensive regular stock (target allocation per stock)
+                if non_goldbees_stocks:
+                    most_expensive_regular = max(non_goldbees_stocks, key=lambda x: x['price'])
+                    regular_min_investment = most_expensive_regular['price'] * (100 / allocation_info['min_allocation_per_stock'])
+                    
+                    # Take the higher requirement
+                    min_investment_required = max(goldbees_min_investment, regular_min_investment)
+                    most_expensive_stock = goldbees_stock if goldbees_min_investment > regular_min_investment else most_expensive_regular
+                    print(f"   GOLDBEES requirement: Rs.{goldbees_min_investment:,.0f}, Regular stocks requirement: Rs.{regular_min_investment:,.0f}")
+                else:
+                    min_investment_required = goldbees_min_investment
+                    most_expensive_stock = goldbees_stock
+            else:
+                # No GOLDBEES: use traditional calculation
+                most_expensive_stock = max(stocks_data, key=lambda x: x['price'])
+                min_investment_required = most_expensive_stock['price'] * (100 / allocation_info['min_allocation_per_stock'])
+            
             max_price = most_expensive_stock['price']
-            
-            print(f"   Most expensive stock: {most_expensive_stock['symbol']} at Rs.{max_price:,.2f} (LIVE)")
-            
-            # For the most expensive stock to have 3.5% allocation with at least 1 share:
-            # min_investment = price / 0.035 = price * 28.57
-            min_investment_required = max_price * (100 / self.min_allocation_percent)
+            print(f"   Critical stock: {most_expensive_stock['symbol']} at Rs.{max_price:,.2f} (LIVE)")
             
             # Add buffer to ensure all stocks can get close to 5% allocation
             buffer_percent = 20  # 20% buffer
             recommended_minimum = min_investment_required * (1 + buffer_percent / 100)
             
-            # Calculate details for each stock
+            # Calculate details for each stock using dynamic allocations
             stock_details = []
             for stock in stocks_data:
                 symbol = stock['symbol']
                 price = stock['price']
                 
-                min_investment_for_stock = price * (100 / self.min_allocation_percent)
+                # Use different allocation based on whether it's GOLDBEES or regular stock
+                if symbol == self.goldbees_symbol and allocation_info['has_goldbees']:
+                    min_allocation = self.goldbees_allocation_percent - 1.5  # 48.5%
+                    target_allocation = self.goldbees_allocation_percent  # 50%
+                else:
+                    min_allocation = allocation_info['min_allocation_per_stock']
+                    target_allocation = allocation_info['target_allocation_per_stock']
+                
+                min_investment_for_stock = price * (100 / min_allocation)
                 
                 stock_details.append({
                     'symbol': symbol,
                     'price': price,
                     'price_type': 'LIVE',
-                    'min_investment_for_3_5pct': min_investment_for_stock,
-                    'min_shares': 1
+                    'min_investment_for_allocation': min_investment_for_stock,
+                    'target_allocation_percent': target_allocation,
+                    'min_allocation_percent': min_allocation,
+                    'min_shares': 1,
+                    'is_goldbees': symbol == self.goldbees_symbol
                 })
                 
-                print(f"   {symbol}: Rs.{price:.2f}/share (LIVE) - Min investment for 3.5%: Rs.{min_investment_for_stock:,.0f}")
+                print(f"   {symbol}: Rs.{price:.2f}/share (LIVE) - Target: {target_allocation:.2f}% - Min investment: Rs.{min_investment_for_stock:,.0f}")
             
             result = {
                 'minimum_investment': min_investment_required,
@@ -74,7 +158,8 @@ class InvestmentCalculator:
                 'invalid_stocks': 0,
                 'stock_details': stock_details,
                 'most_expensive_stock': most_expensive_stock,
-                'calculation_basis': f"Based on most expensive stock ({most_expensive_stock['symbol']}) having {self.min_allocation_percent}% allocation (5% ±1.5% range)",
+                'allocation_info': allocation_info,
+                'calculation_basis': f"Based on {allocation_info['allocation_strategy']} - Critical stock: {most_expensive_stock['symbol']}",
                 'data_quality': 'HIGH - All prices from live API'
             }
             
@@ -96,7 +181,10 @@ class InvestmentCalculator:
         """
         try:
             print(f"[INFO] Calculating optimal allocation for Rs.{investment_amount:,.0f}")
-            print(f"   Target: {self.min_allocation_percent}%-{self.max_allocation_percent}% per stock (5% ±1.5%), ideally {self.target_allocation_percent}%")
+            
+            # Detect GOLDBEES and calculate dynamic allocations
+            allocation_info = self._detect_goldbees_and_calculate_allocations(stocks_data)
+            print(f"   {allocation_info['allocation_strategy']}")
             
             # STRICT: Verify all stocks have real prices
             invalid_stocks = []
@@ -112,25 +200,39 @@ class InvestmentCalculator:
             if invalid_stocks:
                 raise Exception(f"PRICE_DATA_INVALID: Found {len(invalid_stocks)} stocks without valid live prices: {', '.join(invalid_stocks[:5])}")
             
-            # Phase 1: Initial allocation targeting 5% each
-            target_per_stock = investment_amount * (self.target_allocation_percent / 100)
+            # Phase 1: Initial allocation using dynamic targets
             allocations = []
             total_allocated = 0
             
-            print(f"[INFO] Phase 1: Initial allocation (Rs.{target_per_stock:,.0f} per stock) - ALL LIVE PRICES")
+            print(f"[INFO] Phase 1: Initial allocation using dynamic targets - ALL LIVE PRICES")
             
             for stock in stocks_data:
                 symbol = stock['symbol']
                 price = stock['price']
                 
-                # Calculate constraints
-                min_value = investment_amount * (self.min_allocation_percent / 100)
-                max_value = investment_amount * (self.max_allocation_percent / 100)
+                # Use different allocation targets based on stock type
+                if symbol == self.goldbees_symbol and allocation_info['has_goldbees']:
+                    # GOLDBEES gets 50% allocation
+                    target_allocation_percent = allocation_info['goldbees_allocation']
+                    min_allocation_percent = allocation_info['goldbees_allocation'] - 1.5  # 48.5%
+                    max_allocation_percent = allocation_info['goldbees_allocation'] + 1.5  # 51.5%
+                    
+                    print(f"   {symbol} (GOLDBEES): Target {target_allocation_percent}% allocation")
+                else:
+                    # Regular stocks get equal share of remaining allocation
+                    target_allocation_percent = allocation_info['target_allocation_per_stock']
+                    min_allocation_percent = allocation_info['min_allocation_per_stock']
+                    max_allocation_percent = allocation_info['max_allocation_per_stock']
+                
+                # Calculate target investment amount for this stock
+                target_per_stock = investment_amount * (target_allocation_percent / 100)
+                min_value = investment_amount * (min_allocation_percent / 100)
+                max_value = investment_amount * (max_allocation_percent / 100)
                 
                 min_shares = max(1, math.ceil(min_value / price))  # At least 1 share
                 max_shares = math.floor(max_value / price)
                 
-                # Start with target shares for 5% allocation
+                # Start with target shares
                 target_shares = max(1, math.floor(target_per_stock / price))
                 
                 # Ensure target is within constraints
@@ -151,9 +253,11 @@ class InvestmentCalculator:
                     'shares': optimal_shares,
                     'value': allocation_value,
                     'allocation_percent': allocation_percent,
+                    'target_allocation_percent': target_allocation_percent,
                     'min_shares': min_shares,
                     'max_shares': max_shares,
-                    'target_met': abs(allocation_percent - self.target_allocation_percent) < 0.5
+                    'target_met': abs(allocation_percent - target_allocation_percent) < 0.5,
+                    'is_goldbees': symbol == self.goldbees_symbol
                 }
                 
                 allocations.append(allocation)
@@ -179,6 +283,7 @@ class InvestmentCalculator:
                 'remaining_cash': final_remaining,
                 'utilization_percent': (final_total / investment_amount) * 100,
                 'allocations': allocations,
+                'allocation_info': allocation_info,
                 'allocation_stats': self._calculate_allocation_stats(allocations),
                 'validation': self._validate_allocations(allocations, investment_amount),
                 'data_quality': 'HIGH - All prices from live API'
@@ -210,14 +315,16 @@ class InvestmentCalculator:
             iteration += 1
             print(f"   [INFO] Optimization iteration {iteration}: Rs.{remaining_cash:,.0f} to distribute")
             
-            # Calculate how far each stock is from 5% target
+            # Calculate how far each stock is from target allocation
             candidates = []
             for alloc in allocations:
                 current_percent = (alloc['value'] / total_investment) * 100
-                distance_from_target = abs(current_percent - self.target_allocation_percent)
+                target_percent = alloc.get('target_allocation_percent', 5.0)  # Use stock-specific target
+                distance_from_target = abs(current_percent - target_percent)
                 
-                # Check if we can add shares without exceeding 7% limit
-                max_additional_value = (total_investment * (self.max_allocation_percent / 100)) - alloc['value']
+                # Check if we can add shares without exceeding max limit for this stock
+                max_percent = target_percent + 1.5  # Dynamic max based on target
+                max_additional_value = (total_investment * (max_percent / 100)) - alloc['value']
                 
                 if max_additional_value > alloc['price']:  # Can buy at least 1 more share
                     max_additional_shares = math.floor(max_additional_value / alloc['price'])
@@ -228,7 +335,7 @@ class InvestmentCalculator:
                         # Calculate what the new allocation would be
                         new_value = alloc['value'] + (possible_additional_shares * alloc['price'])
                         new_percent = (new_value / total_investment) * 100
-                        new_distance = abs(new_percent - self.target_allocation_percent)
+                        new_distance = abs(new_percent - target_percent)
                         
                         # Only consider if it improves the allocation
                         if new_distance < distance_from_target:
@@ -294,16 +401,22 @@ class InvestmentCalculator:
         """Calculate allocation statistics"""
         allocation_percents = [alloc['allocation_percent'] for alloc in allocations]
         
-        # Calculate how many stocks are close to target (within 0.5%)
-        close_to_target = sum(1 for pct in allocation_percents 
-                             if abs(pct - self.target_allocation_percent) <= 0.75)  # Within ±0.75% is considered close
+        # Calculate how many stocks are close to their individual targets (within 0.75%)
+        close_to_target = 0
+        for alloc in allocations:
+            current_percent = alloc['allocation_percent']
+            target_percent = alloc.get('target_allocation_percent', 5.0)
+            if abs(current_percent - target_percent) <= 0.75:
+                close_to_target += 1
+        
+        avg_target = sum(alloc.get('target_allocation_percent', 5.0) for alloc in allocations) / len(allocations)
         
         return {
             'min_allocation': min(allocation_percents),
             'max_allocation': max(allocation_percents),
             'avg_allocation': sum(allocation_percents) / len(allocation_percents),
             'std_deviation': self._calculate_std_dev(allocation_percents),
-            'target_allocation': self.target_allocation_percent,
+            'avg_target_allocation': avg_target,
             'close_to_target_count': close_to_target,
             'close_to_target_percentage': (close_to_target / len(allocation_percents)) * 100
         }
@@ -319,18 +432,23 @@ class InvestmentCalculator:
         
         for alloc in allocations:
             percent = alloc['allocation_percent']
+            target_percent = alloc.get('target_allocation_percent', 5.0)
             
-            if self.min_allocation_percent <= percent <= self.max_allocation_percent:
+            # Dynamic min/max based on individual stock target
+            min_allowed = target_percent - 1.5
+            max_allowed = target_percent + 1.5
+            
+            if min_allowed <= percent <= max_allowed:
                 validation_results['stocks_in_range'] += 1
-            elif percent < self.min_allocation_percent:
+            elif percent < min_allowed:
                 validation_results['stocks_below_min'] += 1
                 validation_results['violations'].append(
-                    f"{alloc['symbol']}: {percent:.2f}% (below {self.min_allocation_percent}% - outside 5% ±1.5% range)"
+                    f"{alloc['symbol']}: {percent:.2f}% (below {min_allowed:.1f}% - target {target_percent:.1f}% ±1.5%)"
                 )
-            elif percent > self.max_allocation_percent:
+            elif percent > max_allowed:
                 validation_results['stocks_above_max'] += 1
                 validation_results['violations'].append(
-                    f"{alloc['symbol']}: {percent:.2f}% (above {self.max_allocation_percent}% - outside 5% ±1.5% range)"
+                    f"{alloc['symbol']}: {percent:.2f}% (above {max_allowed:.1f}% - target {target_percent:.1f}% ±1.5%)"
                 )
         
         validation_results['all_valid'] = len(validation_results['violations']) == 0

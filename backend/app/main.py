@@ -119,6 +119,7 @@ async def root():
             "/health - Health check with detailed Zerodha status",
             "/api/auth-status - Lightweight authentication status check (FAST)",
             "/auth/zerodha-login-url - Get Zerodha login URL",
+            "/auth/callback - Handle Zerodha authentication callback (with request_token)",
             "/auth/exchange-token - Exchange request token for access token",
             "/api/auto-auth - Trigger automatic Zerodha authentication",
             "/api/test-live-prices - Test live price fetching",
@@ -453,9 +454,13 @@ async def exchange_token(request_data: dict = Body(default={})):
         if not request_token:
             print("[INFO] No request_token provided, attempting automatic authentication...")
         
-        # Try automatic authentication
-        print("[INFO] Attempting automatic authentication...")
-        kite = zerodha_auth.authenticate(manual_request_token=request_token)
+        # If request_token provided, use manual authentication only
+        if request_token:
+            print(f"[INFO] Using manual authentication with request_token: {request_token[:10]}...")
+            kite = zerodha_auth.authenticate(manual_request_token=request_token)
+        else:
+            print("[INFO] Attempting automatic authentication...")
+            kite = zerodha_auth.authenticate()
         
         if zerodha_auth.is_authenticated():
             profile_name = zerodha_auth.profile_name
@@ -544,6 +549,36 @@ async def get_zerodha_login_url():
         return {
             "success": False,
             "error": f"Failed to generate login URL: {str(e)}"
+        }
+
+@app.get("/auth/callback")
+async def auth_callback(request_token: str):
+    """Handle Zerodha authentication callback"""
+    try:
+        if not zerodha_auth:
+            return {
+                "status": "error",
+                "message": "Zerodha authentication not initialized"
+            }
+        
+        # Use the manual authentication method with the request token
+        result = zerodha_auth.authenticate(manual_request_token=request_token)
+        
+        if result:
+            return {
+                "status": "success",
+                "message": "Authentication successful",
+                "profile": zerodha_auth.zerodha_profile_name if hasattr(zerodha_auth, 'zerodha_profile_name') else "Unknown"
+            }
+        else:
+            return {
+                "status": "error", 
+                "message": "Authentication failed - unable to exchange request token"
+            }
+    except Exception as e:
+        return {
+            "status": "error", 
+            "message": f"Authentication callback error: {str(e)}"
         }
 
 @app.get("/api/test-nifty")

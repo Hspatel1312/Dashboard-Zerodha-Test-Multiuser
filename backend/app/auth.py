@@ -50,6 +50,32 @@ class ZerodhaAuth:
                 except Exception as e:
                     print("[WARNING] Saved Zerodha token invalid: {}, generating new one".format(str(e)))
 
+            # If manual request token provided, use it directly
+            if manual_request_token:
+                print("[INFO] Using manual request token for authentication")
+                try:
+                    data = kite.generate_session(
+                        request_token=manual_request_token,
+                        api_secret=self.api_secret
+                    )
+                    access_token = data["access_token"]
+                    
+                    # Save the access token
+                    with open(self.access_token_file, "w", encoding="utf-8") as f:
+                        f.write(access_token)
+                    
+                    kite.set_access_token(access_token)
+                    profile = kite.profile()
+                    self.zerodha_profile_name = profile['user_name']
+                    self._authenticated = True
+                    self._last_auth_attempt = datetime.now()
+                    self.kite = kite
+                    print("[SUCCESS] Manual authentication successful - Profile: {}".format(self.zerodha_profile_name))
+                    return kite
+                except Exception as e:
+                    print("[ERROR] Manual authentication failed: {}".format(str(e)))
+                    raise Exception("Manual authentication failed: {}".format(str(e)))
+
             # Generate new token - fully automatic method from BBSC
             print("[INFO] Generating new Zerodha access token...")
             http_session = requests.Session()

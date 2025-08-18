@@ -934,54 +934,10 @@ class InvestmentService:
             current_portfolio_value = portfolio_status['portfolio_summary']['current_value']
             print(f"[INFO] Current portfolio value: Rs.{current_portfolio_value:,.0f}")
             
-            # Step 2: Check if rebalancing is needed based on allocation drift
-            target_allocation = 100.0 / len(current_holdings)  # Equal weight
-            tolerance = 1.5  # ±1.5% tolerance
+            # Step 2: Skip drift-based rebalancing check - only rebalance for stock list changes or additional investment
+            print(f"[INFO] Rebalancing logic: Only triggered by stock list changes or additional investment")
             
-            rebalancing_needed = False
-            allocation_issues = []
-            
-            for symbol, holding in current_holdings.items():
-                current_allocation = holding.get('allocation_percent', 0)
-                deviation = abs(current_allocation - target_allocation)
-                
-                if deviation > tolerance:
-                    rebalancing_needed = True
-                    allocation_issues.append({
-                        'symbol': symbol,
-                        'current_allocation': current_allocation,
-                        'target_allocation': target_allocation,
-                        'deviation': deviation,
-                        'status': 'OVER_ALLOCATED' if current_allocation > target_allocation else 'UNDER_ALLOCATED'
-                    })
-            
-            print(f"[INFO] Allocation analysis: {len(allocation_issues)} stocks need rebalancing")
-            
-            if not rebalancing_needed and additional_investment == 0:
-                return {
-                    'success': True,
-                    'message': 'Portfolio is well balanced - no rebalancing needed',
-                    'data': {
-                        'buy_orders': [],
-                        'sell_orders': [],
-                        'plan_summary': {
-                            'current_portfolio_value': current_portfolio_value,
-                            'additional_investment': additional_investment,
-                            'total_rebalancing_value': current_portfolio_value + additional_investment,
-                            'target_portfolio_value': current_portfolio_value,
-                            'remaining_cash': 0,
-                            'total_stocks': len(current_holdings),
-                            'buy_orders_count': 0,
-                            'sell_orders_count': 0,
-                            'total_buy_value': 0,
-                            'total_sell_value': 0,
-                            'net_investment_needed': 0,
-                            'rebalancing_needed': False,
-                            'portfolio_comparison_status': 'BALANCED'  # Fix: Add missing key
-                        },
-                        'allocation_analysis': allocation_issues
-                    }
-                }
+            # Always proceed to check for stock list changes and additional investment
             
             # Step 3: Add additional investment if provided
             total_rebalancing_value = current_portfolio_value + additional_investment
@@ -1082,6 +1038,36 @@ class InvestmentService:
             total_sell_value = sum(order['value'] for order in sell_orders)
             net_investment_needed = total_buy_value - total_sell_value
             
+            # Check if rebalancing is actually needed based on stock list changes
+            rebalancing_needed = len(buy_orders) > 0 or len(sell_orders) > 0
+            
+            # If no stock list changes and no additional investment, return early
+            if not rebalancing_needed and additional_investment == 0:
+                print(f"[INFO] No rebalancing needed - stock lists match exactly")
+                return {
+                    'success': True,
+                    'message': 'Portfolio matches CSV stocks exactly - no rebalancing needed',
+                    'data': {
+                        'buy_orders': [],
+                        'sell_orders': [],
+                        'plan_summary': {
+                            'current_portfolio_value': current_portfolio_value,
+                            'additional_investment': additional_investment,
+                            'total_rebalancing_value': current_portfolio_value,
+                            'target_portfolio_value': current_portfolio_value,
+                            'remaining_cash': 0,
+                            'total_stocks': len(current_holdings),
+                            'buy_orders_count': 0,
+                            'sell_orders_count': 0,
+                            'total_buy_value': 0,
+                            'total_sell_value': 0,
+                            'net_investment_needed': 0,
+                            'rebalancing_needed': False,
+                            'portfolio_comparison_status': 'STOCKS_MATCH'
+                        }
+                    }
+                }
+            
             plan_summary = {
                 "current_portfolio_value": current_portfolio_value,
                 "additional_investment": additional_investment,
@@ -1094,7 +1080,8 @@ class InvestmentService:
                 "total_buy_value": total_buy_value,
                 "total_sell_value": total_sell_value,
                 "net_investment_needed": net_investment_needed,
-                "rebalancing_needed": rebalancing_needed
+                "rebalancing_needed": rebalancing_needed,
+                "portfolio_comparison_status": 'STOCKS_CHANGED' if rebalancing_needed else 'STOCKS_MATCH'
             }
             
             print(f"[SUCCESS] Paper trading rebalancing plan calculated:")
@@ -1111,7 +1098,7 @@ class InvestmentService:
                     "allocation_result": allocation_result,
                     "buy_orders": buy_orders,
                     "sell_orders": sell_orders,
-                    "allocation_analysis": allocation_issues,
+                    "stock_changes": buy_orders + sell_orders,
                     "execution_ready": True,
                     "data_quality": allocation_result.get('data_quality', 'Unknown')
                 }
