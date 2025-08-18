@@ -74,8 +74,25 @@ http://localhost:8080
 
 ### **Smart Features:**
 - **NaN Handling:** GOLDBEES ETF data automatically cleaned and processed
+- **±2% Flexibility:** Smart allocation flexibility for expensive stocks
+- **Optimized Minimum Investment:** Only ₹3.95L required (down from ₹17.8L)
 - **Dynamic Calculation:** Minimum investment adjusts based on portfolio composition
 - **Live Pricing:** Real-time ETF prices via Zerodha API
+
+### **💡 Allocation Flexibility (±2%):**
+```
+📊 GOLDBEES Portfolio Allocation Ranges:
+├── GOLDBEES: 48% - 52% (target: 50%)
+└── Other stocks: 0.5% - 4.5% each (target: 2.5%)
+
+📊 No GOLDBEES Portfolio Allocation Ranges:
+└── All stocks: 3% - 7% each (target: 5%)
+
+💰 Minimum Investment Examples:
+├── With expensive stocks (₹17,798): ₹3,95,511 total
+├── For ₹5,00,000 investment: 99.93% utilization
+└── Every stock gets at least 1 share guaranteed
+```
 
 ## 🎨 UI Preview
 
@@ -156,6 +173,13 @@ The dashboard features:
 - ✅ **Authentication:** Manual token flow with callback endpoint
 - ✅ **Rebalancing Logic:** Stock list change triggers (not allocation drift)
 
+**Allocation Flexibility Optimization (Latest):**
+- ✅ **±2% Flexibility:** Upgraded from ±1.5% to ±2% allocation flexibility
+- ✅ **78% Reduction in Minimum Investment:** From ₹17.8L to ₹3.95L required
+- ✅ **Maximum Allocation Strategy:** Uses 4.5% max allocation for expensive stocks
+- ✅ **Affordable for Retail Investors:** Under ₹4L minimum investment
+- ✅ **High Utilization:** 99.93% capital utilization with ₹5L investment
+
 **Key Files Modified:**
 - `backend/app/services/investment_calculator.py` - GOLDBEES allocation logic
 - `backend/app/services/csv_service.py` - NaN handling for ETF data  
@@ -235,7 +259,9 @@ The dashboard features:
 **Portfolio Allocation Logic:**
 - GOLDBEES detection: Automatic when "GOLDBEES" symbol found in CSV
 - Dynamic allocation: 50% GOLDBEES + equal split for remaining stocks
-- Minimum investment: Calculated based on most expensive stock and allocation %
+- **±2% Flexibility:** Target ±2% range for optimal allocation (e.g., 2.5% target = 0.5% to 4.5%)
+- **Minimum investment:** Uses maximum allocation (4.5%) for expensive stocks = ₹3.95L total
+- **Utilization:** Achieves 99.93% capital utilization with optimized allocation
 - Rebalancing trigger: Only on stock list changes, not allocation drift
 
 **Data Processing:**
