@@ -1,48 +1,38 @@
 @echo off
 echo ========================================
-echo Investment Dashboard - Push Changes
+echo Investment Dashboard - Push All Changes
 echo ========================================
 echo.
 
-echo [INFO] Adding all source code and configuration files...
+echo [INFO] Adding ALL files except build/installation directories...
 
-:: Add all important source files
-git add backend/app/
-git add backend/*.py
-git add backend/*.json
-git add backend/*.txt
-git add backend/requirements.txt
-git add *.md
-git add *.bat
-git add frontend-java/src/main/java/
-git add frontend-java/src/main/resources/
-git add frontend-java/pom.xml
-git add frontend-java/README.md
-git add frontend-java/mvnw.cmd
+:: Add everything from the directory
+git add .
 
-:: Add frontend React source files (not build artifacts)
-git add frontend-java/src/main/frontend/src/
-git add frontend-java/src/main/frontend/public/
-git add frontend-java/src/main/frontend/package.json
+:: Remove build and installation directories from staging
+echo [INFO] Excluding build and installation directories...
+git reset HEAD frontend-java/src/main/frontend/node_modules/ 2>nul
+git reset HEAD frontend-java/src/main/frontend/build/ 2>nul
+git reset HEAD frontend-java/src/main/frontend/node/ 2>nul
+git reset HEAD frontend-java/target/ 2>nul
+git reset HEAD .vscode/ 2>nul
 
 echo.
-echo [INFO] Checking what will be committed...
-git status --porcelain
+echo [INFO] What will be committed:
+git status --short
 
 echo.
-echo [INFO] Creating commit with timestamp...
-set timestamp=%date:~10,4%-%date:~4,2%-%date:~7,2% %time:~0,2%:%time:~3,2%
-set "commit_msg=Update investment dashboard - %timestamp%
+echo [INFO] Creating commit...
+git commit -m "Update investment dashboard - automated push
 
-- Latest changes to backend services and calculations
-- Frontend updates and configuration changes
-- Updated documentation and scripts
+- All latest changes to the investment dashboard
+- Backend calculations and services updates
+- Frontend configuration and source updates
+- Documentation and script updates
+- Project configuration and cleanup
 
-🤖 Generated with [Claude Code](https://claude.ai/code)
-
+Generated with Claude Code - Automated Push
 Co-Authored-By: Claude <noreply@anthropic.com>"
-
-git commit -m "%commit_msg%"
 
 if %ERRORLEVEL% EQU 0 (
     echo.
