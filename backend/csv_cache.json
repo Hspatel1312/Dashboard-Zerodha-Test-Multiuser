@@ -1,166 +1,174 @@
 {
   "symbols": [
+    "JSWHL",
+    "AIIL",
     "LAURUSLABS",
-    "MCX",
     "KIMS",
     "ASTERDM",
-    "NH",
-    "WOCKPHARMA",
-    "RADICO",
-    "GODFRYPHLP",
+    "MCX",
     "RAMCOCEM",
+    "GODFRYPHLP",
+    "RADICO",
     "ERIS",
+    "NH",
     "AMBER",
-    "JMFINANCIL",
-    "SARDAEN",
-    "PGEL",
-    "CEATLTD",
-    "DEEPAKFERT",
+    "WOCKPHARMA",
     "EIDPARRY",
+    "PGEL",
+    "SARDAEN",
+    "DEEPAKFERT",
+    "ECLERX",
     "LTFOODS",
-    "ECLERX"
+    "ANANDRATHI"
   ],
   "data": [
     {
-      "Symbol": "LAURUSLABS",
-      "Momentum": 0.8236856668511345,
-      "Volatility": 0.02335313808172,
-      "FITP": 0.5847457627118644,
-      "Score": 35.27087725721474
+      "Symbol": "JSWHL",
+      "Momentum": 1.858875071273394,
+      "Volatility": 0.0355027263968596,
+      "FITP": 0.5140562248995983,
+      "Score": 52.35865692381927
     },
     {
-      "Symbol": "MCX",
-      "Momentum": 0.8739655979272009,
-      "Volatility": 0.0252335431104753,
-      "FITP": 0.5423728813559322,
-      "Score": 34.635072613500206
+      "Symbol": "AIIL",
+      "Momentum": 1.6247518199867634,
+      "Volatility": 0.034225599875338,
+      "FITP": 0.5502008032128514,
+      "Score": 47.47182886215854
+    },
+    {
+      "Symbol": "LAURUSLABS",
+      "Momentum": 0.9354731599335916,
+      "Volatility": 0.0232199116335087,
+      "FITP": 0.5823293172690763,
+      "Score": 40.28754177443148
     },
     {
       "Symbol": "KIMS",
-      "Momentum": 0.6581847044541973,
-      "Volatility": 0.0193680590391918,
-      "FITP": 0.5550847457627118,
-      "Score": 33.982997631427054
+      "Momentum": 0.7536651414697918,
+      "Volatility": 0.0194770940733736,
+      "FITP": 0.5622489959839357,
+      "Score": 38.69494795427912
     },
     {
       "Symbol": "ASTERDM",
-      "Momentum": 0.6291417707767519,
-      "Volatility": 0.0206199307209612,
-      "FITP": 0.5254237288135594,
-      "Score": 30.511342607819604
+      "Momentum": 0.6428571428571428,
+      "Volatility": 0.0202927678944946,
+      "FITP": 0.5220883534136547,
+      "Score": 31.679125597821837
     },
     {
-      "Symbol": "NH",
-      "Momentum": 0.6122929554979045,
-      "Volatility": 0.0206343305137446,
-      "FITP": 0.5127118644067796,
-      "Score": 29.67350722089353
-    },
-    {
-      "Symbol": "WOCKPHARMA",
-      "Momentum": 1.040318957771788,
-      "Volatility": 0.0353797485918849,
-      "FITP": 0.5042372881355932,
-      "Score": 29.404362641808195
-    },
-    {
-      "Symbol": "RADICO",
-      "Momentum": 0.6068525989592468,
-      "Volatility": 0.0225567389731414,
-      "FITP": 0.5296610169491526,
-      "Score": 26.90338349359072
-    },
-    {
-      "Symbol": "GODFRYPHLP",
-      "Momentum": 1.132004805314112,
-      "Volatility": 0.0427408173519637,
-      "FITP": 0.4576271186440678,
-      "Score": 26.48533358621186
+      "Symbol": "MCX",
+      "Momentum": 0.756172170161281,
+      "Volatility": 0.0248640322777705,
+      "FITP": 0.5341365461847389,
+      "Score": 30.41229040059325
     },
     {
       "Symbol": "RAMCOCEM",
-      "Momentum": 0.3741364683068718,
-      "Volatility": 0.0153689759525521,
-      "FITP": 0.5508474576271186,
-      "Score": 24.343617262589493
+      "Momentum": 0.4267361531935523,
+      "Volatility": 0.015531405217437,
+      "FITP": 0.5502008032128514,
+      "Score": 27.475695033341676
+    },
+    {
+      "Symbol": "GODFRYPHLP",
+      "Momentum": 1.1460203048076696,
+      "Volatility": 0.0421252649593256,
+      "FITP": 0.4538152610441767,
+      "Score": 27.205058672372
+    },
+    {
+      "Symbol": "RADICO",
+      "Momentum": 0.5988423083669532,
+      "Volatility": 0.0220270210093878,
+      "FITP": 0.5261044176706827,
+      "Score": 27.186713451252874
     },
     {
       "Symbol": "ERIS",
-      "Momentum": 0.5602805199446108,
-      "Volatility": 0.0231943083990153,
-      "FITP": 0.5211864406779662,
-      "Score": 24.155948532977007
+      "Momentum": 0.6070934024210481,
+      "Volatility": 0.0226466375613654,
+      "FITP": 0.5301204819277109,
+      "Score": 26.80722031144848
+    },
+    {
+      "Symbol": "NH",
+      "Momentum": 0.5287966473757734,
+      "Volatility": 0.0204174804563056,
+      "FITP": 0.5020080321285141,
+      "Score": 25.89921163423778
     },
     {
       "Symbol": "AMBER",
-      "Momentum": 0.7894230430752264,
-      "Volatility": 0.0348956457277896,
-      "FITP": 0.5254237288135594,
-      "Score": 22.622393900754183
+      "Momentum": 0.8688616922661725,
+      "Volatility": 0.0343330564600112,
+      "FITP": 0.5220883534136547,
+      "Score": 25.306855312406025
     },
     {
-      "Symbol": "JMFINANCIL",
-      "Momentum": 0.659886243131206,
-      "Volatility": 0.0307817937811635,
-      "FITP": 0.538135593220339,
-      "Score": 21.437549995381147
-    },
-    {
-      "Symbol": "SARDAEN",
-      "Momentum": 0.6269372693726937,
-      "Volatility": 0.0292608708202841,
-      "FITP": 0.5296610169491526,
-      "Score": 21.42578986193708
-    },
-    {
-      "Symbol": "PGEL",
-      "Momentum": 0.8027375201288245,
-      "Volatility": 0.0376090396730867,
-      "FITP": 0.4830508474576271,
-      "Score": 21.34427060904902
-    },
-    {
-      "Symbol": "CEATLTD",
-      "Momentum": 0.4880737088576268,
-      "Volatility": 0.023101332634951,
-      "FITP": 0.4703389830508475,
-      "Score": 21.12751314264869
-    },
-    {
-      "Symbol": "DEEPAKFERT",
-      "Momentum": 0.6802011448135667,
-      "Volatility": 0.0325410526688348,
-      "FITP": 0.4830508474576271,
-      "Score": 20.902862354695976
+      "Symbol": "WOCKPHARMA",
+      "Momentum": 0.8727538185085355,
+      "Volatility": 0.0345918943174178,
+      "FITP": 0.4939759036144578,
+      "Score": 25.230009391797967
     },
     {
       "Symbol": "EIDPARRY",
-      "Momentum": 0.4528562460765851,
-      "Volatility": 0.0225149267034292,
-      "FITP": 0.5,
-      "Score": 20.11360072549609
+      "Momentum": 0.5486503452605147,
+      "Volatility": 0.0220435104163127,
+      "FITP": 0.5100401606425703,
+      "Score": 24.88942708755224
     },
     {
-      "Symbol": "LTFOODS",
-      "Momentum": 0.5694738556768204,
-      "Volatility": 0.0296113761033571,
-      "FITP": 0.5211864406779662,
-      "Score": 19.23159037557386
+      "Symbol": "PGEL",
+      "Momentum": 0.8671497584541062,
+      "Volatility": 0.0367947736280834,
+      "FITP": 0.4819277108433735,
+      "Score": 23.56719916853241
+    },
+    {
+      "Symbol": "SARDAEN",
+      "Momentum": 0.6512915129151291,
+      "Volatility": 0.0286606327871312,
+      "FITP": 0.5381526104417671,
+      "Score": 22.72425447659906
+    },
+    {
+      "Symbol": "DEEPAKFERT",
+      "Momentum": 0.7105868506927727,
+      "Volatility": 0.0321894475915948,
+      "FITP": 0.4819277108433735,
+      "Score": 22.0751489652254
     },
     {
       "Symbol": "ECLERX",
-      "Momentum": 0.4702331007101487,
-      "Volatility": 0.0251058931721568,
-      "FITP": 0.5466101694915254,
-      "Score": 18.729988910796852
+      "Momentum": 0.5419438020588174,
+      "Volatility": 0.024671867075444,
+      "FITP": 0.5421686746987951,
+      "Score": 21.966063630353112
+    },
+    {
+      "Symbol": "LTFOODS",
+      "Momentum": 0.584785795732204,
+      "Volatility": 0.0291442853548813,
+      "FITP": 0.5180722891566265,
+      "Score": 20.065195924739296
+    },
+    {
+      "Symbol": "ANANDRATHI",
+      "Momentum": 0.4215019907260641,
+      "Volatility": 0.0213067836010603,
+      "FITP": 0.5060240963855421,
+      "Score": 19.782525538255697
     }
   ],
-  "fetch_time": "2025-07-29T16:28:22.952329",
-  "csv_hash": "b5484ea8",
+  "fetch_time": "2025-08-18T11:04:03.657838",
+  "csv_hash": "eb8c183d",
   "symbol_column_used": "Symbol",
   "source_url": "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv",
-  "total_rows": 19,
-  "unique_symbols": 19,
+  "total_rows": 20,
+  "unique_symbols": 20,
   "columns": [
     "Symbol",
     "Momentum",
@@ -168,6 +176,6 @@
     "FITP",
     "Score"
   ],
-  "content_size": 1632,
+  "content_size": 1727,
   "response_status": 200
 }

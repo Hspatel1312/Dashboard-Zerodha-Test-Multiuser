@@ -8,27 +8,27 @@ class PortfolioService:
     def get_portfolio_data(self):
         """Get portfolio data from Zerodha - Using the working method from your notebook"""
         if not self.zerodha_auth:
-            print("❌ No Zerodha authentication service available")
+            print("[ERROR] No Zerodha authentication service available")
             return None
         
         if not self.zerodha_auth.is_authenticated():
-            print("❌ Zerodha not authenticated, attempting authentication...")
+            print("[ERROR] Zerodha not authenticated, attempting authentication...")
             try:
                 result = self.zerodha_auth.authenticate()
                 if not result:
-                    print("❌ Authentication failed")
+                    print("[ERROR] Authentication failed")
                     return None
                 self.kite = self.zerodha_auth.get_kite_instance()
             except Exception as e:
-                print(f"❌ Authentication error: {e}")
+                print(f"[ERROR] Authentication error: {e}")
                 return None
         
         if not self.kite:
-            print("❌ No Zerodha connection available")
+            print("[ERROR] No Zerodha connection available")
             return None
         
         try:
-            print("📊 Fetching live portfolio data from Zerodha...")
+            print("[INFO] Fetching live portfolio data from Zerodha...")
             
             # Get holdings and margins - EXACTLY like your notebook
             holdings = self.kite.holdings()
@@ -36,7 +36,7 @@ class PortfolioService:
             margins = self.kite.margins()
             
             if not holdings:
-                print("⚠️ No holdings found in Zerodha account")
+                print("[WARNING] No holdings found in Zerodha account")
                 return {
                     "user_id": 1,
                     "current_value": 0,
@@ -54,7 +54,7 @@ class PortfolioService:
                     "message": "No holdings found in your Zerodha account"
                 }
             
-            print(f"📈 Retrieved {len(holdings)} holdings from Zerodha")
+            print(f"[SUCCESS] Retrieved {len(holdings)} holdings from Zerodha")
             
             # Process holdings data - INCLUDING pledged shares like your notebook
             portfolio_holdings = []
@@ -79,7 +79,7 @@ class PortfolioService:
                     
                     # Validate prices
                     if avg_price <= 0 or current_price <= 0:
-                        print(f"   ⚠️ {symbol}: Invalid prices - avg_price={avg_price}, current_price={current_price}")
+                        print(f"   [WARNING] {symbol}: Invalid prices - avg_price={avg_price}, current_price={current_price}")
                         continue
                     
                     holding_value = total_quantity * current_price
@@ -111,15 +111,15 @@ class PortfolioService:
                     total_investment += investment_value
                     current_value += holding_value
                     
-                    print(f"✅ Added {symbol}: ₹{holding_value:,.2f} value, {pnl_percent:.2f}% P&L")
+                    print(f"[SUCCESS] Added {symbol}: Rs.{holding_value:,.2f} value, {pnl_percent:.2f}% P&L")
                 else:
-                    print(f"   🔍 {symbol}: No shares to process (qty=0)")
+                    print(f"   [INFO] {symbol}: No shares to process (qty=0)")
             
-            print(f"📊 Total processed holdings: {len(portfolio_holdings)}")
-            print(f"📊 Total current value: ₹{current_value:,.2f}")
+            print(f"[INFO] Total processed holdings: {len(portfolio_holdings)}")
+            print(f"[INFO] Total current value: Rs.{current_value:,.2f}")
             
             if len(portfolio_holdings) == 0:
-                print("❌ No valid holdings found after processing")
+                print("[ERROR] No valid holdings found after processing")
                 return {
                     "user_id": 1,
                     "current_value": 0,
@@ -156,7 +156,7 @@ class PortfolioService:
             try:
                 available_cash = margins['equity']['available']['cash'] if margins else 0
             except Exception as e:
-                print(f"⚠️ Could not fetch cash margin: {e}")
+                print(f"[WARNING] Could not fetch cash margin: {e}")
                 available_cash = 0
             
             # Calculate day change for portfolio
@@ -168,7 +168,7 @@ class PortfolioService:
                     if i < len(portfolio_holdings)
                 )
             except Exception as e:
-                print(f"⚠️ Could not calculate day change: {e}")
+                print(f"[WARNING] Could not calculate day change: {e}")
                 day_change = 0
             
             day_change_percent = (day_change / current_value) * 100 if current_value > 0 else 0
@@ -183,13 +183,13 @@ class PortfolioService:
                 for h in portfolio_holdings
             )
             
-            print(f"✅ Portfolio processed successfully:")
-            print(f"   📊 Holdings: {len(portfolio_holdings)}")
-            print(f"   💰 Current Value: ₹{current_value:,.2f}")
-            print(f"   📈 Total Returns: ₹{total_returns:,.2f} ({returns_percentage:.2f}%)")
-            print(f"   💵 Available Cash: ₹{available_cash:,.2f}")
-            print(f"   🔓 Free Shares Value: ₹{free_value:,.2f}")
-            print(f"   🔒 Pledged Shares Value: ₹{pledged_value:,.2f}")
+            print(f"[SUCCESS] Portfolio processed successfully:")
+            print(f"   [INFO] Holdings: {len(portfolio_holdings)}")
+            print(f"   [INFO] Current Value: Rs.{current_value:,.2f}")
+            print(f"   [SUCCESS] Total Returns: Rs.{total_returns:,.2f} ({returns_percentage:.2f}%)")
+            print(f"   [INFO] Available Cash: Rs.{available_cash:,.2f}")
+            print(f"   [INFO] Free Shares Value: Rs.{free_value:,.2f}")
+            print(f"   [INFO] Pledged Shares Value: Rs.{pledged_value:,.2f}")
             
             return {
                 "user_id": 1,
@@ -217,9 +217,9 @@ class PortfolioService:
             }
             
         except Exception as e:
-            print(f"❌ Error getting portfolio data: {e}")
+            print(f"[ERROR] Error getting portfolio data: {e}")
             import traceback
-            print(f"❌ Full error: {traceback.format_exc()}")
+            print(f"[ERROR] Full error: {traceback.format_exc()}")
             return {
                 "error": "PORTFOLIO_DATA_UNAVAILABLE", 
                 "error_message": str(e),

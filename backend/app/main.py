@@ -1,10 +1,11 @@
 # backend/app/main.py - FIXED VERSION with proper Zerodha initialization
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
 import traceback
 import asyncio
+import os
 
 app = FastAPI(title="Investment Rebalancing WebApp", version="2.0.0")
 
@@ -38,46 +39,56 @@ try:
     print("Step 1: Loading configuration...")
     from .config import settings
     initialization_status["config_loaded"] = True
-    print("✅ Configuration loaded successfully")
+    print("[OK] Configuration loaded successfully")
     
     print("Step 2: Creating ZerodhaAuth instance...")
     from .auth import ZerodhaAuth
     zerodha_auth = ZerodhaAuth()
     initialization_status["auth_created"] = True
-    print("✅ ZerodhaAuth instance created")
+    print("[OK] ZerodhaAuth instance created")
     
-    print("Step 3: Testing Zerodha authentication...")
+    print("Step 3: Validating existing Zerodha token...")
     try:
-        # Try authentication during startup
-        kite_instance = zerodha_auth.authenticate()
-        if kite_instance and zerodha_auth.is_authenticated():
+        # Validate existing token during startup
+        token_valid = zerodha_auth.validate_existing_token()
+        
+        if token_valid:
+            profile_name = getattr(zerodha_auth, 'zerodha_profile_name', 'Unknown')
+            print("[OK] Existing token is valid - Profile: {}".format(profile_name))
             initialization_status["auth_successful"] = True
-            initialization_status["zerodha_connection_status"] = "connected"
+            initialization_status["zerodha_connection_status"] = "token_validated"
             initialization_status["kite_instance_available"] = True
-            print(f"✅ Zerodha authentication successful: {zerodha_auth.profile_name}")
         else:
-            print("⚠️ Zerodha authentication failed during startup - will retry on demand")
-            initialization_status["zerodha_connection_status"] = "authentication_failed"
+            print("[WARNING] No valid token found - user will need to authenticate")
+            initialization_status["zerodha_connection_status"] = "token_invalid_or_missing"
+            initialization_status["auth_successful"] = False
+            initialization_status["kite_instance_available"] = False
     except Exception as auth_error:
-        print(f"⚠️ Zerodha authentication error during startup: {auth_error}")
-        initialization_status["zerodha_connection_status"] = f"startup_error: {str(auth_error)}"
+        # Handle Unicode errors safely
+        try:
+            error_str = str(auth_error)
+        except UnicodeDecodeError:
+            error_str = str(auth_error).encode('ascii', 'replace').decode('ascii')
+        print("[WARNING] Token validation error during startup: {}".format(error_str))
+        initialization_status["zerodha_connection_status"] = "validation_error: {}".format(error_str)
+        initialization_status["auth_successful"] = False
     
     print("Step 4: Creating portfolio service...")
     from .services.portfolio_service import PortfolioService
     portfolio_service = PortfolioService(zerodha_auth)
     initialization_status["service_created"] = True
-    print("✅ Portfolio service created")
+    print("[OK] Portfolio service created")
     
     print("Step 5: Creating investment service...")
     from .services.investment_service import InvestmentService
     investment_service = InvestmentService(zerodha_auth)
     initialization_status["investment_service_created"] = True
     initialization_status["csv_service_status"] = "initialized"
-    print("✅ Investment service created")
+    print("[OK] Investment service created")
     
 except Exception as e:
     error_msg = f"Initialization error: {str(e)}\n{traceback.format_exc()}"
-    print(f"❌ {error_msg}")
+    print(f"[ERROR] {error_msg}")
     initialization_status["error_message"] = error_msg
 
 # Include routers AFTER services are created
@@ -93,10 +104,10 @@ try:
     
     # Include the router with proper prefix
     app.include_router(investment_router, prefix="/api")
-    print("✅ Investment router included at /api/investment/*")
+    print("[OK] Investment router included at /api/investment/*")
     
 except Exception as e:
-    print(f"⚠️ Could not set up routers: {e}")
+    print(f"[WARNING] Could not set up routers: {e}")
     print(f"   Traceback: {traceback.format_exc()}")
 
 @app.get("/")
@@ -106,17 +117,25 @@ async def root():
         "status": initialization_status,
         "available_endpoints": [
             "/health - Health check with detailed Zerodha status",
+            "/api/auth-status - Lightweight authentication status check (FAST)",
+            "/auth/zerodha-login-url - Get Zerodha login URL",
+            "/auth/exchange-token - Exchange request token for access token",
+            "/api/auto-auth - Trigger automatic Zerodha authentication",
             "/api/test-live-prices - Test live price fetching",
-            "/api/test-auth - Test Zerodha authentication",
+            "/api/test-auth - Test Zerodha authentication",  
             "/api/test-nifty - Simple Nifty price test",
+            "/api/investment/status - Get investment status (FIRST_INVESTMENT or REBALANCING_NEEDED)",
             "/api/investment/requirements - Get investment requirements",
-            "/api/investment/calculate-plan - Calculate investment plan",
+            "/api/investment/calculate-plan - Calculate investment plan (±1.5% flexibility)",
             "/api/investment/execute-initial - Execute initial investment",
-            "/api/investment/rebalancing-check - Check rebalancing status",
-            "/api/investment/portfolio-status - Get portfolio status",
-            "/api/investment/csv-stocks - Get CSV stocks with prices",
+            "/api/investment/calculate-rebalancing - Calculate rebalancing plan (with additional_investment)",
+            "/api/investment/execute-rebalancing - Execute rebalancing (with additional_investment)",
+            "/api/investment/portfolio-status - Get dashboard portfolio status",
+            "/api/investment/portfolio-comparison - Compare dashboard vs Zerodha portfolio",
+            "/api/investment/rebalancing-portfolio-value - Get portfolio value for rebalancing",
+            "/api/investment/zerodha-portfolio - Get live Zerodha portfolio",
             "/api/investment/system-orders - Get system orders history",
-            "/api/investment/csv-status - Get CSV tracking status",
+            "/api/investment/csv-stocks - Get current CSV stocks with prices",
             "/api/investment/force-csv-refresh - Force refresh CSV data"
         ]
     }
@@ -154,11 +173,11 @@ async def health_check():
     # ENHANCED: Test Zerodha connection thoroughly
     if zerodha_auth:
         try:
-            print("🔍 Testing Zerodha connection comprehensively...")
+            print("[INFO] Testing Zerodha connection comprehensively...")
             
             # Check if already authenticated
             if zerodha_auth.is_authenticated():
-                print("✅ Zerodha already authenticated")
+                print("[OK] Zerodha already authenticated")
                 
                 # Test if Kite instance is actually working
                 kite = zerodha_auth.get_kite_instance()
@@ -166,7 +185,7 @@ async def health_check():
                     try:
                         # Test with a simple API call
                         profile = kite.profile()
-                        print(f"✅ Kite instance working - Profile: {profile.get('user_name', 'Unknown')}")
+                        print(f"[OK] Kite instance working - Profile: {profile.get('user_name', 'Unknown')}")
                         
                         health_status["zerodha_connection"]["available"] = True
                         health_status["zerodha_connection"]["authenticated"] = True
@@ -180,28 +199,28 @@ async def health_check():
                         initialization_status["kite_instance_available"] = True
                         
                     except Exception as kite_error:
-                        print(f"❌ Kite instance test failed: {kite_error}")
+                        print(f"[ERROR] Kite instance test failed: {kite_error}")
                         health_status["zerodha_connection"]["authenticated"] = True
                         health_status["zerodha_connection"]["kite_instance_valid"] = False
                         health_status["zerodha_connection"]["error_message"] = f"Kite instance error: {str(kite_error)}"
                         initialization_status["zerodha_connection_status"] = "authenticated_but_kite_failed"
                         initialization_status["kite_instance_available"] = False
                 else:
-                    print("❌ No Kite instance available despite authentication")
+                    print("[ERROR] No Kite instance available despite authentication")
                     health_status["zerodha_connection"]["authenticated"] = True
                     health_status["zerodha_connection"]["kite_instance_valid"] = False
                     health_status["zerodha_connection"]["error_message"] = "No Kite instance available"
                     initialization_status["zerodha_connection_status"] = "authenticated_but_no_kite"
                     initialization_status["kite_instance_available"] = False
             else:
-                print("🔄 Not authenticated, attempting authentication...")
+                print("[INFO] Not authenticated, attempting authentication...")
                 try:
                     kite = zerodha_auth.authenticate()
                     if zerodha_auth.is_authenticated() and kite:
                         # Test the new connection
                         try:
                             profile = kite.profile()
-                            print(f"✅ New authentication successful - Profile: {profile.get('user_name', 'Unknown')}")
+                            print(f"[OK] New authentication successful - Profile: {profile.get('user_name', 'Unknown')}")
                             
                             health_status["zerodha_connection"]["available"] = True
                             health_status["zerodha_connection"]["authenticated"] = True
@@ -215,21 +234,21 @@ async def health_check():
                             initialization_status["kite_instance_available"] = True
                             
                         except Exception as new_kite_error:
-                            print(f"❌ New Kite instance test failed: {new_kite_error}")
+                            print(f"[ERROR] New Kite instance test failed: {new_kite_error}")
                             health_status["zerodha_connection"]["error_message"] = f"New auth failed: {str(new_kite_error)}"
                             initialization_status["zerodha_connection_status"] = "auth_succeeded_but_kite_failed"
                     else:
-                        print("❌ Authentication attempt failed")
+                        print("[ERROR] Authentication attempt failed")
                         health_status["zerodha_connection"]["error_message"] = "Authentication failed"
                         initialization_status["zerodha_connection_status"] = "authentication_failed"
                         
                 except Exception as auth_error:
-                    print(f"❌ Authentication error: {auth_error}")
+                    print(f"[ERROR] Authentication error: {auth_error}")
                     health_status["zerodha_connection"]["error_message"] = str(auth_error)
                     initialization_status["zerodha_connection_status"] = f"auth_error: {str(auth_error)}"
                     
         except Exception as e:
-            print(f"❌ Health check Zerodha test error: {e}")
+            print(f"[ERROR] Health check Zerodha test error: {e}")
             health_status["zerodha_connection"]["error_message"] = str(e)
             initialization_status["zerodha_connection_status"] = f"health_check_error: {str(e)}"
     
@@ -270,15 +289,15 @@ async def test_zerodha_auth():
         }
     
     try:
-        print("🔐 Testing Zerodha authentication step by step...")
+        print("[INFO] Testing Zerodha authentication step by step...")
         
         # Get current auth status
         auth_status = zerodha_auth.get_auth_status()
-        print(f"📋 Current auth status: {auth_status}")
+        print(f"[INFO] Current auth status: {auth_status}")
         
         # Test authentication
         if not zerodha_auth.is_authenticated():
-            print("🔄 Attempting authentication...")
+            print("[INFO] Attempting authentication...")
             kite = zerodha_auth.authenticate()
             
             if not kite:
@@ -342,7 +361,7 @@ async def test_live_prices():
         }
     
     try:
-        print("💰 Testing live price fetching...")
+        print("[INFO] Testing live price fetching...")
         
         # Test with a small set of symbols
         test_symbols = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK"]
@@ -375,6 +394,158 @@ async def test_live_prices():
         }
 
 # Existing endpoints remain the same...
+@app.get("/api/auth-status")
+async def get_auth_status():
+    """Lightweight authentication status check - NO heavy operations"""
+    if not zerodha_auth:
+        return {
+            "success": False,
+            "authenticated": False,
+            "error": "ZerodhaAuth service not initialized"
+        }
+    
+    try:
+        # Check current authentication status
+        is_auth = zerodha_auth.is_authenticated()
+        profile_name = getattr(zerodha_auth, 'profile_name', None) if is_auth else None
+        
+        # If not authenticated but token file exists, try validation once
+        if not is_auth and os.path.exists(zerodha_auth.access_token_file):
+            print("[INFO] Token exists but not authenticated, attempting validation...")
+            token_valid = zerodha_auth.validate_existing_token()
+            if token_valid:
+                is_auth = True
+                profile_name = zerodha_auth.profile_name
+                print("[OK] Token validation successful: {}".format(profile_name))
+        
+        return {
+            "success": True,
+            "authenticated": is_auth,
+            "profile_name": profile_name,
+            "timestamp": datetime.now().isoformat(),
+            "token_validated": is_auth
+        }
+    except Exception as e:
+        # Handle Unicode errors safely
+        try:
+            error_str = str(e)
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            error_str = str(e).encode('ascii', 'replace').decode('ascii')
+        return {
+            "success": False,
+            "authenticated": False,
+            "error": "Status check error: {}".format(error_str)
+        }
+
+@app.post("/auth/exchange-token")
+async def exchange_token(request_data: dict = Body(default={})):
+    """Exchange request token for access token - Uses manual token if provided, automatic otherwise"""
+    if not zerodha_auth:
+        return {
+            "success": False,
+            "error": "ZerodhaAuth service not initialized"
+        }
+    
+    try:
+        request_token = request_data.get('request_token') if request_data else None
+        
+        # If no request_token provided, try automatic authentication
+        if not request_token:
+            print("[INFO] No request_token provided, attempting automatic authentication...")
+        
+        # Try automatic authentication
+        print("[INFO] Attempting automatic authentication...")
+        kite = zerodha_auth.authenticate(manual_request_token=request_token)
+        
+        if zerodha_auth.is_authenticated():
+            profile_name = zerodha_auth.profile_name
+            print("[SUCCESS] Authentication successful - Profile: {}".format(profile_name))
+            return {
+                "success": True,
+                "message": "Authentication successful",
+                "profile_name": profile_name,
+                "authenticated": True,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "error": "Authentication failed - please check credentials"
+            }
+    except Exception as e:
+        # Convert any potential Unicode in error message
+        error_str = str(e).encode('ascii', 'replace').decode('ascii')
+        return {
+            "success": False,
+            "error": "Authentication failed: {}".format(error_str)
+        }
+
+@app.post("/api/auto-auth")
+async def auto_authenticate():
+    """Trigger automatic Zerodha authentication without manual token"""
+    if not zerodha_auth:
+        return {
+            "success": False,
+            "error": "ZerodhaAuth service not initialized"
+        }
+    
+    try:
+        print("[INFO] Starting automatic authentication...")
+        kite = zerodha_auth.authenticate()
+        
+        if zerodha_auth.is_authenticated():
+            profile_name = zerodha_auth.profile_name
+            print("[SUCCESS] Automatic authentication successful - Profile: {}".format(profile_name))
+            return {
+                "success": True,
+                "message": "Automatic authentication successful",
+                "profile_name": profile_name,
+                "authenticated": True,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "error": "Automatic authentication failed - please check credentials"
+            }
+    except Exception as e:
+        # Convert any potential Unicode in error message
+        error_str = str(e).encode('ascii', 'replace').decode('ascii')
+        return {
+            "success": False,
+            "error": "Automatic authentication failed: {}".format(error_str)
+        }
+
+@app.get("/auth/zerodha-login-url")
+async def get_zerodha_login_url():
+    """Get Zerodha login URL"""
+    if not zerodha_auth:
+        return {
+            "success": False,
+            "error": "ZerodhaAuth service not initialized"
+        }
+    
+    try:
+        api_key = zerodha_auth.api_key
+        login_url = f"https://kite.zerodha.com/connect/login?api_key={api_key}"
+        
+        return {
+            "success": True,
+            "login_url": login_url,
+            "instructions": [
+                "Click the login URL",
+                "Login to your Zerodha account", 
+                "After login, copy the 'request_token' from the redirect URL",
+                "Use the request_token with the /auth/exchange-token endpoint"
+            ]
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to generate login URL: {str(e)}"
+        }
+
 @app.get("/api/test-nifty")
 async def test_nifty_price():
     """Simple test to get Nifty 50 price to verify Zerodha connection"""
@@ -385,11 +556,11 @@ async def test_nifty_price():
         }
     
     try:
-        print("🧪 Testing Nifty 50 price fetch...")
+        print("[INFO] Testing Nifty 50 price fetch...")
         
         # Check authentication first
         if not zerodha_auth.is_authenticated():
-            print("🔄 Not authenticated, attempting authentication...")
+            print("[INFO] Not authenticated, attempting authentication...")
             try:
                 zerodha_auth.authenticate()
                 if not zerodha_auth.is_authenticated():
@@ -413,7 +584,7 @@ async def test_nifty_price():
         
         # Test with Nifty 50 index
         try:
-            print("🔍 Testing Nifty 50 quote...")
+            print("[INFO] Testing Nifty 50 quote...")
             nifty_quote = kite.quote(["NSE:NIFTY 50"])
             
             if "NSE:NIFTY 50" in nifty_quote:
@@ -443,7 +614,7 @@ async def test_nifty_price():
         except Exception as quote_error:
             # Try alternative symbols
             try:
-                print("🔄 Trying alternative symbols...")
+                print("[INFO] Trying alternative symbols...")
                 alt_quotes = kite.quote(["NSE:RELIANCE", "NSE:TCS"])
                 
                 if alt_quotes:

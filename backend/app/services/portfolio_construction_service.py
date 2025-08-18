@@ -25,10 +25,10 @@ class PortfolioConstructionService:
             'total_orders': int
         }
         """
-        print("🏗️ Constructing portfolio from order history...")
+        print("[INFO] Constructing portfolio from order history...")
         
         if not all_orders:
-            print("   ⚠️ No orders provided")
+            print("   [WARNING] No orders provided")
             return {
                 'holdings': {},
                 'order_timeline': [],
@@ -48,9 +48,9 @@ class PortfolioConstructionService:
                 all_orders, 
                 key=lambda x: self._parse_date_safely(x.get('execution_time', ''))
             )
-            print(f"   📊 Processing {len(sorted_orders)} orders...")
+            print(f"   [INFO] Processing {len(sorted_orders)} orders...")
         except Exception as e:
-            print(f"   ⚠️ Error sorting orders: {e}")
+            print(f"   [WARNING] Error sorting orders: {e}")
             sorted_orders = all_orders
         
         # Track order processing statistics
@@ -69,7 +69,7 @@ class PortfolioConstructionService:
                 # Handle price with validation
                 price_value = order.get('price', 0)
                 if isinstance(price_value, str):
-                    price = float(price_value.replace('₹', '').replace(',', ''))
+                    price = float(price_value.replace('Rs.', '').replace(',', ''))
                 else:
                     price = float(price_value)
                 
@@ -77,7 +77,7 @@ class PortfolioConstructionService:
                 value_from_order = order.get('value')
                 if value_from_order:
                     if isinstance(value_from_order, str):
-                        value = float(value_from_order.replace('₹', '').replace(',', ''))
+                        value = float(value_from_order.replace('Rs.', '').replace(',', ''))
                     else:
                         value = float(value_from_order)
                 else:
@@ -87,11 +87,11 @@ class PortfolioConstructionService:
                 
                 # Validate data
                 if shares <= 0 or price <= 0:
-                    print(f"   ⚠️ Invalid data for order {order_idx}: shares={shares}, price={price}")
+                    print(f"   [WARNING] Invalid data for order {order_idx}: shares={shares}, price={price}")
                     error_count += 1
                     continue
                 
-                print(f"   📝 Processing: {symbol} {action} {shares} @ ₹{price:.2f} = ₹{value:.2f}")
+                print(f"   [INFO] Processing: {symbol} {action} {shares} @ Rs.{price:.2f} = Rs.{value:.2f}")
                 
                 # Initialize holding if not exists
                 if symbol not in holdings:
@@ -124,7 +124,7 @@ class PortfolioConstructionService:
                     
                     total_cash_flow += value  # Cash outflow
                     
-                    print(f"      ✅ BUY: {symbol} now has {holding['total_shares']} shares at avg ₹{holding['avg_price']:.2f}")
+                    print(f"      [SUCCESS] BUY: {symbol} now has {holding['total_shares']} shares at avg Rs.{holding['avg_price']:.2f}")
                     
                 elif action == 'SELL':
                     # Reduce position
@@ -138,9 +138,9 @@ class PortfolioConstructionService:
                             # Position closed
                             holding['total_investment'] = 0.0
                             holding['avg_price'] = 0.0
-                            print(f"      📉 SELL: {symbol} position closed")
+                            print(f"      [WARNING] SELL: {symbol} position closed")
                     else:
-                        print(f"      ⚠️ SELL: Insufficient shares for {symbol} (have {holding['total_shares']}, trying to sell {shares})")
+                        print(f"      [WARNING] SELL: Insufficient shares for {symbol} (have {holding['total_shares']}, trying to sell {shares})")
                     
                     total_cash_flow -= value  # Cash inflow
                 
@@ -170,7 +170,7 @@ class PortfolioConstructionService:
                 processed_count += 1
                 
             except Exception as e:
-                print(f"   ❌ Error processing order {order_idx}: {e}")
+                print(f"   [ERROR] Error processing order {order_idx}: {e}")
                 print(f"      Order data: {order}")
                 error_count += 1
                 continue
@@ -180,9 +180,9 @@ class PortfolioConstructionService:
         for symbol, holding in holdings.items():
             if holding['total_shares'] > 0:
                 active_holdings[symbol] = holding
-                print(f"   📊 Active holding: {symbol} - {holding['total_shares']} shares, ₹{holding['total_investment']:,.2f} invested")
+                print(f"   [INFO] Active holding: {symbol} - {holding['total_shares']} shares, Rs.{holding['total_investment']:,.2f} invested")
             else:
-                print(f"   🗑️ Removing zero position: {symbol}")
+                print(f"   [INFO] Removing zero position: {symbol}")
         
         # Determine date range
         first_order_date = None
@@ -193,7 +193,7 @@ class PortfolioConstructionService:
                 first_order_date = sorted_orders[0].get('execution_time')
                 last_order_date = sorted_orders[-1].get('execution_time')
             except Exception as e:
-                print(f"   ⚠️ Error getting date range: {e}")
+                print(f"   [WARNING] Error getting date range: {e}")
         
         construction_result = {
             'holdings': active_holdings,
@@ -206,11 +206,11 @@ class PortfolioConstructionService:
             'error_orders': error_count
         }
         
-        print(f"   ✅ Portfolio construction complete:")
+        print(f"   [SUCCESS] Portfolio construction complete:")
         print(f"      Total orders processed: {processed_count}/{len(all_orders)}")
         print(f"      Errors encountered: {error_count}")
         print(f"      Active holdings: {len(active_holdings)}")
-        print(f"      Total cash outflow: ₹{total_cash_flow:,.2f}")
+        print(f"      Total cash outflow: Rs.{total_cash_flow:,.2f}")
         print(f"      Date range: {first_order_date} to {last_order_date}")
         
         return construction_result
@@ -242,7 +242,7 @@ class PortfolioConstructionService:
         """
         Validate the constructed portfolio for consistency
         """
-        print("🔍 Validating portfolio construction...")
+        print("[INFO] Validating portfolio construction...")
         
         holdings = construction_result.get('holdings', {})
         validation_results = {
@@ -270,7 +270,7 @@ class PortfolioConstructionService:
                 
                 if investment_diff > 1:  # Allow small rounding errors
                     validation_results['warnings'].append(
-                        f"{symbol}: Investment calculation mismatch (Expected: ₹{expected_investment:.2f}, Actual: ₹{investment:.2f})"
+                        f"{symbol}: Investment calculation mismatch (Expected: Rs.{expected_investment:.2f}, Actual: Rs.{investment:.2f})"
                     )
                 
                 # Check for negative values
@@ -279,16 +279,16 @@ class PortfolioConstructionService:
                     validation_results['is_valid'] = False
                 
                 if investment < 0:
-                    validation_results['errors'].append(f"{symbol}: Negative investment (₹{investment:.2f})")
+                    validation_results['errors'].append(f"{symbol}: Negative investment (Rs.{investment:.2f})")
                     validation_results['is_valid'] = False
                 
                 # Check for unrealistic prices
-                if avg_price > 50000:  # More than ₹50,000 per share seems unusual
-                    validation_results['warnings'].append(f"{symbol}: Unusually high average price (₹{avg_price:.2f})")
+                if avg_price > 50000:  # More than Rs.50,000 per share seems unusual
+                    validation_results['warnings'].append(f"{symbol}: Unusually high average price (Rs.{avg_price:.2f})")
                     price_anomalies += 1
                 
-                if avg_price < 1:  # Less than ₹1 per share seems unusual
-                    validation_results['warnings'].append(f"{symbol}: Unusually low average price (₹{avg_price:.2f})")
+                if avg_price < 1:  # Less than Rs.1 per share seems unusual
+                    validation_results['warnings'].append(f"{symbol}: Unusually low average price (Rs.{avg_price:.2f})")
                     price_anomalies += 1
                 
                 # Check for missing transaction data
@@ -340,16 +340,16 @@ class PortfolioConstructionService:
         # Overall validation status
         if validation_results['errors']:
             validation_results['is_valid'] = False
-            print(f"   ❌ {len(validation_results['errors'])} critical errors found")
+            print(f"   [ERROR] {len(validation_results['errors'])} critical errors found")
         
         if validation_results['warnings']:
-            print(f"   ⚠️ {len(validation_results['warnings'])} warnings found")
+            print(f"   [WARNING] {len(validation_results['warnings'])} warnings found")
         
         if validation_results['is_valid'] and not validation_results['warnings']:
-            print(f"   ✅ Portfolio construction validation passed perfectly")
+            print(f"   [SUCCESS] Portfolio construction validation passed perfectly")
         elif validation_results['is_valid']:
-            print(f"   ✅ Portfolio construction validation passed with warnings")
+            print(f"   [SUCCESS] Portfolio construction validation passed with warnings")
         
-        print(f"   📊 Data quality: {processing_success_rate:.1f}% order processing success rate")
+        print(f"   [INFO] Data quality: {processing_success_rate:.1f}% order processing success rate")
         
         return validation_results

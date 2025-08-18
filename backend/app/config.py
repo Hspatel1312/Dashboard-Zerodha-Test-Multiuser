@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     
     # Portfolio Configuration
-    MIN_INVESTMENT: int = 200000
+    MIN_INVESTMENT: int = 10000
     TARGET_ALLOCATION: float = 5.00
     MIN_ALLOCATION: float = 4.00
     MAX_ALLOCATION: float = 7.00

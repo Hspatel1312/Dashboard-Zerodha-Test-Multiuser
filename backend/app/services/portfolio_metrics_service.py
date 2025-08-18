@@ -23,7 +23,7 @@ class PortfolioMetricsService:
         Returns:
             Complete metrics dictionary
         """
-        print("📈 Calculating comprehensive portfolio metrics...")
+        print("[SUCCESS] Calculating comprehensive portfolio metrics...")
         
         try:
             # Calculate individual stock metrics
@@ -66,24 +66,24 @@ class PortfolioMetricsService:
                 'rebalancing_needed': allocation_metrics['rebalancing_needed']
             }
             
-            print(f"✅ Portfolio metrics calculated successfully:")
+            print(f"[SUCCESS] Portfolio metrics calculated successfully:")
             print(f"   Holdings: {len(holdings_with_metrics)}")
-            print(f"   Total investment: ₹{portfolio_totals['total_investment']:,.2f}")
-            print(f"   Current value: ₹{portfolio_totals['current_value']:,.2f}")
+            print(f"   Total investment: Rs.{portfolio_totals['total_investment']:,.2f}")
+            print(f"   Current value: Rs.{portfolio_totals['current_value']:,.2f}")
             print(f"   CAGR: {time_metrics['cagr']:.2f}%")
             print(f"   Investment period: {time_metrics['investment_period_days']} days")
             
             return comprehensive_metrics
             
         except Exception as e:
-            print(f"❌ Error calculating portfolio metrics: {e}")
+            print(f"[ERROR] Error calculating portfolio metrics: {e}")
             import traceback
             print(f"   Traceback: {traceback.format_exc()}")
             raise Exception(f"Failed to calculate portfolio metrics: {str(e)}")
     
     def _calculate_individual_stock_metrics(self, holdings: Dict, current_prices: Dict) -> Dict:
         """Calculate metrics for each individual stock"""
-        print("   📊 Calculating individual stock metrics...")
+        print("   [INFO] Calculating individual stock metrics...")
         
         holdings_with_metrics = {}
         
@@ -126,10 +126,10 @@ class PortfolioMetricsService:
                     'transaction_count': len(holding.get('transactions', []))
                 }
                 
-                print(f"      ✅ {symbol}: ₹{investment_value:,.0f} → ₹{current_holding_value:,.0f} ({percentage_return:.1f}%, {days_held}d)")
+                print(f"      [SUCCESS] {symbol}: Rs.{investment_value:,.0f} to Rs.{current_holding_value:,.0f} ({percentage_return:.1f}%, {days_held}d)")
                 
             except Exception as e:
-                print(f"      ❌ Error calculating metrics for {symbol}: {e}")
+                print(f"      [ERROR] Error calculating metrics for {symbol}: {e}")
                 # Create a safe fallback entry
                 holdings_with_metrics[symbol] = {
                     'shares': 0,
@@ -183,7 +183,7 @@ class PortfolioMetricsService:
             return days_held, years_held
             
         except Exception as e:
-            print(f"      ⚠️ Error calculating holding period: {e}")
+            print(f"      [WARNING] Error calculating holding period: {e}")
             return 30, 30/365.25  # Default to 30 days
     
     def _calculate_stock_cagr(self, investment_value: float, current_value: float, years_held: float) -> float:
@@ -212,7 +212,7 @@ class PortfolioMetricsService:
                 return -99.9  # Near total loss
                 
         except (OverflowError, ZeroDivisionError, ValueError) as e:
-            print(f"      ⚠️ CAGR calculation error: {e}")
+            print(f"      [WARNING] CAGR calculation error: {e}")
             # Fallback to simple return
             if investment_value > 0:
                 return ((current_value - investment_value) / investment_value) * 100
@@ -220,7 +220,7 @@ class PortfolioMetricsService:
     
     def _calculate_portfolio_totals(self, holdings_with_metrics: Dict) -> Dict:
         """Calculate portfolio-level totals"""
-        print("   💰 Calculating portfolio totals...")
+        print("   [INFO] Calculating portfolio totals...")
         
         total_investment = sum(holding['investment_value'] for holding in holdings_with_metrics.values())
         current_value = sum(holding['current_value'] for holding in holdings_with_metrics.values())
@@ -243,7 +243,7 @@ class PortfolioMetricsService:
     
     def _calculate_time_based_metrics(self, portfolio_totals: Dict, construction_data: Dict) -> Dict:
         """Calculate time-based metrics like CAGR"""
-        print("   ⏰ Calculating time-based metrics...")
+        print("   [INFO] Calculating time-based metrics...")
         
         try:
             first_order_date_str = construction_data.get('first_order_date')
@@ -293,7 +293,7 @@ class PortfolioMetricsService:
             }
             
         except Exception as e:
-            print(f"      ⚠️ Error calculating time metrics: {e}")
+            print(f"      [WARNING] Error calculating time metrics: {e}")
             return {
                 'investment_period_days': 30,
                 'investment_period_years': 30/365.25,
@@ -302,7 +302,7 @@ class PortfolioMetricsService:
     
     def _calculate_risk_metrics(self, holdings_with_metrics: Dict, portfolio_totals: Dict) -> Dict:
         """Calculate risk metrics like volatility and Sharpe ratio"""
-        print("   ⚠️ Calculating risk metrics...")
+        print("   [WARNING] Calculating risk metrics...")
         
         if not holdings_with_metrics:
             return {
@@ -342,7 +342,7 @@ class PortfolioMetricsService:
     
     def _calculate_allocation_metrics(self, holdings_with_metrics: Dict) -> Dict:
         """Calculate allocation analysis metrics"""
-        print("   ⚖️ Calculating allocation metrics...")
+        print("   [INFO] Calculating allocation metrics...")
         
         if not holdings_with_metrics:
             return {
@@ -377,7 +377,7 @@ class PortfolioMetricsService:
     
     def _calculate_performance_rankings(self, holdings_with_metrics: Dict) -> Dict:
         """Calculate best/worst performers and averages"""
-        print("   🏆 Calculating performance rankings...")
+        print("   [INFO] Calculating performance rankings...")
         
         if not holdings_with_metrics:
             return {

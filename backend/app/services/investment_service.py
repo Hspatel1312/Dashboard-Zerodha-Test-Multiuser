@@ -8,6 +8,7 @@ from .csv_service import CSVService
 from .investment_calculator import InvestmentCalculator
 from .portfolio_construction_service import PortfolioConstructionService
 from .portfolio_metrics_service import PortfolioMetricsService
+from .portfolio_comparison_service import PortfolioComparisonService
 
 class InvestmentService:
     def __init__(self, zerodha_auth):
@@ -17,16 +18,21 @@ class InvestmentService:
         self.portfolio_construction = PortfolioConstructionService()
         self.portfolio_metrics = PortfolioMetricsService()
         
+        # Import portfolio service here to avoid circular imports
+        from .portfolio_service import PortfolioService
+        self.portfolio_service = PortfolioService(zerodha_auth)
+        self.portfolio_comparison = PortfolioComparisonService(self.portfolio_service, self)
+        
         # File paths for storing system state
         self.orders_file = "system_orders.json"
         self.portfolio_state_file = "system_portfolio_state.json"
         self.csv_history_file = "csv_history.json"
         
-        # Configuration
+        # Configuration - Updated for ±1.5% flexibility
         self.min_investment = 200000
         self.target_allocation = 5.0
-        self.min_allocation = 4.0
-        self.max_allocation = 7.0
+        self.min_allocation = 3.5  # 5% - 1.5%
+        self.max_allocation = 6.5  # 5% + 1.5%
         self.rebalancing_threshold = 10000
         
         # Ensure directories exist
@@ -40,23 +46,23 @@ class InvestmentService:
                 if directory and not os.path.exists(directory):
                     os.makedirs(directory, exist_ok=True)
         except Exception as e:
-            print(f"⚠️ Warning: Could not create directories: {e}")
+            print(f"[WARNING] Warning: Could not create directories: {e}")
     
     def get_investment_requirements(self) -> Dict:
         """Get investment requirements for initial setup"""
         try:
-            print("📋 Getting investment requirements...")
+            print("[INFO] Getting investment requirements...")
             
             # Get stocks with prices (will use fallback if Zerodha fails)
             try:
                 stocks_data = self.csv_service.get_stocks_with_prices()
             except Exception as e:
-                print(f"❌ Failed to get stocks with prices: {e}")
+                print(f"[ERROR] Failed to get stocks with prices: {e}")
                 raise Exception(f"Unable to fetch stock data: {str(e)}")
             
             # Check if we got an error response (no live prices available)
             if 'error' in stocks_data and stocks_data['error'] == 'PRICE_DATA_UNAVAILABLE':
-                print("🚫 PRICE_DATA_UNAVAILABLE - returning error response")
+                print("[ERROR] PRICE_DATA_UNAVAILABLE - returning error response")
                 
                 # Return structured error response
                 return {
@@ -80,7 +86,7 @@ class InvestmentService:
             try:
                 min_investment_info = self.investment_calculator.calculate_minimum_investment(stocks_data['stocks'])
             except Exception as e:
-                print(f"❌ Failed to calculate minimum investment: {e}")
+                print(f"[ERROR] Failed to calculate minimum investment: {e}")
                 raise Exception(f"Unable to calculate investment requirements: {str(e)}")
             
             requirements = {
@@ -98,15 +104,15 @@ class InvestmentService:
                 }
             }
             
-            print(f"✅ Investment requirements prepared:")
+            print(f"[SUCCESS] Investment requirements prepared:")
             print(f"   Stocks: {stocks_data['total_stocks']}")
-            print(f"   Min investment: ₹{min_investment_info['minimum_investment']:,.0f}")
+            print(f"   Min investment: Rs.{min_investment_info['minimum_investment']:,.0f}")
             print(f"   Data source: {stocks_data['price_data_status']['market_data_source']}")
             
             return requirements
             
         except Exception as e:
-            print(f"❌ Error getting investment requirements: {e}")
+            print(f"[ERROR] Error getting investment requirements: {e}")
             
             # Check if it's a price data error
             if "PRICE_DATA_UNAVAILABLE" in str(e):
@@ -139,14 +145,14 @@ class InvestmentService:
     def calculate_initial_investment_plan(self, investment_amount: float) -> Dict:
         """Calculate initial investment plan"""
         try:
-            print(f"💰 Calculating investment plan for ₹{investment_amount:,.0f}")
+            print(f"[INFO] Calculating investment plan for Rs.{investment_amount:,.0f}")
             
             # Get stocks with prices
             stocks_data = self.csv_service.get_stocks_with_prices()
             
             # Check if we got an error response (no live prices available)
             if 'error' in stocks_data and stocks_data['error'] == 'PRICE_DATA_UNAVAILABLE':
-                print("🚫 PRICE_DATA_UNAVAILABLE - cannot calculate plan")
+                print("[ERROR] PRICE_DATA_UNAVAILABLE - cannot calculate plan")
                 
                 # Return structured error response
                 return {
@@ -165,7 +171,7 @@ class InvestmentService:
             min_investment_info = self.investment_calculator.calculate_minimum_investment(stocks_data['stocks'])
             
             if investment_amount < min_investment_info['minimum_investment']:
-                raise Exception(f"Investment amount ₹{investment_amount:,.0f} is below minimum required ₹{min_investment_info['minimum_investment']:,.0f}")
+                raise Exception(f"Investment amount Rs.{investment_amount:,.0f} is below minimum required Rs.{min_investment_info['minimum_investment']:,.0f}")
             
             # Calculate allocation using the sophisticated algorithm
             allocation_result = self.investment_calculator.calculate_optimal_allocation(investment_amount, stocks_data['stocks'])
@@ -203,15 +209,15 @@ class InvestmentService:
                 'validation': allocation_result['validation']
             }
             
-            print(f"✅ Investment plan created: {len(orders)} orders")
-            print(f"   Total allocated: ₹{allocation_result['total_allocated']:,.0f}")
+            print(f"[SUCCESS] Investment plan created: {len(orders)} orders")
+            print(f"   Total allocated: Rs.{allocation_result['total_allocated']:,.0f}")
             print(f"   Utilization: {allocation_result['utilization_percent']:.1f}%")
             print(f"   Stocks in range: {allocation_result['validation']['stocks_in_range']}/{len(orders)}")
             
             return plan
             
         except Exception as e:
-            print(f"❌ Error calculating investment plan: {e}")
+            print(f"[ERROR] Error calculating investment plan: {e}")
             
             # Check if it's a price data error
             if "PRICE_DATA_UNAVAILABLE" in str(e):
@@ -229,7 +235,7 @@ class InvestmentService:
     def execute_initial_investment(self, investment_plan: Dict) -> Dict:
         """Execute initial investment plan"""
         try:
-            print("🚀 Executing initial investment...")
+            print("[INFO] Executing initial investment...")
             
             # Check if plan has price data errors
             if 'error' in investment_plan and investment_plan['error'] == 'PRICE_DATA_UNAVAILABLE':
@@ -275,13 +281,13 @@ class InvestmentService:
                 'data_quality': investment_plan.get('data_quality', {})
             }
             
-            print(f"✅ Initial investment executed: {len(system_orders)} orders")
-            print(f"   Total investment: ₹{investment_plan['summary']['total_investment_value']:,.0f}")
+            print(f"[SUCCESS] Initial investment executed: {len(system_orders)} orders")
+            print(f"   Total investment: Rs.{investment_plan['summary']['total_investment_value']:,.0f}")
             
             return result
             
         except Exception as e:
-            print(f"❌ Error executing initial investment: {e}")
+            print(f"[ERROR] Error executing initial investment: {e}")
             raise Exception(f"Failed to execute initial investment: {str(e)}")
     
     def check_rebalancing_needed(self) -> Dict:
@@ -303,7 +309,7 @@ class InvestmentService:
                 csv_data = self.csv_service.fetch_csv_data()
                 csv_symbols = set(csv_data['symbols'])
             except Exception as e:
-                print(f"⚠️ Could not fetch current CSV: {e}")
+                print(f"[WARNING] Could not fetch current CSV: {e}")
                 return {
                     'rebalancing_needed': False,
                     'reason': 'Cannot fetch current CSV data',
@@ -332,7 +338,7 @@ class InvestmentService:
                 }
             
         except Exception as e:
-            print(f"❌ Error checking rebalancing: {e}")
+            print(f"[ERROR] Error checking rebalancing: {e}")
             return {
                 'rebalancing_needed': False,
                 'reason': 'Error checking rebalancing status',
@@ -386,7 +392,7 @@ class InvestmentService:
                 
                 # Check if we got an error response (no live prices available)
                 if 'error' in stocks_data and stocks_data['error'] == 'PRICE_DATA_UNAVAILABLE':
-                    print("⚠️ Live prices unavailable, cannot calculate current values")
+                    print("[WARNING] Live prices unavailable, cannot calculate current values")
                     
                     # Return portfolio state without current values
                     holdings_basic = {}
@@ -434,7 +440,7 @@ class InvestmentService:
                     current_prices[stock['symbol']] = stock['price']
                 
             except Exception as e:
-                print(f"⚠️ Could not get live prices, creating basic portfolio: {e}")
+                print(f"[WARNING] Could not get live prices, creating basic portfolio: {e}")
                 
                 # Create basic portfolio without current prices
                 holdings_basic = {}
@@ -539,7 +545,7 @@ class InvestmentService:
                 }
                 
             except Exception as metrics_error:
-                print(f"⚠️ Could not calculate advanced metrics: {metrics_error}")
+                print(f"[WARNING] Could not calculate advanced metrics: {metrics_error}")
                 
                 # Fallback to basic calculation
                 holdings_with_metrics = {}
@@ -596,7 +602,7 @@ class InvestmentService:
                 }
             
         except Exception as e:
-            print(f"❌ Error getting portfolio status: {e}")
+            print(f"[ERROR] Error getting portfolio status: {e}")
             return {
                 'status': 'error',
                 'error': str(e),
@@ -616,8 +622,16 @@ class InvestmentService:
     
     # Helper methods (keeping existing implementations)
     def _is_first_time_setup(self) -> bool:
-        """Check if this is first time setup"""
-        return not os.path.exists(self.portfolio_state_file)
+        """Check if this is first time setup - based on orders file"""
+        try:
+            if not os.path.exists(self.orders_file):
+                return True
+            
+            with open(self.orders_file, 'r') as f:
+                orders = json.load(f)
+                return len(orders) == 0
+        except:
+            return True
     
     def _get_next_order_id(self) -> int:
         """Get next order ID"""
@@ -635,9 +649,9 @@ class InvestmentService:
             with open(self.orders_file, 'w') as f:
                 json.dump(all_orders, f, indent=2)
             
-            print(f"💾 Saved {len(new_orders)} new orders (total: {len(all_orders)})")
+            print(f"[INFO] Saved {len(new_orders)} new orders (total: {len(all_orders)})")
         except Exception as e:
-            print(f"❌ Error saving system orders: {e}")
+            print(f"[ERROR] Error saving system orders: {e}")
             raise
     
     def _load_system_orders(self) -> List[Dict]:
@@ -650,11 +664,11 @@ class InvestmentService:
                 orders = json.load(f)
             return orders if isinstance(orders, list) else []
         except Exception as e:
-            print(f"⚠️ Error loading system orders: {e}")
+            print(f"[WARNING] Error loading system orders: {e}")
             return []
     
     def _update_portfolio_state(self, orders: List[Dict], csv_info: Dict):
-        """Update portfolio state based on orders"""
+        """Update portfolio state based on orders (legacy method for initial investment)"""
         try:
             holdings = {}
             
@@ -676,10 +690,51 @@ class InvestmentService:
             with open(self.portfolio_state_file, 'w') as f:
                 json.dump(portfolio_state, f, indent=2)
             
-            print(f"💾 Portfolio state updated with {len(holdings)} holdings")
+            print(f"[INFO] Portfolio state updated with {len(holdings)} holdings")
             
         except Exception as e:
-            print(f"❌ Error updating portfolio state: {e}")
+            print(f"[ERROR] Error updating portfolio state: {e}")
+            raise
+    
+    def _update_portfolio_state_from_all_orders(self, all_orders: List[Dict], csv_info: Dict):
+        """Update portfolio state by reconstructing from all orders (for rebalancing)"""
+        try:
+            print(f"[INFO] Reconstructing portfolio state from {len(all_orders)} total orders...")
+            
+            # Use portfolio construction service to build current state
+            construction_result = self.portfolio_construction.construct_portfolio_from_orders(all_orders)
+            holdings = construction_result['holdings']
+            
+            # Convert to the format expected by portfolio state
+            portfolio_holdings = {}
+            for symbol, holding_data in holdings.items():
+                portfolio_holdings[symbol] = {
+                    'shares': holding_data['total_shares'],
+                    'avg_price': holding_data['avg_price'],
+                    'total_investment': holding_data['total_investment']
+                }
+            
+            portfolio_state = {
+                'holdings': portfolio_holdings,
+                'last_updated': datetime.now().isoformat(),
+                'csv_info': csv_info,
+                'type': 'REBALANCED_PORTFOLIO',
+                'total_orders_processed': len(all_orders),
+                'construction_summary': {
+                    'total_cash_outflow': construction_result['total_cash_outflow'],
+                    'first_order_date': construction_result['first_order_date'],
+                    'last_order_date': construction_result['last_order_date']
+                }
+            }
+            
+            with open(self.portfolio_state_file, 'w') as f:
+                json.dump(portfolio_state, f, indent=2)
+            
+            print(f"[INFO] Portfolio state reconstructed with {len(portfolio_holdings)} holdings")
+            print(f"   Total cash outflow: Rs.{construction_result['total_cash_outflow']:,.0f}")
+            
+        except Exception as e:
+            print(f"[ERROR] Error updating portfolio state from all orders: {e}")
             raise
     
     def _get_current_portfolio_state(self) -> Optional[Dict]:
@@ -691,7 +746,7 @@ class InvestmentService:
             with open(self.portfolio_state_file, 'r') as f:
                 return json.load(f)
         except Exception as e:
-            print(f"⚠️ Error reading portfolio state: {e}")
+            print(f"[WARNING] Error reading portfolio state: {e}")
             return None
     
     def _update_csv_history(self, csv_info: Dict):
@@ -716,7 +771,7 @@ class InvestmentService:
                 json.dump(history, f, indent=2)
                 
         except Exception as e:
-            print(f"⚠️ Error updating CSV history: {e}")
+            print(f"[WARNING] Error updating CSV history: {e}")
     
     def get_service_status(self) -> Dict:
         """Get comprehensive service status"""
@@ -740,3 +795,438 @@ class InvestmentService:
                 'is_first_time': self._is_first_time_setup()
             }
         }
+    
+    def get_investment_status(self) -> Dict:
+        """Get simplified investment status - determines what action to take"""
+        try:
+            print("[INFO] Getting investment status...")
+            
+            # Check if first time (no orders)
+            is_first_time = self._is_first_time_setup()
+            
+            if is_first_time:
+                print("[INFO] First time investment detected")
+                
+                # Get investment requirements for first time
+                requirements = self.get_investment_requirements()
+                
+                return {
+                    "status": "FIRST_INVESTMENT",
+                    "action_needed": "initial_investment",
+                    "message": "Ready for your first investment",
+                    "requirements": requirements
+                }
+            
+            # Has orders - check if rebalancing needed
+            print("[INFO] Existing portfolio detected - checking rebalancing")
+            
+            # Get current portfolio status
+            portfolio_status = self.get_system_portfolio_status()
+            
+            # Get current CSV stocks
+            csv_stocks_data = self.csv_service.get_stocks_with_prices()
+            current_csv_stocks = set([stock['symbol'] for stock in csv_stocks_data.get('stocks', [])])
+            
+            # Get portfolio stocks
+            portfolio_stocks = set()
+            if portfolio_status['status'] == 'active':
+                portfolio_stocks = set(portfolio_status['holdings'].keys())
+            
+            print(f"CSV stocks: {len(current_csv_stocks)}")
+            print(f"Portfolio stocks: {len(portfolio_stocks)}")
+            
+            # Compare stocks and allocations
+            if current_csv_stocks == portfolio_stocks:
+                print("[INFO] Stock list matches CSV - checking allocation balance...")
+                
+                # Check if allocations are within ±1.5% tolerance
+                target_allocation = 100.0 / len(portfolio_stocks)  # Equal weight
+                tolerance = 1.5  # ±1.5% tolerance
+                
+                allocation_issues = []
+                for symbol, holding in portfolio_status['holdings'].items():
+                    current_allocation = holding.get('allocation_percent', 0)
+                    deviation = abs(current_allocation - target_allocation)
+                    
+                    if deviation > tolerance:
+                        allocation_issues.append({
+                            'symbol': symbol,
+                            'current_allocation': current_allocation,
+                            'target_allocation': target_allocation,
+                            'deviation': deviation
+                        })
+                
+                if not allocation_issues:
+                    print("[SUCCESS] Portfolio stocks and allocations are balanced")
+                    return {
+                        "status": "BALANCED",
+                        "action_needed": "none",
+                        "message": "Portfolio is balanced and up-to-date",
+                        "portfolio_status": portfolio_status,
+                        "csv_stocks_count": len(current_csv_stocks),
+                        "portfolio_stocks_count": len(portfolio_stocks)
+                    }
+                else:
+                    print(f"[INFO] Portfolio stocks match but {len(allocation_issues)} allocations need rebalancing")
+                    for issue in allocation_issues[:3]:  # Show first 3
+                        print(f"   {issue['symbol']}: {issue['current_allocation']:.2f}% (deviation: {issue['deviation']:.2f}%)")
+                    
+                    return {
+                        "status": "REBALANCING_NEEDED",
+                        "action_needed": "rebalancing",
+                        "message": f"Portfolio needs rebalancing - {len(allocation_issues)} stocks have allocation drift beyond ±1.5%",
+                        "portfolio_status": portfolio_status,
+                        "csv_stocks_count": len(current_csv_stocks),
+                        "portfolio_stocks_count": len(portfolio_stocks),
+                        "allocation_issues": allocation_issues,
+                        "rebalancing_reason": "allocation_drift"
+                    }
+            
+            else:
+                print("[INFO] Portfolio doesn't match CSV - rebalancing needed")
+                
+                new_stocks = current_csv_stocks - portfolio_stocks
+                removed_stocks = portfolio_stocks - current_csv_stocks
+                
+                print(f"New stocks: {len(new_stocks)}")
+                print(f"Removed stocks: {len(removed_stocks)}")
+                
+                return {
+                    "status": "REBALANCING_NEEDED",
+                    "action_needed": "rebalancing",
+                    "message": "Portfolio needs rebalancing due to stock list changes",
+                    "portfolio_status": portfolio_status,
+                    "csv_stocks_count": len(current_csv_stocks),
+                    "portfolio_stocks_count": len(portfolio_stocks),
+                    "changes": {
+                        "new_stocks": list(new_stocks),
+                        "removed_stocks": list(removed_stocks),
+                        "new_count": len(new_stocks),
+                        "removed_count": len(removed_stocks)
+                    }
+                }
+            
+        except Exception as e:
+            print(f"[ERROR] Error getting investment status: {e}")
+            import traceback
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            
+            return {
+                "status": "ERROR",
+                "action_needed": "fix_error",
+                "message": f"Error determining investment status: {str(e)}",
+                "error": str(e)
+            }
+    
+    def calculate_rebalancing_plan(self, additional_investment: float = 0.0) -> Dict:
+        """Calculate rebalancing plan for paper trading (allocation-based)"""
+        try:
+            print(f"[INFO] Calculating PAPER TRADING rebalancing plan with additional investment: Rs.{additional_investment:,.0f}")
+            
+            # Step 1: Get current portfolio status with allocations
+            print("[INFO] Step 1: Getting current paper portfolio allocations...")
+            portfolio_status = self.get_system_portfolio_status()
+            
+            if portfolio_status['status'] != 'active':
+                raise Exception(f"Portfolio not active: {portfolio_status.get('message', 'Unknown error')}")
+            
+            current_holdings = portfolio_status['holdings']
+            current_portfolio_value = portfolio_status['portfolio_summary']['current_value']
+            print(f"[INFO] Current portfolio value: Rs.{current_portfolio_value:,.0f}")
+            
+            # Step 2: Check if rebalancing is needed based on allocation drift
+            target_allocation = 100.0 / len(current_holdings)  # Equal weight
+            tolerance = 1.5  # ±1.5% tolerance
+            
+            rebalancing_needed = False
+            allocation_issues = []
+            
+            for symbol, holding in current_holdings.items():
+                current_allocation = holding.get('allocation_percent', 0)
+                deviation = abs(current_allocation - target_allocation)
+                
+                if deviation > tolerance:
+                    rebalancing_needed = True
+                    allocation_issues.append({
+                        'symbol': symbol,
+                        'current_allocation': current_allocation,
+                        'target_allocation': target_allocation,
+                        'deviation': deviation,
+                        'status': 'OVER_ALLOCATED' if current_allocation > target_allocation else 'UNDER_ALLOCATED'
+                    })
+            
+            print(f"[INFO] Allocation analysis: {len(allocation_issues)} stocks need rebalancing")
+            
+            if not rebalancing_needed and additional_investment == 0:
+                return {
+                    'success': True,
+                    'message': 'Portfolio is well balanced - no rebalancing needed',
+                    'data': {
+                        'buy_orders': [],
+                        'sell_orders': [],
+                        'plan_summary': {
+                            'current_portfolio_value': current_portfolio_value,
+                            'additional_investment': additional_investment,
+                            'total_rebalancing_value': current_portfolio_value + additional_investment,
+                            'target_portfolio_value': current_portfolio_value,
+                            'remaining_cash': 0,
+                            'total_stocks': len(current_holdings),
+                            'buy_orders_count': 0,
+                            'sell_orders_count': 0,
+                            'total_buy_value': 0,
+                            'total_sell_value': 0,
+                            'net_investment_needed': 0,
+                            'rebalancing_needed': False,
+                            'portfolio_comparison_status': 'BALANCED'  # Fix: Add missing key
+                        },
+                        'allocation_analysis': allocation_issues
+                    }
+                }
+            
+            # Step 3: Add additional investment if provided
+            total_rebalancing_value = current_portfolio_value + additional_investment
+            print(f"[INFO] Total value for rebalancing: Rs.{total_rebalancing_value:,.0f}")
+            
+            # Step 4: Get current CSV stocks with prices
+            csv_stocks_data = self.csv_service.get_stocks_with_prices()
+            if 'error' in csv_stocks_data:
+                raise Exception(f"Cannot get CSV stocks: {csv_stocks_data['error_message']}")
+            
+            csv_stocks = csv_stocks_data.get('stocks', [])
+            if not csv_stocks:
+                raise Exception("No stocks found in CSV")
+            
+            print(f"[INFO] Rebalancing to {len(csv_stocks)} stocks from CSV")
+            
+            # Step 5: Calculate optimal allocation using investment calculator (with ±1.5% flexibility)
+            allocation_result = self.investment_calculator.calculate_optimal_allocation(
+                total_rebalancing_value, csv_stocks
+            )
+            
+            print(f"[INFO] Optimal allocation calculated for Rs.{total_rebalancing_value:,.0f}")
+            
+            # Step 6: Create target portfolio plan from allocation result
+            target_portfolio = {}
+            total_target_value = allocation_result['total_allocated']
+            
+            for allocation in allocation_result['allocations']:
+                if allocation['shares'] > 0:
+                    target_portfolio[allocation['symbol']] = {
+                        'shares': allocation['shares'],
+                        'price': allocation['price'],
+                        'value': allocation['value'],
+                        'allocation_percent': allocation['allocation_percent']
+                    }
+            
+            print(f"[INFO] Target portfolio: {len(target_portfolio)} stocks, Rs.{total_target_value:,.0f} total value")
+            
+            # Step 7: Calculate buy/sell orders based on current paper portfolio vs target
+            buy_orders = []
+            sell_orders = []
+            
+            print(f"[INFO] Comparing target portfolio with current paper portfolio...")
+            
+            # Compare each target stock with current holdings
+            for symbol, target_info in target_portfolio.items():
+                target_shares = target_info['shares']
+                target_price = target_info['price']
+                current_shares = current_holdings.get(symbol, {}).get('shares', 0)
+                
+                print(f"   {symbol}: Target={target_shares}, Current={current_shares}")
+                
+                if target_shares > current_shares:
+                    # Need to buy more
+                    shares_to_buy = target_shares - current_shares
+                    buy_orders.append({
+                        "symbol": symbol,
+                        "action": "BUY",
+                        "shares": shares_to_buy,
+                        "price": target_price,
+                        "value": shares_to_buy * target_price,
+                        "reason": "Increase position for rebalancing"
+                    })
+                elif target_shares < current_shares:
+                    # Need to sell some
+                    shares_to_sell = current_shares - target_shares
+                    current_price = current_holdings[symbol]['current_price']
+                    sell_orders.append({
+                        "symbol": symbol,
+                        "action": "SELL",
+                        "shares": shares_to_sell,
+                        "price": current_price,
+                        "value": shares_to_sell * current_price,
+                        "reason": "Reduce position for rebalancing"
+                    })
+                # If target_shares == current_shares, no action needed
+            
+            # Handle stocks in current portfolio but not in CSV (sell all)
+            csv_symbols = set(target_portfolio.keys())
+            for symbol, holding_info in current_holdings.items():
+                if symbol not in csv_symbols and holding_info['shares'] > 0:
+                    # Stock not in CSV anymore - sell all
+                    shares_to_sell = holding_info['shares']
+                    current_price = holding_info['current_price']
+                    
+                    sell_orders.append({
+                        "symbol": symbol,
+                        "action": "SELL",
+                        "shares": shares_to_sell,
+                        "price": current_price,
+                        "value": shares_to_sell * current_price,
+                        "reason": "Stock removed from CSV list"
+                    })
+                    
+                    print(f"   {symbol}: Not in CSV, selling all {shares_to_sell} shares")
+            
+            total_buy_value = sum(order['value'] for order in buy_orders)
+            total_sell_value = sum(order['value'] for order in sell_orders)
+            net_investment_needed = total_buy_value - total_sell_value
+            
+            plan_summary = {
+                "current_portfolio_value": current_portfolio_value,
+                "additional_investment": additional_investment,
+                "total_rebalancing_value": total_rebalancing_value,
+                "target_portfolio_value": total_target_value,
+                "remaining_cash": allocation_result['remaining_cash'],
+                "total_stocks": len(target_portfolio),
+                "buy_orders_count": len(buy_orders),
+                "sell_orders_count": len(sell_orders),
+                "total_buy_value": total_buy_value,
+                "total_sell_value": total_sell_value,
+                "net_investment_needed": net_investment_needed,
+                "rebalancing_needed": rebalancing_needed
+            }
+            
+            print(f"[SUCCESS] Paper trading rebalancing plan calculated:")
+            print(f"   Buy orders: {len(buy_orders)} (Rs.{total_buy_value:,.0f})")
+            print(f"   Sell orders: {len(sell_orders)} (Rs.{total_sell_value:,.0f})")
+            print(f"   Net investment needed: Rs.{net_investment_needed:,.0f}")
+            
+            return {
+                "success": True,
+                "message": "Paper trading rebalancing plan calculated successfully",
+                "data": {
+                    "plan_summary": plan_summary,
+                    "target_portfolio": target_portfolio,
+                    "allocation_result": allocation_result,
+                    "buy_orders": buy_orders,
+                    "sell_orders": sell_orders,
+                    "allocation_analysis": allocation_issues,
+                    "execution_ready": True,
+                    "data_quality": allocation_result.get('data_quality', 'Unknown')
+                }
+            }
+            
+        except Exception as e:
+            print(f"[ERROR] Error calculating rebalancing plan: {e}")
+            raise Exception(f"Cannot calculate rebalancing plan: {str(e)}")
+    
+    def execute_rebalancing(self, additional_investment: float = 0.0) -> Dict:
+        """Execute rebalancing by storing orders"""
+        try:
+            print(f"[INFO] Executing rebalancing with additional investment: Rs.{additional_investment:,.0f}")
+            
+            # Calculate the rebalancing plan
+            plan_result = self.calculate_rebalancing_plan(additional_investment)
+            
+            if not plan_result['success']:
+                raise Exception(f"Failed to calculate rebalancing plan: {plan_result.get('message', 'Unknown error')}")
+            
+            plan = plan_result['data']
+            
+            # Load existing orders
+            existing_orders = self._load_system_orders()
+            new_orders = []
+            order_id = self._get_next_order_id()
+            execution_time = datetime.now().isoformat()
+            
+            # Add sell orders first
+            for sell_order in plan['sell_orders']:
+                order = {
+                    "order_id": order_id,
+                    "symbol": sell_order['symbol'],
+                    "action": "SELL",
+                    "shares": sell_order['shares'],
+                    "price": sell_order['price'],
+                    "value": sell_order['value'],
+                    "execution_time": execution_time,
+                    "session_type": "REBALANCING",
+                    "order_type": "REBALANCING_SELL",
+                    "reason": sell_order.get('reason', 'Portfolio rebalancing'),
+                    "status": "EXECUTED_SYSTEM"
+                }
+                new_orders.append(order)
+                order_id += 1
+                print(f"   SELL {sell_order['shares']} {sell_order['symbol']} @ Rs.{sell_order['price']:.2f} - {sell_order.get('reason', '')}")
+            
+            # Add buy orders
+            for buy_order in plan['buy_orders']:
+                order = {
+                    "order_id": order_id,
+                    "symbol": buy_order['symbol'],
+                    "action": "BUY",
+                    "shares": buy_order['shares'],
+                    "price": buy_order['price'],
+                    "value": buy_order['value'],
+                    "execution_time": execution_time,
+                    "session_type": "REBALANCING",
+                    "order_type": "REBALANCING_BUY",
+                    "reason": buy_order.get('reason', 'Portfolio rebalancing'),
+                    "status": "EXECUTED_SYSTEM"
+                }
+                new_orders.append(order)
+                order_id += 1
+                print(f"   BUY {buy_order['shares']} {buy_order['symbol']} @ Rs.{buy_order['price']:.2f} - {buy_order.get('reason', '')}")
+            
+            # Save new orders
+            self._save_system_orders(new_orders)
+            
+            # Update portfolio state with all orders (existing + new)
+            all_orders = existing_orders + new_orders
+            
+            # Get current CSV info for portfolio state update
+            csv_data = self.csv_service.fetch_csv_data(force_refresh=False)
+            csv_info = {
+                'fetch_time': csv_data['fetch_time'],
+                'csv_hash': csv_data['csv_hash'],
+                'source_url': csv_data['source_url'],
+                'total_symbols': len(csv_data['symbols'])
+            }
+            
+            # Update portfolio state
+            self._update_portfolio_state_from_all_orders(all_orders, csv_info)
+            
+            # Update CSV history
+            self._update_csv_history(csv_info)
+            
+            result = {
+                "execution_successful": True,
+                "orders_executed": len(new_orders),
+                "buy_orders": len(plan['buy_orders']),
+                "sell_orders": len(plan['sell_orders']),
+                "total_buy_value": plan['plan_summary']['total_buy_value'],
+                "total_sell_value": plan['plan_summary']['total_sell_value'],
+                "net_investment": plan['plan_summary']['net_investment_needed'],
+                "additional_investment_used": additional_investment,
+                "execution_time": execution_time,
+                "new_portfolio_stocks": plan['plan_summary']['total_stocks'],
+                "portfolio_comparison_status": plan['plan_summary']['portfolio_comparison_status'],
+                "target_portfolio_value": plan['plan_summary']['target_portfolio_value'],
+                "remaining_cash": plan['plan_summary']['remaining_cash'],
+                "data_quality": plan.get('data_quality', 'Unknown')
+            }
+            
+            print(f"[SUCCESS] Rebalancing executed successfully!")
+            print(f"   New orders executed: {result['orders_executed']}")
+            print(f"   Buy orders: {result['buy_orders']}, Sell orders: {result['sell_orders']}")
+            print(f"   Additional investment: Rs.{additional_investment:,.0f}")
+            print(f"   New portfolio stocks: {result['new_portfolio_stocks']}")
+            print(f"   Portfolio comparison status: {result['portfolio_comparison_status']}")
+            print(f"   Target portfolio value: Rs.{result['target_portfolio_value']:,.0f}")
+            print(f"   Remaining cash: Rs.{result['remaining_cash']:,.0f}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"[ERROR] Error executing rebalancing: {e}")
+            raise Exception(f"Cannot execute rebalancing: {str(e)}")

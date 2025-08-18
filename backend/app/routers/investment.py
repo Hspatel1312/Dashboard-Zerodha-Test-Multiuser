@@ -21,6 +21,26 @@ class InvestmentRequest(BaseModel):
 class RebalancingRequest(BaseModel):
     additional_investment: float = 0.0
 
+@router.get("/status")
+async def get_investment_status():
+    """Get current investment status - determines if first investment or rebalancing needed"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        status = investment_service.get_investment_status()
+        return {
+            "success": True,
+            "data": status
+        }
+    except Exception as e:
+        print(f"[ERROR] Investment status error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to get investment status: {str(e)}"
+        )
+
 @router.get("/requirements")
 async def get_investment_requirements():
     """Get investment requirements for initial setup"""
@@ -34,8 +54,8 @@ async def get_investment_requirements():
             "data": requirements
         }
     except Exception as e:
-        print(f"❌ Investment requirements error: {e}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f"[ERROR] Investment requirements error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500, 
             detail=f"Failed to get investment requirements: {str(e)}"
@@ -55,8 +75,8 @@ async def calculate_investment_plan(request: InvestmentRequest):
         }
     except Exception as e:
         error_msg = str(e)
-        print(f"❌ Investment plan calculation error: {error_msg}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f"[ERROR] Investment plan calculation error: {error_msg}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=400 if "below minimum" in error_msg else 500,
             detail=error_msg
@@ -81,8 +101,8 @@ async def execute_initial_investment(request: InvestmentRequest):
         }
     except Exception as e:
         error_msg = str(e)
-        print(f"❌ Initial investment execution error: {error_msg}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f"[ERROR] Initial investment execution error: {error_msg}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=400 if "below minimum" in error_msg else 500,
             detail=error_msg
@@ -101,8 +121,8 @@ async def check_rebalancing_needed():
             "data": result
         }
     except Exception as e:
-        print(f"❌ Rebalancing check error: {e}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f"[ERROR] Rebalancing check error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to check rebalancing: {str(e)}"
@@ -121,8 +141,8 @@ async def get_portfolio_status():
             "data": status
         }
     except Exception as e:
-        print(f"❌ Portfolio status error: {e}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f"[ERROR] Portfolio status error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get portfolio status: {str(e)}"
@@ -141,8 +161,8 @@ async def get_csv_stocks():
             "data": stocks_data
         }
     except Exception as e:
-        print(f"❌ CSV stocks error: {e}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f"[ERROR] CSV stocks error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get CSV stocks: {str(e)}"
@@ -164,11 +184,41 @@ async def get_system_orders():
             }
         }
     except Exception as e:
-        print(f"❌ System orders error: {e}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f"[ERROR] System orders error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get system orders: {str(e)}"
+        )
+
+@router.post("/reset-orders")
+async def reset_system_orders():
+    """Reset all system orders (for testing purposes)"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        # Clear orders file
+        import os
+        orders_file = "system_orders.json"
+        if os.path.exists(orders_file):
+            with open(orders_file, 'w') as f:
+                import json
+                json.dump([], f)
+        
+        print("[INFO] System orders have been reset")
+        
+        return {
+            "success": True,
+            "message": "All system orders have been reset",
+            "orders_count": 0
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to reset system orders: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to reset system orders: {str(e)}"
         )
 
 @router.get("/csv-status")
@@ -192,7 +242,7 @@ async def get_csv_tracking_status():
                 with open(investment_service.csv_history_file, 'r') as f:
                     csv_history = json.load(f)[-5:]  # Last 5 entries
         except Exception as history_error:
-            print(f"⚠️ Could not load CSV history: {history_error}")
+            print(f"[WARNING] Could not load CSV history: {history_error}")
         
         # Get connection status
         connection_status = csv_service.get_connection_status()
@@ -218,7 +268,7 @@ async def get_csv_tracking_status():
             }
         }
     except Exception as e:
-        print(f"❌ CSV status error: {e}")
+        print(f"[ERROR] CSV status error: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get CSV status: {str(e)}"
@@ -237,7 +287,7 @@ async def force_csv_refresh():
         old_cached_data = csv_service._get_cached_csv()
         old_hash = old_cached_data['csv_hash'] if old_cached_data else None
         
-        print(f"🔄 Force refreshing CSV data (current hash: {old_hash})")
+        print(f"[INFO] Force refreshing CSV data (current hash: {old_hash})")
         
         # Force refresh CSV data
         new_data = csv_service.fetch_csv_data(force_refresh=True)
@@ -246,7 +296,7 @@ async def force_csv_refresh():
         # Check if CSV changed
         csv_changed = old_hash != new_hash
         
-        print(f"📊 CSV refresh complete:")
+        print(f"[INFO] CSV refresh complete:")
         print(f"   Old hash: {old_hash}")
         print(f"   New hash: {new_hash}")
         print(f"   Changed: {csv_changed}")
@@ -256,7 +306,7 @@ async def force_csv_refresh():
         portfolio_impact = None
         
         if csv_changed:
-            print(f"🔄 CSV changed, checking rebalancing requirements...")
+            print(f"[INFO] CSV changed, checking rebalancing requirements...")
             rebalancing_check = investment_service.check_rebalancing_needed()
             
             # Get portfolio status to show impact
@@ -271,14 +321,14 @@ async def force_csv_refresh():
                 else:
                     portfolio_impact = {"has_active_portfolio": False}
             except Exception as portfolio_error:
-                print(f"⚠️ Could not get portfolio impact: {portfolio_error}")
+                print(f"[WARNING] Could not get portfolio impact: {portfolio_error}")
                 portfolio_impact = {"has_active_portfolio": False, "error": str(portfolio_error)}
         
         # Update CSV history
         try:
             investment_service._update_csv_history(new_data)
         except Exception as history_error:
-            print(f"⚠️ Could not update CSV history: {history_error}")
+            print(f"[WARNING] Could not update CSV history: {history_error}")
         
         return {
             "success": True,
@@ -302,8 +352,8 @@ async def force_csv_refresh():
             }
         }
     except Exception as e:
-        print(f"❌ Force CSV refresh error: {e}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f"[ERROR] Force CSV refresh error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to refresh CSV: {str(e)}"
@@ -314,32 +364,57 @@ def get_next_steps(csv_changed: bool, rebalancing_check: dict, portfolio_impact:
     steps = []
     
     if not csv_changed:
-        steps.append("✅ No changes detected - portfolio remains aligned")
+        steps.append("[SUCCESS] No changes detected - portfolio remains aligned")
         return steps
     
     if not portfolio_impact or not portfolio_impact.get("has_active_portfolio"):
-        steps.append("📋 CSV updated but no active portfolio found")
-        steps.append("💰 Consider starting with Initial Investment")
+        steps.append("[INFO] CSV updated but no active portfolio found")
+        steps.append("[INFO] Consider starting with Initial Investment")
         return steps
     
     if rebalancing_check and rebalancing_check.get("rebalancing_needed"):
-        steps.append("⚖️ Rebalancing needed due to CSV changes")
+        steps.append("[INFO] Rebalancing needed due to CSV changes")
         
         new_stocks = rebalancing_check.get("new_stocks", [])
         removed_stocks = rebalancing_check.get("removed_stocks", [])
         
         if new_stocks:
-            steps.append(f"📈 New stocks to add: {', '.join(new_stocks[:3])}{'...' if len(new_stocks) > 3 else ''}")
+            steps.append(f"[SUCCESS] New stocks to add: {', '.join(new_stocks[:3])}{'...' if len(new_stocks) > 3 else ''}")
         
         if removed_stocks:
-            steps.append(f"📉 Stocks to remove: {', '.join(removed_stocks[:3])}{'...' if len(removed_stocks) > 3 else ''}")
+            steps.append(f"[WARNING] Stocks to remove: {', '.join(removed_stocks[:3])}{'...' if len(removed_stocks) > 3 else ''}")
         
-        steps.append("🚀 Go to Rebalancing page to review and execute")
+        steps.append("[INFO] Go to Rebalancing page to review and execute")
     else:
-        steps.append("✅ CSV updated but no rebalancing needed")
-        steps.append("📊 Portfolio remains well-aligned")
+        steps.append("[SUCCESS] CSV updated but no rebalancing needed")
+        steps.append("[INFO] Portfolio remains well-aligned")
     
     return steps
+
+@router.post("/calculate-rebalancing")
+async def calculate_rebalancing(request: RebalancingRequest):
+    """Calculate rebalancing plan with optional additional investment"""
+    try:
+        print(f"[DEBUG] Received rebalancing request: {request}")
+        print(f"[DEBUG] Additional investment: {request.additional_investment}")
+        
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        rebalancing_plan = investment_service.calculate_rebalancing_plan(
+            additional_investment=request.additional_investment
+        )
+        return {
+            "success": True,
+            "data": rebalancing_plan
+        }
+    except Exception as e:
+        print(f"[ERROR] Rebalancing calculation error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to calculate rebalancing: {str(e)}"
+        )
 
 @router.post("/execute-rebalancing")
 async def execute_rebalancing(request: RebalancingRequest):
@@ -348,39 +423,80 @@ async def execute_rebalancing(request: RebalancingRequest):
         if not investment_service:
             raise HTTPException(status_code=500, detail="Investment service not initialized")
         
-        # First check if rebalancing is needed
-        rebalancing_check = investment_service.check_rebalancing_needed()
-        
-        if not rebalancing_check.get("rebalancing_needed", False):
-            return {
-                "success": False,
-                "message": "No rebalancing needed",
-                "reason": rebalancing_check.get("reason", "Portfolio is aligned")
-            }
-        
-        # This is a placeholder for actual rebalancing execution
-        # In a real implementation, this would:
-        # 1. Calculate new optimal allocation
-        # 2. Generate buy/sell orders
-        # 3. Execute orders through Zerodha API
-        # 4. Update portfolio state
-        
+        result = investment_service.execute_rebalancing(
+            additional_investment=request.additional_investment
+        )
         return {
             "success": True,
-            "message": "Rebalancing execution not yet implemented",
-            "data": {
-                "rebalancing_check": rebalancing_check,
-                "additional_investment": request.additional_investment,
-                "status": "PENDING_IMPLEMENTATION"
-            }
+            "data": result
         }
         
     except Exception as e:
-        print(f"❌ Rebalancing execution error: {e}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f"[ERROR] Rebalancing execution error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to execute rebalancing: {str(e)}"
+        )
+
+@router.get("/portfolio-comparison")
+async def get_portfolio_comparison():
+    """Compare dashboard portfolio with live Zerodha portfolio"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        comparison_result = investment_service.portfolio_comparison.compare_portfolios()
+        return {
+            "success": True,
+            "data": comparison_result
+        }
+    except Exception as e:
+        print(f"[ERROR] Portfolio comparison error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to compare portfolios: {str(e)}"
+        )
+
+@router.get("/rebalancing-portfolio-value")
+async def get_rebalancing_portfolio_value():
+    """Get portfolio value to use for rebalancing (considering Zerodha vs dashboard differences)"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        value_info = investment_service.portfolio_comparison.get_rebalancing_portfolio_value()
+        return {
+            "success": True,
+            "data": value_info
+        }
+    except Exception as e:
+        print(f"[ERROR] Rebalancing portfolio value error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get rebalancing portfolio value: {str(e)}"
+        )
+
+@router.get("/zerodha-portfolio")
+async def get_zerodha_portfolio():
+    """Get live Zerodha portfolio data"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        zerodha_data = investment_service.portfolio_service.get_portfolio_data()
+        return {
+            "success": True,
+            "data": zerodha_data
+        }
+    except Exception as e:
+        print(f"[ERROR] Zerodha portfolio error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get Zerodha portfolio: {str(e)}"
         )
 
 # Health check for this router
@@ -392,15 +508,16 @@ async def investment_router_health():
         "status": "active",
         "service_available": bool(investment_service),
         "endpoints": [
+            "GET /status",
             "GET /requirements",
             "POST /calculate-plan", 
             "POST /execute-initial",
-            "GET /rebalancing-check",
+            "POST /calculate-rebalancing (with additional_investment)",
+            "POST /execute-rebalancing (with additional_investment)",
             "GET /portfolio-status",
-            "GET /csv-stocks",
-            "GET /system-orders",
-            "GET /csv-status",
-            "POST /force-csv-refresh",
-            "POST /execute-rebalancing"
+            "GET /portfolio-comparison",
+            "GET /rebalancing-portfolio-value",
+            "GET /zerodha-portfolio",
+            "GET /system-orders"
         ]
     }

@@ -1,111 +1,118 @@
 {
   "holdings": {
-    "AIIL": {
-      "shares": 11,
-      "avg_price": 395.95,
-      "total_investment": 4355.45
-    },
-    "LAURUSLABS": {
-      "shares": 20,
-      "avg_price": 213.13,
-      "total_investment": 4262.6
-    },
-    "MCX": {
-      "shares": 2,
-      "avg_price": 2458.58,
-      "total_investment": 4917.16
-    },
-    "KIMS": {
-      "shares": 2,
-      "avg_price": 2872.72,
-      "total_investment": 5745.44
-    },
     "ASTERDM": {
-      "shares": 2,
-      "avg_price": 2048.48,
-      "total_investment": 4096.96
+      "shares": 368,
+      "avg_price": 600.35,
+      "total_investment": 220928.8
     },
     "NH": {
-      "shares": 5,
-      "avg_price": 864.64,
-      "total_investment": 4323.2
+      "shares": 122,
+      "avg_price": 1807.5,
+      "total_investment": 220515.0
     },
     "WOCKPHARMA": {
-      "shares": 3,
-      "avg_price": 1623.23,
-      "total_investment": 4869.6900000000005
+      "shares": 143,
+      "avg_price": 1545.6,
+      "total_investment": 221020.8
     },
     "RADICO": {
-      "shares": 2,
-      "avg_price": 2775.75,
-      "total_investment": 5551.5
+      "shares": 76,
+      "avg_price": 2887.1,
+      "total_investment": 219419.6
     },
     "GODFRYPHLP": {
-      "shares": 2,
-      "avg_price": 1920.2,
-      "total_investment": 3840.4
+      "shares": 22,
+      "avg_price": 9874.5,
+      "total_investment": 217239.0
     },
     "RAMCOCEM": {
-      "shares": 3,
-      "avg_price": 1509.09,
-      "total_investment": 4527.2699999999995
+      "shares": 190,
+      "avg_price": 1161.1,
+      "total_investment": 220609.0
     },
     "ERIS": {
-      "shares": 7,
-      "avg_price": 630.3,
-      "total_investment": 4412.099999999999
+      "shares": 122,
+      "avg_price": 1808.1,
+      "total_investment": 220588.19999999998
     },
     "AMBER": {
-      "shares": 2,
-      "avg_price": 2035.35,
-      "total_investment": 4070.7
-    },
-    "JMFINANCIL": {
-      "shares": 21,
-      "avg_price": 209.59,
-      "total_investment": 4401.39
+      "shares": 28,
+      "avg_price": 7891.5,
+      "total_investment": 220962.0
     },
     "SARDAEN": {
-      "shares": 5,
-      "avg_price": 775.25,
-      "total_investment": 3876.25
+      "shares": 409,
+      "avg_price": 540.3,
+      "total_investment": 220982.69999999998
     },
     "PGEL": {
-      "shares": 2,
-      "avg_price": 2946.46,
-      "total_investment": 5892.92
-    },
-    "CEATLTD": {
-      "shares": 2,
-      "avg_price": 2159.59,
-      "total_investment": 4319.18
+      "shares": 279,
+      "avg_price": 790.9,
+      "total_investment": 220661.1
     },
     "DEEPAKFERT": {
-      "shares": 2,
-      "avg_price": 2686.86,
-      "total_investment": 5373.72
+      "shares": 143,
+      "avg_price": 1548.4,
+      "total_investment": 221421.2
     },
     "EIDPARRY": {
-      "shares": 3,
-      "avg_price": 1545.45,
-      "total_investment": 4636.35
+      "shares": 185,
+      "avg_price": 1195.5,
+      "total_investment": 221167.5
     },
     "LTFOODS": {
-      "shares": 3,
-      "avg_price": 1764.64,
-      "total_investment": 5293.92
+      "shares": 466,
+      "avg_price": 474.34999999999997,
+      "total_investment": 221047.09999999998
     },
     "ECLERX": {
-      "shares": 3,
-      "avg_price": 1386.86,
-      "total_investment": 4160.58
+      "shares": 55,
+      "avg_price": 3977.1,
+      "total_investment": 218740.5
+    },
+    "JSWHL": {
+      "shares": 12,
+      "avg_price": 19037.0,
+      "total_investment": 228444.0
+    },
+    "AIIL": {
+      "shares": 76,
+      "avg_price": 2876.2,
+      "total_investment": 218591.19999999998
+    },
+    "LAURUSLABS": {
+      "shares": 258,
+      "avg_price": 857.5,
+      "total_investment": 221235.0
+    },
+    "KIMS": {
+      "shares": 298,
+      "avg_price": 740.6500000000001,
+      "total_investment": 220713.7
+    },
+    "MCX": {
+      "shares": 28,
+      "avg_price": 7877.0,
+      "total_investment": 220556.0
+    },
+    "ANANDRATHI": {
+      "shares": 83,
+      "avg_price": 2637.7,
+      "total_investment": 218929.09999999998
     }
   },
-  "last_updated": "2025-07-21T16:00:42.709441",
+  "last_updated": "2025-08-05T19:28:29.485336",
   "csv_info": {
-    "fetch_time": "2025-07-21T16:00:42.080016",
-    "csv_hash": "4e58c23c",
-    "source_url": "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv"
+    "fetch_time": "2025-08-05T19:23:34.910754",
+    "csv_hash": "eb8c183d",
+    "source_url": "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv",
+    "total_symbols": 20
   },
-  "type": "INITIAL_INVESTMENT"
+  "type": "REBALANCED_PORTFOLIO",
+  "total_orders_processed": 78,
+  "construction_summary": {
+    "total_cash_outflow": 4413771.5,
+    "first_order_date": "2025-08-05T19:08:36.306021",
+    "last_order_date": "2025-08-05T19:28:22.980830"
+  }
 }
