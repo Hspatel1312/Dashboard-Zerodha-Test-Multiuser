@@ -6,31 +6,34 @@ A modern investment rebalancing dashboard with Apple/Tesla-inspired design and a
 
 ### 1. Start Python Backend
 ```bash
-START-PYTHON-BACKEND.bat
+cd backend && python start_server.py
 ```
 Or manually:
 ```bash
 cd backend
-python -c "import uvicorn; uvicorn.run('app.main:app', host='127.0.0.1', port=8000, reload=True)"
+python -c "import uvicorn; uvicorn.run('app.main:app', host='127.0.0.1', port=8001, log_level='info')"
 ```
 
-### 2. Start Java Frontend
-**Double-click `START-DASHBOARD.bat`** or run:
+### 2. Start React Frontend (Development)
 ```bash
-cd frontend-java
-.\mvnw.cmd spring-boot:run -Dskip.npm=true
+cd frontend-java/src/main/frontend
+npm start
 ```
 
 ### 3. Open Dashboard
-http://localhost:8080
+- **Frontend (Development):** http://localhost:3000
+- **Backend API:** http://localhost:8001
 
 ## 🎯 Key Features
 
 - ✨ **Premium Dark UI** - Apple/Tesla inspired design
 - 🥇 **GOLDBEES Integration** - Automatic 50% gold allocation when GOLDBEES ETF is present
 - 🔐 **Zerodha Integration** - Manual & automatic authentication flows  
+- 💰 **Live Trading** - Real-time order execution on Zerodha (no paper trading)
 - 📊 **Dynamic Portfolio Allocation** - Smart allocation based on stock composition
-- 🔄 **Order Retry System** - Individual and batch retry for failed orders
+- 🔄 **Live Order Tracking** - Real-time monitoring with Zerodha Order IDs
+- 📈 **Live Price Changes** - Real day changes from Zerodha API
+- 🔁 **Order Retry System** - Individual and batch retry for failed orders
 - 📱 **Responsive Design** - Works on all devices
 - ⚡ **Fast Performance** - Optimized for speed
 - 🎯 **Smart Rebalancing** - Only triggers on stock list changes, not drift
@@ -158,9 +161,10 @@ The dashboard features:
 - Make sure "Add to PATH" is checked during installation
 
 **Backend connection issues?**
-- Ensure Python backend is running on port 8000 (not 8001)
-- Check http://localhost:8000 shows API response
-- Check http://localhost:8000/api/investment/status for health
+- ✅ System is now working properly
+- Ensure Python backend is running on port 8001
+- Check http://localhost:8001 shows API response
+- Check http://localhost:8001/api/investment/status for health
 
 **GOLDBEES not showing?**
 - Ensure GOLDBEES is present in your CSV stock list
@@ -178,8 +182,9 @@ The dashboard features:
 
 ## 📞 Support
 
-- Check that both Python (port 8000) and Java (port 8080) services are running
-- Use `START-DASHBOARD.bat` for the simplest startup experience
+- ✅ **System Status: WORKING** - All components operational
+- Check that both Python (port 8001) and React (port 3000) services are running
+- Use separate terminal windows for backend and frontend startup
 - The dashboard will guide you through Zerodha authentication
 - GOLDBEES support is automatic when present in stock data
 
@@ -279,44 +284,45 @@ The dashboard features:
 📁 Backend (Python FastAPI): backend\
    ├── Port: 8001
    ├── Entry: start_server.py
+   ├── Live Trading: All orders execute on Zerodha
    └── Dependencies: All installed globally
 
-📁 Frontend (Java Spring Boot + React): frontend-java\
-   ├── Port: 8080  
-   ├── Maven: mvnw.cmd (wrapper works)
-   ├── React: Pre-built in src\main\frontend\build\
-   └── Entry: InvestmentDashboardApplication.java
+📁 Frontend (React Development): frontend-java/src/main/frontend\
+   ├── Port: 3000 (Development Server)
+   ├── Live Updates: Hot module replacement
+   ├── React: npm start development mode
+   └── Proxy: Routes API calls to backend:8001
 ```
 
 **Startup Commands:**
-- **Complete Dashboard:** `START-DASHBOARD.bat`
-- **Backend Only:** `START-PYTHON-BACKEND.bat`
-- **Manual Maven:** `cd frontend-java && mvnw.cmd spring-boot:run`
+- **Backend:** `cd backend && python start_server.py`
+- **Frontend:** `cd frontend-java/src/main/frontend && npm start`
+- **Complete System:** Start both backend and frontend separately
 
 **Known Working Configurations:**
-- Backend runs on port 8000 (corrected from 8001)
+- Backend runs on port 8001 with live trading integration
+- Frontend runs on port 3000 with hot reload
 - GOLDBEES ETF integration fully working
-- React dependencies fixed (use-gesture → @use-gesture/react)
-- Portfolio icon fixed (Portfolio → AccountBalance)
-- All missing React components created
-- Maven wrapper properly configured
+- Live order execution with Zerodha API
+- Real-time price changes from Zerodha
+- Consolidated order management interface
 - NaN value handling implemented for ETF data
 - Authentication supports both manual and automatic flows
-- Disk space requirements: ~3GB for full build
 
 **Troubleshooting:**
-- If npm install hangs: Use `-Dskip.npm=true` flag
-- If React build fails: Dependencies are pre-installed
-- If Maven wrapper fails: Use system Maven or run directly
-- If ports conflict: Backend must be on 8000, frontend on 8080
+- If backend fails: Check Zerodha authentication and variety parameter
+- If frontend fails: Run `npm install` in frontend directory
+- If orders fail: Ensure "variety": "regular" parameter in Zerodha API calls
+- If monitoring fails: Restart backend server to pick up code changes
 
 ### **Working URLs:**
-- **Dashboard:** http://localhost:8080
-- **Backend API:** http://127.0.0.1:8000
-- **API Docs:** http://127.0.0.1:8000/docs
-- **Health Check:** http://127.0.0.1:8000/health
-- **Investment Status:** http://127.0.0.1:8000/api/investment/status
-- **CSV Stocks (with GOLDBEES):** http://127.0.0.1:8000/api/investment/csv-stocks
+- **Dashboard (Development):** http://localhost:3000
+- **Backend API:** http://127.0.0.1:8001
+- **API Docs:** http://127.0.0.1:8001/docs
+- **Health Check:** http://127.0.0.1:8001/health
+- **Investment Status:** http://127.0.0.1:8001/api/investment/status
+- **Live Orders:** http://127.0.0.1:8001/api/investment/live-orders
+- **CSV Stocks (with GOLDBEES):** http://127.0.0.1:8001/api/investment/csv-stocks
 
 ## 🔄 **Order Retry System**
 
@@ -351,7 +357,61 @@ The dashboard features:
 - **Multiple Failure Types** - Network timeout, insufficient funds, market closed
 - **Production Ready** - Failure simulation disabled in production builds
 
+## 🚀 **MAJOR UPDATE: Live Trading Integration (Latest)**
+
+### **💰 Live Order Execution on Zerodha:**
+```
+🔴 BREAKING CHANGE: No More Paper Trading!
+├── ALL ORDERS NOW EXECUTE LIVE ON ZERODHA
+├── Real-time order tracking with Zerodha Order IDs
+├── Live price changes from Zerodha API (no more 0.00%)
+└── Consolidated order management in single interface
+```
+
+### **📊 Enhanced Orders Page:**
+- **Real-time Execution Status** - COMPLETE, OPEN, LIVE_PLACED, FAILED
+- **Live Price Tracking** - Target Price vs Executed Price comparison
+- **Fill Monitoring** - Shows partial fills (e.g., 3/5 shares filled)
+- **Zerodha Order IDs** - Direct tracking with Zerodha's system
+- **Status Updates** - Manual refresh and auto-monitoring every 10 seconds
+- **Retry Failed Orders** - One-click retry for failed executions
+
+### **🎯 Stocks Page Improvements:**
+- **Live Price Changes** - Real day changes from Zerodha (no longer 0.00%)
+- **Percentage Changes** - Actual market movement tracking
+- **OHLC Data** - Open, High, Low, Close pricing information
+- **Real-time Updates** - Auto-refresh from Zerodha quote API
+
+### **🔄 Consolidated User Experience:**
+```
+OLD WORKFLOW (Confusing):
+Orders Page → Paper trading simulation
+Live Orders Page → Real Zerodha tracking
+Two separate interfaces, confusing data flow
+
+NEW WORKFLOW (Streamlined):
+Orders Page → Complete live execution management
+├── Investment decisions + Live execution status
+├── Real-time monitoring and updates
+├── Retry functionality and error handling
+└── Single source of truth for all orders
+```
+
 ### **🔧 Key Implementation Details:**
+
+**Live Trading Architecture:**
+- **Default Execution:** All orders now execute live on Zerodha by default
+- **Background Monitoring:** Auto-tracks order status every 10 seconds
+- **Order Variety:** Uses "regular" variety for standard market orders
+- **Product Type:** CNC (Cash and Carry) for delivery-based trading
+- **Order Types:** MARKET orders with LIMIT order support
+- **Validity:** DAY orders with automatic monitoring until completion
+
+**Enhanced Data Flow:**
+- **Live Price Integration:** Stocks page shows real price changes from Zerodha
+- **Combined Order View:** System orders merged with live execution details
+- **Status Synchronization:** Real-time updates between system and Zerodha
+- **Error Handling:** Comprehensive failure tracking and retry mechanisms
 
 **Authentication Flow:**
 - Manual authentication via callback: `http://localhost:8000/auth/callback`
@@ -367,14 +427,17 @@ The dashboard features:
 - **Rebalancing trigger:** ONLY stock list changes (add/remove stocks), NOT allocation drift
 - **Status logic:** Portfolio is BALANCED if stock symbols match CSV, regardless of allocations
 
-**Order Execution & Retry Logic:**
-- **PAPER Trading:** All orders succeed by default (simulation)
-- **LIVE Trading:** Ready for Zerodha API integration with real failure handling
+**Live Order Execution & Tracking:**
+- **LIVE Trading:** ALL orders execute directly on Zerodha (no more paper trading)
+- **Order Tracking:** Real-time status updates with Zerodha Order IDs
+- **Execution Details:** Filled quantities, average prices, execution timestamps
+- **Status Monitoring:** PLACED → OPEN → COMPLETE/CANCELLED/REJECTED
 - **Retry Mechanism:** Updates existing orders instead of creating duplicates
-- **Failure Tracking:** Comprehensive retry count, timestamps, and failure reasons
-- **Smart Updates:** Uses `_update_system_orders()` to prevent duplicate orders
+- **Failure Handling:** Comprehensive error tracking and automatic retry options
 
-**Data Processing:**
-- NaN handling: GOLDBEES ETF data cleaned (momentum=0, volatility=0, score=0)
-- Live prices: All stocks including GOLDBEES fetched via Zerodha API
-- JSON serialization: NaN → null conversion for proper API responses
+**Real-time Data Processing:**
+- **Live Prices:** Real-time stock prices with day changes from Zerodha
+- **Price Changes:** Actual market movement calculation (net_change + OHLC)
+- **Status Updates:** Live order status synchronization every 10 seconds
+- **NaN handling:** GOLDBEES ETF data cleaned (momentum=0, volatility=0, score=0)
+- **JSON serialization:** NaN → null conversion for proper API responses

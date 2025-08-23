@@ -59,6 +59,14 @@ const api = {
   getFailedOrders: () => axios.get('/investment/failed-orders').then(res => res.data),
   retryFailedOrders: (orderIds = null) => 
     axios.post('/investment/retry-orders', { order_ids: orderIds }).then(res => res.data),
+
+  // Live orders endpoints
+  getLiveOrders: () => axios.get('/investment/live-orders').then(res => res.data),
+  getLiveOrderStatus: (orderId) => axios.get(`/investment/live-orders/${orderId}/status`).then(res => res.data),
+  updateLiveOrderStatus: (orderId) => axios.post(`/investment/live-orders/${orderId}/update`).then(res => res.data),
+  startLiveMonitoring: () => axios.post('/investment/live-orders/start-monitoring').then(res => res.data),
+  stopLiveMonitoring: () => axios.post('/investment/live-orders/stop-monitoring').then(res => res.data),
+  executeLiveOrders: (data) => axios.post('/investment/execute-live-orders', data).then(res => res.data),
 };
 
 // Custom hooks for queries
@@ -395,6 +403,141 @@ export const useRetryFailedOrdersMutation = () => {
     onError: (error) => {
       console.error('Retry orders error:', error);
       toast.error('Failed to retry orders');
+    },
+  });
+};
+
+// Live Orders hooks
+export const useLiveOrders = () => {
+  return useQuery(
+    'liveOrders',
+    api.getLiveOrders,
+    {
+      refetchInterval: 10000, // Refetch every 10 seconds
+      staleTime: 5000, // Consider stale after 5 seconds
+      retry: 1,
+      onError: (error) => {
+        console.error('Live orders fetch failed:', error);
+      },
+    }
+  );
+};
+
+export const useMonitoringStatus = () => {
+  return useQuery(
+    'monitoringStatus',
+    () => axios.get('/investment/monitoring-status'),
+    {
+      refetchInterval: 30000, // Refetch every 30 seconds
+      staleTime: 10000, // Consider stale after 10 seconds
+      retry: 1,
+      onError: (error) => {
+        console.error('Monitoring status fetch failed:', error);
+      },
+    }
+  );
+};
+
+export const useExecuteLiveOrdersMutation = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation(api.executeLiveOrders, {
+    onSuccess: (data) => {
+      if (data.success) {
+        const { orders_executed, orders_failed, total_orders } = data.data;
+        
+        if (orders_executed > 0 && orders_failed === 0) {
+          toast.success(`🎉 All ${orders_executed} orders placed successfully!`);
+        } else if (orders_executed > 0 && orders_failed > 0) {
+          toast.success(`✅ ${orders_executed} orders placed, ❌ ${orders_failed} failed`);
+        } else if (orders_failed > 0) {
+          toast.error(`❌ All ${orders_failed} orders failed to place`);
+        } else {
+          toast.info('No orders to execute');
+        }
+        
+        // Invalidate related queries to refresh the UI
+        queryClient.invalidateQueries('liveOrders');
+        queryClient.invalidateQueries('systemOrders');
+        queryClient.invalidateQueries('portfolioStatus');
+      } else {
+        toast.error(data.message || 'Failed to execute live orders');
+      }
+    },
+    onError: (error) => {
+      console.error('Execute live orders error:', error);
+      toast.error('Failed to execute live orders');
+    },
+  });
+};
+
+export const useStartLiveMonitoringMutation = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation(api.startLiveMonitoring, {
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success('📡 Live monitoring started');
+        queryClient.invalidateQueries('liveOrders');
+      } else {
+        toast.error('Failed to start monitoring');
+      }
+    },
+    onError: () => {
+      toast.error('Failed to start monitoring');
+    },
+  });
+};
+
+export const useStopLiveMonitoringMutation = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation(api.stopLiveMonitoring, {
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success('⏹️ Live monitoring stopped');
+        queryClient.invalidateQueries('liveOrders');
+      } else {
+        toast.error('Failed to stop monitoring');
+      }
+    },
+    onError: () => {
+      toast.error('Failed to stop monitoring');
+    },
+  });
+};
+
+export const useUpdateLiveOrderStatusMutation = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation(api.updateLiveOrderStatus, {
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success('Order status updated');
+        queryClient.invalidateQueries('liveOrders');
+      } else {
+        toast.error('Failed to update order status');
+      }
+    },
+    onError: () => {
+      toast.error('Failed to update order status');
+    },
+  });
+};
+
+export const useSyncLiveOrderStatusMutation = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation(() => axios.post('/investment/sync-live-order-status'), {
+    onSuccess: (data) => {
+      if (data?.data?.success) {
+        queryClient.invalidateQueries('systemOrders');
+        queryClient.invalidateQueries('failedOrders');
+        queryClient.invalidateQueries('liveOrders');
+      }
+    },
+    onError: (error) => {
+      console.error('Failed to sync live order status:', error);
     },
   });
 };

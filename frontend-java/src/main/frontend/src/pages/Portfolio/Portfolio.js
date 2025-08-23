@@ -82,7 +82,7 @@ const Portfolio = () => {
 
   const fetchNiftyData = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/test-nifty');
+      const response = await fetch('/api/test-nifty');
       const data = await response.json();
       if (data.success) {
         setNiftyData({
@@ -241,14 +241,14 @@ const Portfolio = () => {
       const amount = parseFloat(investmentAmount);
       const result = await executeInvestmentMutation.mutateAsync(amount);
       if (result?.success) {
-        toast.success('Dummy investment executed successfully!');
+        toast.success('Live investment executed successfully on Zerodha!');
         setInvestmentPlan(null);
         setInvestmentAmount('');
         handleRefresh();
       }
     } catch (error) {
       console.error('Execute investment error:', error);
-      toast.error('Failed to execute dummy investment');
+      toast.error('Failed to execute live investment');
     }
   };
 
@@ -270,13 +270,13 @@ const Portfolio = () => {
       console.log('Execute rebalancing result:', result);
       
       if (result?.success) {
-        toast.success('Dummy rebalancing executed successfully!');
+        toast.success('Live rebalancing executed successfully on Zerodha!');
         setRebalancingPlan(null);
         handleRefresh();
       } else if (result?.data) {
         // Response received but success flag missing - likely still worked
         console.warn('Execute rebalancing completed but success flag unclear:', result);
-        toast.success('Rebalancing executed - check portfolio for updates');
+        toast.success('Live rebalancing executed - check portfolio for updates');
         setRebalancingPlan(null);
         handleRefresh();
       } else {
@@ -294,19 +294,19 @@ const Portfolio = () => {
       
       // Check if it's actually a successful response but with parsing issues
       if (error?.response?.status === 200) {
-        toast.success('Rebalancing executed successfully (despite response parsing issue)');
+        toast.success('Live rebalancing executed successfully (despite response parsing issue)');
         setRebalancingPlan(null);
         handleRefresh();
       } else if (error?.response?.data?.success) {
         // Success in the data but thrown as error
-        toast.success('Rebalancing executed successfully!');
+        toast.success('Live rebalancing executed successfully!');
         setRebalancingPlan(null);
         handleRefresh();
       } else {
         const errorMessage = error?.response?.data?.detail || 
                            error?.response?.data?.message || 
                            error?.message || 
-                           'Failed to execute dummy rebalancing';
+                           'Failed to execute live rebalancing';
         toast.error(`Error: ${errorMessage}`);
       }
     }
@@ -616,8 +616,8 @@ const Portfolio = () => {
                             <Typography variant="h6" sx={{ mb: 2, color: '#007AFF' }}>
                               Trade Details ({(investmentPlan.orders || investmentPlan.allocations || []).length} stocks)
                             </Typography>
-                            <Alert severity="info" sx={{ mb: 2 }}>
-                              These are DUMMY trades for testing purposes only. No real trades will be placed.
+                            <Alert severity="warning" sx={{ mb: 2 }}>
+                              These are LIVE trades that will be executed on Zerodha. Real money will be invested.
                             </Alert>
                             <Box sx={{ maxHeight: 300, overflowY: 'auto', mb: 2 }}>
                               <Grid container spacing={1}>
@@ -672,7 +672,7 @@ const Portfolio = () => {
                                   py: 1.5
                                 }}
                               >
-                                {executeInvestmentMutation.isLoading ? 'Executing...' : 'Execute Dummy Investment'}
+                                {executeInvestmentMutation.isLoading ? 'Executing...' : 'Execute Live Investment'}
                               </Button>
                             </Box>
                           </Paper>
@@ -730,7 +730,7 @@ const Portfolio = () => {
                             background: 'linear-gradient(135deg, #F59E0B 0%, #F97316 100%)',
                           }}
                         >
-                          Execute Dummy Rebalancing
+                          Execute Live Rebalancing
                         </Button>
                       )}
                     </Box>

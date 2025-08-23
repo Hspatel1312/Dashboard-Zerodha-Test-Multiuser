@@ -357,9 +357,6 @@ const Stocks = () => {
                         <TableCell sx={{ color: 'rgba(255, 255, 255, 0.9)', fontWeight: 600 }}>
                           Status
                         </TableCell>
-                        <TableCell sx={{ color: 'rgba(255, 255, 255, 0.9)', fontWeight: 600 }}>
-                          Last Updated
-                        </TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -392,25 +389,30 @@ const Stocks = () => {
                             </Typography>
                           </TableCell>
                           <TableCell align="right">
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
-                              <Avatar
-                                sx={{
-                                  width: 24,
-                                  height: 24,
-                                  background: getPriceChangeColor(stock.price_change),
-                                }}
-                              >
-                                {getPriceChangeIcon(stock.price_change)}
-                              </Avatar>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%' }}>
                               <Typography
                                 variant="body2"
                                 sx={{
                                   color: getPriceChangeColor(stock.price_change),
                                   fontWeight: 500,
+                                  minWidth: '70px',
+                                  textAlign: 'right',
+                                  fontFamily: 'monospace',
+                                  mr: 1,
                                 }}
                               >
                                 {stock.price_change ? stock.price_change.toFixed(2) : '0.00'}
                               </Typography>
+                              <Avatar
+                                sx={{
+                                  width: 24,
+                                  height: 24,
+                                  background: getPriceChangeColor(stock.price_change),
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {getPriceChangeIcon(stock.price_change)}
+                              </Avatar>
                             </Box>
                           </TableCell>
                           <TableCell align="right">
@@ -434,11 +436,6 @@ const Stocks = () => {
                                 border: stock.status === 'error' ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(16, 185, 129, 0.4)',
                               }}
                             />
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
-                              {formatDate(stock.last_updated || stock.timestamp)}
-                            </Typography>
                           </TableCell>
                         </TableRow>
                       ))}

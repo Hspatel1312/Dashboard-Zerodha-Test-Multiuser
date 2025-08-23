@@ -23,6 +23,10 @@ class InvestmentService:
         self.portfolio_service = PortfolioService(zerodha_auth)
         self.portfolio_comparison = PortfolioComparisonService(self.portfolio_service, self)
         
+        # Import live order service
+        from .live_order_service import LiveOrderService
+        self.live_order_service = LiveOrderService(zerodha_auth)
+        
         # File paths for storing system state
         self.orders_file = "system_orders.json"
         self.portfolio_state_file = "system_portfolio_state.json"
@@ -37,6 +41,9 @@ class InvestmentService:
         
         # Ensure directories exist
         self._ensure_directories()
+        
+        # Auto-start monitoring if there are pending orders
+        self._auto_start_monitoring()
     
     def _ensure_directories(self):
         """Ensure all required directories and files exist"""
@@ -47,6 +54,24 @@ class InvestmentService:
                     os.makedirs(directory, exist_ok=True)
         except Exception as e:
             print(f"[WARNING] Warning: Could not create directories: {e}")
+    
+    def _auto_start_monitoring(self):
+        """Auto-start monitoring if there are pending live orders"""
+        try:
+            # Check if there are any pending live orders
+            live_orders = self.live_order_service.get_all_live_orders()
+            pending_orders = [
+                order for order in live_orders 
+                if order.get('status') not in ['COMPLETE', 'REJECTED', 'CANCELLED', 'FAILED_TO_PLACE']
+            ]
+            
+            if pending_orders and not self.live_order_service.monitoring_active:
+                print(f"[INFO] Auto-starting monitoring for {len(pending_orders)} pending orders...")
+                self.live_order_service.start_order_monitoring()
+            elif self.live_order_service.monitoring_active:
+                print(f"[INFO] Monitoring already active")
+        except Exception as e:
+            print(f"[WARNING] Could not auto-start monitoring: {e}")
     
     def get_investment_requirements(self) -> Dict:
         """Get investment requirements for initial setup"""
@@ -259,8 +284,8 @@ class InvestmentService:
                     'session_type': 'INITIAL_INVESTMENT'
                 }
                 
-                # Execute the order (PAPER trading simulation)
-                executed_order = self._execute_single_order(system_order, "PAPER")
+                # Execute the order (LIVE trading on Zerodha)
+                executed_order = self._execute_single_order(system_order, "LIVE")
                 system_orders.append(executed_order)
                 order_id += 1
             
@@ -679,6 +704,65 @@ class InvestmentService:
         except Exception as e:
             print(f"[WARNING] Error loading system orders: {e}")
             return []
+    
+    def sync_live_order_status_to_system_orders(self):
+        """Sync live order execution status back to system orders"""
+        try:
+            print("[INFO] Syncing live order status to system orders...")
+            
+            # Get current system orders
+            system_orders = self._load_system_orders()
+            if not system_orders:
+                print("[INFO] No system orders to sync")
+                return
+            
+            # Get live orders
+            live_orders = self.live_order_service.get_all_live_orders()
+            if not live_orders:
+                print("[INFO] No live orders to sync from")
+                return
+            
+            # Create lookup map for live orders
+            live_order_map = {}
+            for live_order in live_orders:
+                zerodha_id = live_order.get('zerodha_order_id')
+                if zerodha_id:
+                    live_order_map[zerodha_id] = live_order
+            
+            # Update system orders with live status
+            updated_any = False
+            for order in system_orders:
+                zerodha_id = order.get('zerodha_order_id')
+                if zerodha_id and zerodha_id in live_order_map:
+                    live_order = live_order_map[zerodha_id]
+                    live_status = live_order.get('status', '').upper()
+                    
+                    # Update live execution status based on actual Zerodha status
+                    old_live_status = order.get('live_execution_status', '')
+                    if live_status == 'COMPLETE':
+                        order['live_execution_status'] = 'COMPLETE'
+                        order['status'] = 'EXECUTED_LIVE'  # Mark as successfully executed
+                        updated_any = True
+                        print(f"   [INFO] Updated {order['symbol']}: {old_live_status} -> COMPLETE")
+                    elif live_status in ['REJECTED', 'CANCELLED']:
+                        order['live_execution_status'] = 'FAILED'
+                        order['status'] = 'FAILED'  # Mark as failed
+                        order['failure_reason'] = live_order.get('execution_details', {}).get('status_message', f'Order {live_status.lower()} by Zerodha')
+                        updated_any = True
+                        print(f"   [INFO] Updated {order['symbol']}: {old_live_status} -> FAILED ({live_status})")
+                    elif live_status == 'OPEN':
+                        order['live_execution_status'] = 'OPEN'
+                        print(f"   [INFO] {order['symbol']}: Status is OPEN (waiting for execution)")
+            
+            # Save updated orders if any changes were made
+            if updated_any:
+                self._update_system_orders(system_orders)
+                print(f"[SUCCESS] Synced live order status for {len(system_orders)} orders")
+            else:
+                print("[INFO] No status updates needed")
+                
+        except Exception as e:
+            print(f"[ERROR] Error syncing live order status: {e}")
     
     def _update_portfolio_state(self, orders: List[Dict], csv_info: Dict):
         """Update portfolio state based on orders (legacy method for initial investment)"""
@@ -1117,7 +1201,7 @@ class InvestmentService:
             order_id = self._get_next_order_id()
             execution_time = datetime.now().isoformat()
             
-            # Add sell orders first
+            # Add sell orders first and execute them live
             for sell_order in plan['sell_orders']:
                 order = {
                     "order_id": order_id,
@@ -1129,14 +1213,16 @@ class InvestmentService:
                     "execution_time": execution_time,
                     "session_type": "REBALANCING",
                     "order_type": "REBALANCING_SELL",
-                    "reason": sell_order.get('reason', 'Portfolio rebalancing'),
-                    "status": "EXECUTED_SYSTEM"
+                    "reason": sell_order.get('reason', 'Portfolio rebalancing')
                 }
-                new_orders.append(order)
+                
+                # Execute the sell order live
+                executed_order = self._execute_single_order(order, "LIVE")
+                new_orders.append(executed_order)
                 order_id += 1
                 print(f"   SELL {sell_order['shares']} {sell_order['symbol']} @ Rs.{sell_order['price']:.2f} - {sell_order.get('reason', '')}")
             
-            # Add buy orders
+            # Add buy orders and execute them live
             for buy_order in plan['buy_orders']:
                 order = {
                     "order_id": order_id,
@@ -1148,10 +1234,12 @@ class InvestmentService:
                     "execution_time": execution_time,
                     "session_type": "REBALANCING",
                     "order_type": "REBALANCING_BUY",
-                    "reason": buy_order.get('reason', 'Portfolio rebalancing'),
-                    "status": "EXECUTED_SYSTEM"
+                    "reason": buy_order.get('reason', 'Portfolio rebalancing')
                 }
-                new_orders.append(order)
+                
+                # Execute the buy order live
+                executed_order = self._execute_single_order(order, "LIVE")
+                new_orders.append(executed_order)
                 order_id += 1
                 print(f"   BUY {buy_order['shares']} {buy_order['symbol']} @ Rs.{buy_order['price']:.2f} - {buy_order.get('reason', '')}")
             
@@ -1208,29 +1296,48 @@ class InvestmentService:
             print(f"[ERROR] Error executing rebalancing: {e}")
             raise Exception(f"Cannot execute rebalancing: {str(e)}")
     
-    def _execute_single_order(self, order: Dict, order_type: str = "PAPER") -> Dict:
-        """Execute a single order with proper status tracking (for future live trading)"""
+    def _execute_single_order(self, order: Dict, order_type: str = "LIVE") -> Dict:
+        """Execute a single order - now defaults to LIVE trading on Zerodha"""
         try:
             print(f"[INFO] Executing {order_type} order: {order['action']} {order['shares']} {order['symbol']} @ Rs.{order['price']:.2f}")
             
-            # Simulate order execution - will be replaced with actual Zerodha API calls
-            # For PAPER trading: all orders succeed (simulation)
-            # For LIVE trading: this will be replaced with actual Zerodha API calls
-            execution_success = True
-            failure_reason = None
-            
-            # Update order status based on execution result
-            if execution_success:
-                order['status'] = 'EXECUTED_SYSTEM' if order_type == "PAPER" else 'EXECUTED_LIVE'
-                order['execution_time'] = datetime.now().isoformat()
-                print(f"[SUCCESS] Order executed successfully: {order['symbol']}")
+            if order_type == "LIVE":
+                # Execute order live on Zerodha
+                try:
+                    result = self.live_order_service.place_live_order(order)
+                    
+                    if result["success"]:
+                        order['status'] = 'LIVE_PLACED'
+                        order['zerodha_order_id'] = result["zerodha_order_id"]
+                        order['execution_time'] = datetime.now().isoformat()
+                        order['live_execution_status'] = 'PLACED'
+                        print(f"[SUCCESS] Live order placed: {order['symbol']} - Order ID: {result['zerodha_order_id']}")
+                        
+                        # Start monitoring if not already active
+                        if not self.live_order_service.monitoring_active:
+                            self.live_order_service.start_order_monitoring()
+                            
+                    else:
+                        order['status'] = 'FAILED'
+                        order['execution_time'] = datetime.now().isoformat()
+                        order['failure_reason'] = result.get("message", "Live order placement failed")
+                        order['retry_count'] = order.get('retry_count', 0)
+                        order['can_retry'] = True
+                        print(f"[ERROR] Live order failed: {order['symbol']} - {order['failure_reason']}")
+                        
+                except Exception as live_error:
+                    order['status'] = 'FAILED'
+                    order['execution_time'] = datetime.now().isoformat()
+                    order['failure_reason'] = f"Live execution error: {str(live_error)}"
+                    order['retry_count'] = order.get('retry_count', 0)
+                    order['can_retry'] = True
+                    print(f"[ERROR] Live order exception: {order['symbol']} - {live_error}")
+                    
             else:
-                order['status'] = 'FAILED'
+                # Paper trading mode (legacy support)
+                order['status'] = 'EXECUTED_SYSTEM'
                 order['execution_time'] = datetime.now().isoformat()
-                order['failure_reason'] = failure_reason
-                order['retry_count'] = order.get('retry_count', 0)
-                order['can_retry'] = True
-                print(f"[ERROR] Order failed: {order['symbol']} - {failure_reason}")
+                print(f"[SUCCESS] Paper order executed: {order['symbol']}")
             
             return order
             
@@ -1247,10 +1354,12 @@ class InvestmentService:
         """Get all failed orders that can be retried"""
         try:
             orders = self._load_system_orders()
-            failed_orders = [
-                order for order in orders 
-                if order.get('status') == 'FAILED' and order.get('can_retry', True)
-            ]
+            failed_orders = []
+            for order in orders:
+                if order.get('status') == 'FAILED' and order.get('can_retry', True):
+                    # Add can_retry property explicitly
+                    order_with_retry = {**order, 'can_retry': True}
+                    failed_orders.append(order_with_retry)
             
             # Group by session type and reason
             failed_by_session = {}
@@ -1262,11 +1371,11 @@ class InvestmentService:
                 
                 if session not in failed_by_session:
                     failed_by_session[session] = []
-                failed_by_session[session].append(order)
+                failed_by_session[session].append({**order, 'can_retry': True})
                 
                 if reason not in failed_by_reason:
                     failed_by_reason[reason] = []
-                failed_by_reason[reason].append(order)
+                failed_by_reason[reason].append({**order, 'can_retry': True})
             
             return {
                 'success': True,
@@ -1354,9 +1463,9 @@ class InvestmentService:
                     continue
                 
                 # Execute the order
-                retried_order = self._execute_single_order(order, "PAPER")  # Change to "LIVE" for actual trading
+                retried_order = self._execute_single_order(order, "LIVE")
                 
-                if retried_order['status'] in ['EXECUTED_SYSTEM', 'EXECUTED_LIVE']:
+                if retried_order['status'] in ['EXECUTED_SYSTEM', 'EXECUTED_LIVE', 'LIVE_PLACED']:
                     successful_retries += 1
                     retry_results.append({
                         'order_id': order['order_id'],

@@ -13,7 +13,7 @@ class PortfolioConstructionService:
     
     def construct_portfolio_from_orders(self, all_orders: List[Dict]) -> Dict:
         """
-        Construct current portfolio state from all orders placed till date
+        Construct current portfolio state from SUCCESSFULLY EXECUTED orders only
         
         Returns:
         {
@@ -38,6 +38,35 @@ class PortfolioConstructionService:
                 'total_orders': 0
             }
         
+        # IMPORTANT: Only consider successfully executed orders for portfolio construction
+        successful_orders = []
+        for order in all_orders:
+            status = order.get('status', '').upper()
+            live_execution_status = order.get('live_execution_status', '').upper()
+            
+            # Include order if it's successfully executed
+            # Check multiple status fields to ensure we catch all success cases
+            if (status in ['EXECUTED_SYSTEM', 'EXECUTED_LIVE', 'COMPLETE'] or 
+                live_execution_status in ['COMPLETE', 'EXECUTED'] or
+                (status == 'LIVE_PLACED' and live_execution_status == 'COMPLETE')):
+                successful_orders.append(order)
+                print(f"   [INFO] Including successful order: {order.get('symbol')} {order.get('action')} - Status: {status}, Live Status: {live_execution_status}")
+            else:
+                print(f"   [WARNING] Excluding failed/pending order: {order.get('symbol')} {order.get('action')} - Status: {status}, Live Status: {live_execution_status}")
+        
+        print(f"   [INFO] Portfolio construction: {len(successful_orders)} successful orders out of {len(all_orders)} total orders")
+        
+        if not successful_orders:
+            print("   [WARNING] No successfully executed orders found")
+            return {
+                'holdings': {},
+                'order_timeline': [],
+                'total_cash_outflow': 0,
+                'first_order_date': None,
+                'last_order_date': None,
+                'total_orders': 0
+            }
+        
         holdings = {}
         order_timeline = []
         total_cash_flow = 0
@@ -45,13 +74,13 @@ class PortfolioConstructionService:
         # Sort orders by execution time with better error handling
         try:
             sorted_orders = sorted(
-                all_orders, 
+                successful_orders, 
                 key=lambda x: self._parse_date_safely(x.get('execution_time', ''))
             )
-            print(f"   [INFO] Processing {len(sorted_orders)} orders...")
+            print(f"   [INFO] Processing {len(sorted_orders)} successful orders...")
         except Exception as e:
             print(f"   [WARNING] Error sorting orders: {e}")
-            sorted_orders = all_orders
+            sorted_orders = successful_orders
         
         # Track order processing statistics
         processed_count = 0

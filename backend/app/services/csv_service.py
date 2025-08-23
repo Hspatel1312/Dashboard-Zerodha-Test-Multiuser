@@ -106,7 +106,7 @@ class CSVService:
                 symbol = str(symbol).strip().upper()
                 
                 # ONLY include stocks with REAL live prices
-                if symbol in prices and prices[symbol] > 0:
+                if symbol in prices and prices[symbol]['price'] > 0:
                     # Helper function to handle NaN values
                     def safe_get_numeric(data, *keys, default=0):
                         for key in keys:
@@ -117,13 +117,19 @@ class CSVService:
                                 return float(value) if value is not None else default
                         return default
                     
+                    price_data = prices[symbol]
                     stock_data = {
                         'symbol': symbol,
-                        'price': prices[symbol],
+                        'price': price_data['price'],
+                        'current_price': price_data['price'],  # Add alias for consistency
+                        'price_change': price_data['change'],
+                        'price_change_percent': price_data['change_percent'],
                         'price_type': 'LIVE',  # Mark as live data
                         'momentum': safe_get_numeric(stock_info, 'Momentum', 'momentum'),
                         'volatility': safe_get_numeric(stock_info, 'Volatility', 'volatility'), 
-                        'score': safe_get_numeric(stock_info, 'Score', 'score')
+                        'score': safe_get_numeric(stock_info, 'Score', 'score'),
+                        'ohlc': price_data.get('ohlc', {}),
+                        'last_updated': datetime.now().isoformat()
                     }
                     
                     # Add any additional fields from CSV (with NaN handling)
@@ -137,7 +143,10 @@ class CSVService:
                     
                     stocks_data.append(stock_data)
                 else:
-                    print(f"   [WARNING] {symbol}: Excluded - no live price data available")
+                    if symbol in prices:
+                        print(f"   [WARNING] {symbol}: Excluded - invalid price data")
+                    else:
+                        print(f"   [WARNING] {symbol}: Excluded - no live price data available")
                     excluded_count += 1
             
             if len(stocks_data) == 0:
@@ -407,15 +416,38 @@ class CSVService:
                 if quote_key in symbol_mapping:
                     original_symbol = symbol_mapping[quote_key]
                     
-                    # Extract price with STRICT validation
+                    # Extract price and change data with STRICT validation
                     last_price = quote_data.get('last_price', 0)
+                    net_change = quote_data.get('net_change', 0)
+                    ohlc = quote_data.get('ohlc', {})
                     
                     # STRICT validation - must be real positive price
                     if isinstance(last_price, (int, float)) and last_price > 0:
                         # Additional validation - reasonable price range
                         if 0.1 <= last_price <= 100000:  # Rs.0.10 to Rs.1,00,000 reasonable range
-                            prices[original_symbol] = float(last_price)
-                            print(f"   [SUCCESS] {original_symbol}: Rs.{last_price:.2f} (LIVE)")
+                            # Calculate change percentage from net_change or ohlc
+                            price_change = net_change if isinstance(net_change, (int, float)) else 0
+                            
+                            # If net_change not available, calculate from ohlc
+                            if price_change == 0 and ohlc:
+                                close_price = ohlc.get('close', 0)
+                                if close_price > 0:
+                                    price_change = last_price - close_price
+                            
+                            # Calculate percentage change
+                            change_percent = 0
+                            if price_change != 0:
+                                base_price = last_price - price_change
+                                if base_price > 0:
+                                    change_percent = (price_change / base_price) * 100
+                            
+                            prices[original_symbol] = {
+                                'price': float(last_price),
+                                'change': float(price_change),
+                                'change_percent': float(change_percent),
+                                'ohlc': ohlc
+                            }
+                            print(f"   [SUCCESS] {original_symbol}: Rs.{last_price:.2f} ({price_change:+.2f}, {change_percent:+.2f}%) (LIVE)")
                         else:
                             failed_symbols.append(original_symbol)
                             print(f"   [ERROR] {original_symbol}: Price out of range Rs.{last_price}")

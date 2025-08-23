@@ -1,7 +1,7 @@
 # backend/app/routers/investment.py
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 import traceback
 
 router = APIRouter(prefix="/investment", tags=["investment"])
@@ -197,6 +197,12 @@ async def get_portfolio_status():
     try:
         if not investment_service:
             raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        # Sync live order status before calculating portfolio status
+        try:
+            investment_service.sync_live_order_status_to_system_orders()
+        except Exception as e:
+            print(f"[WARNING] Failed to sync live order status: {e}")
         
         status = investment_service.get_system_portfolio_status()
         return {
@@ -598,6 +604,272 @@ async def retry_failed_orders(request: RetryOrdersRequest):
             detail=f"Failed to retry orders: {str(e)}"
         )
 
+@router.get("/live-orders")
+async def get_live_orders():
+    """Get all live orders with current status"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        if not hasattr(investment_service, 'live_order_service'):
+            raise HTTPException(status_code=500, detail="Live order service not available")
+        
+        live_orders = investment_service.live_order_service.get_all_live_orders()
+        order_summary = investment_service.live_order_service.get_order_summary()
+        
+        return {
+            "success": True,
+            "data": {
+                "orders": live_orders,
+                "summary": order_summary,
+                "monitoring_active": investment_service.live_order_service.monitoring_active
+            }
+        }
+    except Exception as e:
+        print(f"[ERROR] Live orders error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get live orders: {str(e)}"
+        )
+
+@router.get("/live-orders/{order_id}/status")
+async def get_live_order_status(order_id: str):
+    """Get status of a specific live order"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        if not hasattr(investment_service, 'live_order_service'):
+            raise HTTPException(status_code=500, detail="Live order service not available")
+        
+        status_result = investment_service.live_order_service.get_order_status(order_id)
+        
+        return {
+            "success": True,
+            "data": status_result
+        }
+    except Exception as e:
+        print(f"[ERROR] Live order status error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get order status: {str(e)}"
+        )
+
+@router.post("/live-orders/{order_id}/update")
+async def update_live_order_status(order_id: str):
+    """Force update status of a specific live order"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        if not hasattr(investment_service, 'live_order_service'):
+            raise HTTPException(status_code=500, detail="Live order service not available")
+        
+        update_result = investment_service.live_order_service.update_order_status(order_id)
+        
+        return {
+            "success": True,
+            "data": update_result
+        }
+    except Exception as e:
+        print(f"[ERROR] Update order status error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update order status: {str(e)}"
+        )
+
+@router.post("/live-orders/start-monitoring")
+async def start_live_order_monitoring():
+    """Start live order monitoring"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        if not hasattr(investment_service, 'live_order_service'):
+            raise HTTPException(status_code=500, detail="Live order service not available")
+        
+        investment_service.live_order_service.start_order_monitoring()
+        
+        return {
+            "success": True,
+            "message": "Live order monitoring started",
+            "monitoring_active": True
+        }
+    except Exception as e:
+        print(f"[ERROR] Start monitoring error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to start monitoring: {str(e)}"
+        )
+
+@router.post("/live-orders/stop-monitoring")
+async def stop_live_order_monitoring():
+    """Stop live order monitoring"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        if not hasattr(investment_service, 'live_order_service'):
+            raise HTTPException(status_code=500, detail="Live order service not available")
+        
+        investment_service.live_order_service.stop_order_monitoring()
+        
+        return {
+            "success": True,
+            "message": "Live order monitoring stopped",
+            "monitoring_active": False
+        }
+    except Exception as e:
+        print(f"[ERROR] Stop monitoring error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to stop monitoring: {str(e)}"
+        )
+
+class LiveOrderRequest(BaseModel):
+    order_type: str = "LIVE"  # LIVE or PAPER
+    orders: Optional[List[Dict]] = None  # If None, use existing calculated orders
+
+@router.post("/execute-live-orders")
+async def execute_live_orders(request: LiveOrderRequest):
+    """Execute orders as live trades on Zerodha"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        if not hasattr(investment_service, 'live_order_service'):
+            raise HTTPException(status_code=500, detail="Live order service not available")
+        
+        # Get orders to execute (either from request or from system)
+        if request.orders:
+            orders_to_execute = request.orders
+        else:
+            # Get pending system orders
+            system_orders = investment_service._load_system_orders()
+            pending_orders = [o for o in system_orders if o.get('status') == 'PENDING']
+            orders_to_execute = pending_orders
+        
+        if not orders_to_execute:
+            return {
+                "success": False,
+                "message": "No orders to execute",
+                "orders_executed": 0
+            }
+        
+        # Execute orders as live trades
+        results = []
+        successful_orders = 0
+        failed_orders = 0
+        
+        for order in orders_to_execute:
+            try:
+                result = investment_service.live_order_service.place_live_order(order)
+                results.append(result)
+                
+                if result["success"]:
+                    successful_orders += 1
+                    # Update system order status
+                    order["zerodha_order_id"] = result["zerodha_order_id"]
+                    order["status"] = "LIVE_PLACED"
+                    order["live_execution_time"] = datetime.now().isoformat()
+                else:
+                    failed_orders += 1
+                    order["status"] = "LIVE_FAILED"
+                    order["live_execution_error"] = result.get("message", "Unknown error")
+                
+            except Exception as e:
+                failed_orders += 1
+                results.append({
+                    "success": False,
+                    "error": str(e),
+                    "symbol": order.get("symbol", "Unknown")
+                })
+                order["status"] = "LIVE_FAILED"
+                order["live_execution_error"] = str(e)
+        
+        # Save updated system orders
+        investment_service._save_system_orders(investment_service._load_system_orders())
+        
+        # Start monitoring if successful orders
+        if successful_orders > 0:
+            investment_service.live_order_service.start_order_monitoring()
+        
+        return {
+            "success": True,
+            "data": {
+                "orders_executed": successful_orders,
+                "orders_failed": failed_orders,
+                "total_orders": len(orders_to_execute),
+                "execution_results": results,
+                "monitoring_started": successful_orders > 0
+            }
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] Live order execution error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to execute live orders: {str(e)}"
+        )
+
+@router.post("/sync-live-order-status")
+async def sync_live_order_status():
+    """Sync live order execution status back to system orders"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        # Sync the status
+        investment_service.sync_live_order_status_to_system_orders()
+        
+        return {
+            "success": True,
+            "message": "Live order status synced successfully"
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] Sync live order status error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to sync live order status: {str(e)}"
+        )
+
+@router.get("/monitoring-status")
+async def get_monitoring_status():
+    """Get current monitoring status"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        if not hasattr(investment_service, 'live_order_service'):
+            raise HTTPException(status_code=500, detail="Live order service not available")
+        
+        # Get all live orders to check pending count
+        live_orders = investment_service.live_order_service.get_all_live_orders()
+        pending_orders = [
+            order for order in live_orders 
+            if order.get('status') not in ['COMPLETE', 'REJECTED', 'CANCELLED', 'FAILED_TO_PLACE']
+        ]
+        
+        return {
+            "success": True,
+            "data": {
+                "monitoring_active": investment_service.live_order_service.monitoring_active,
+                "pending_orders_count": len(pending_orders),
+                "total_orders_count": len(live_orders),
+                "auto_monitoring": True,  # Indicate this is automatic monitoring
+                "status_message": "Automatic monitoring active" if investment_service.live_order_service.monitoring_active else "No orders to monitor"
+            }
+        }
+    except Exception as e:
+        print(f"[ERROR] Monitoring status error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get monitoring status: {str(e)}"
+        )
+
 # Health check for this router
 @router.get("/health")
 async def investment_router_health():
@@ -619,6 +891,13 @@ async def investment_router_health():
             "GET /zerodha-portfolio",
             "GET /system-orders",
             "GET /failed-orders",
-            "POST /retry-orders"
+            "POST /retry-orders",
+            "GET /live-orders",
+            "GET /live-orders/{order_id}/status",
+            "POST /live-orders/{order_id}/update",
+            "POST /live-orders/start-monitoring",
+            "POST /live-orders/stop-monitoring",
+            "POST /execute-live-orders",
+            "POST /sync-live-order-status"
         ]
     }

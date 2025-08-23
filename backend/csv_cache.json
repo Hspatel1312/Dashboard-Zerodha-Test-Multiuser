@@ -1,25 +1,6 @@
 {
   "symbols": [
     "JSWHL",
-    "LAURUSLABS",
-    "NAVINFLUOR",
-    "ASTERDM",
-    "KIMS",
-    "JMFINANCIL",
-    "AIIL",
-    "MCX",
-    "RADICO",
-    "NH",
-    "ANANDRATHI",
-    "SARDAEN",
-    "EIDPARRY",
-    "RAMCOCEM",
-    "SYRMA",
-    "AMBER",
-    "ECLERX",
-    "GODFRYPHLP",
-    "AADHARHFC",
-    "ASAHIINDIA",
     "GOLDBEES"
   ],
   "data": [
@@ -31,139 +12,6 @@
       "Score": 39.6233
     },
     {
-      "Symbol": "LAURUSLABS",
-      "Momentum": 0.8286,
-      "Volatility": 0.0236,
-      "FITP": 0.5774,
-      "Score": 35.087
-    },
-    {
-      "Symbol": "NAVINFLUOR",
-      "Momentum": 0.5153,
-      "Volatility": 0.0191,
-      "FITP": 0.5523,
-      "Score": 26.9117
-    },
-    {
-      "Symbol": "ASTERDM",
-      "Momentum": 0.4891,
-      "Volatility": 0.0202,
-      "FITP": 0.5063,
-      "Score": 24.1928
-    },
-    {
-      "Symbol": "KIMS",
-      "Momentum": 0.4718,
-      "Volatility": 0.0197,
-      "FITP": 0.5481,
-      "Score": 23.927
-    },
-    {
-      "Symbol": "JMFINANCIL",
-      "Momentum": 0.744,
-      "Volatility": 0.0315,
-      "FITP": 0.5649,
-      "Score": 23.6281
-    },
-    {
-      "Symbol": "AIIL",
-      "Momentum": 0.7142,
-      "Volatility": 0.0311,
-      "FITP": 0.5481,
-      "Score": 22.9922
-    },
-    {
-      "Symbol": "MCX",
-      "Momentum": 0.5722,
-      "Volatility": 0.025,
-      "FITP": 0.523,
-      "Score": 22.8529
-    },
-    {
-      "Symbol": "RADICO",
-      "Momentum": 0.4714,
-      "Volatility": 0.022,
-      "FITP": 0.5272,
-      "Score": 21.4392
-    },
-    {
-      "Symbol": "NH",
-      "Momentum": 0.428,
-      "Volatility": 0.0209,
-      "FITP": 0.5021,
-      "Score": 20.4778
-    },
-    {
-      "Symbol": "ANANDRATHI",
-      "Momentum": 0.4214,
-      "Volatility": 0.0214,
-      "FITP": 0.4979,
-      "Score": 19.6701
-    },
-    {
-      "Symbol": "SARDAEN",
-      "Momentum": 0.5759,
-      "Volatility": 0.0301,
-      "FITP": 0.5356,
-      "Score": 19.1018
-    },
-    {
-      "Symbol": "EIDPARRY",
-      "Momentum": 0.4017,
-      "Volatility": 0.0223,
-      "FITP": 0.5021,
-      "Score": 18.0077
-    },
-    {
-      "Symbol": "RAMCOCEM",
-      "Momentum": 0.2832,
-      "Volatility": 0.016,
-      "FITP": 0.5356,
-      "Score": 17.7562
-    },
-    {
-      "Symbol": "SYRMA",
-      "Momentum": 0.5801,
-      "Volatility": 0.0345,
-      "FITP": 0.4979,
-      "Score": 16.7985
-    },
-    {
-      "Symbol": "AMBER",
-      "Momentum": 0.5434,
-      "Volatility": 0.0351,
-      "FITP": 0.5063,
-      "Score": 15.4698
-    },
-    {
-      "Symbol": "ECLERX",
-      "Momentum": 0.3765,
-      "Volatility": 0.0247,
-      "FITP": 0.5314,
-      "Score": 15.2743
-    },
-    {
-      "Symbol": "GODFRYPHLP",
-      "Momentum": 0.5645,
-      "Volatility": 0.0416,
-      "FITP": 0.4435,
-      "Score": 13.585
-    },
-    {
-      "Symbol": "AADHARHFC",
-      "Momentum": 0.3034,
-      "Volatility": 0.0224,
-      "FITP": 0.4895,
-      "Score": 13.5223
-    },
-    {
-      "Symbol": "ASAHIINDIA",
-      "Momentum": 0.3196,
-      "Volatility": 0.0239,
-      "FITP": 0.4895,
-      "Score": 13.3645
-    },
-    {
       "Symbol": "GOLDBEES",
       "Momentum": NaN,
       "Volatility": NaN,
@@ -171,12 +19,12 @@
       "Score": NaN
     }
   ],
-  "fetch_time": "2025-08-18T18:42:53.391233",
-  "csv_hash": "8c7baa3a",
+  "fetch_time": "2025-08-19T17:08:24.802163",
+  "csv_hash": "1e1ea806",
   "symbol_column_used": "Symbol",
   "source_url": "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv",
-  "total_rows": 21,
-  "unique_symbols": 21,
+  "total_rows": 2,
+  "unique_symbols": 2,
   "columns": [
     "Symbol",
     "Momentum",
@@ -184,6 +32,6 @@
     "FITP",
     "Score"
   ],
-  "content_size": 781,
+  "content_size": 86,
   "response_status": 200
 }
