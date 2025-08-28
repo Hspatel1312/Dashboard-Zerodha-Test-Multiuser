@@ -2,18 +2,18 @@
   "holdings": {
     "JSWHL": {
       "shares": 1,
-      "avg_price": 18271.0,
-      "total_investment": 18271.0
+      "avg_price": 17847.0,
+      "total_investment": 17847.0
     },
     "GOLDBEES": {
-      "shares": 218,
-      "avg_price": 82.31,
-      "total_investment": 17943.58
+      "shares": 207,
+      "avg_price": 84.42,
+      "total_investment": 17474.94
     }
   },
-  "last_updated": "2025-08-19T17:09:48.611387",
+  "last_updated": "2025-08-28T22:48:10.156210",
   "csv_info": {
-    "fetch_time": "2025-08-19T17:08:24.802163",
+    "fetch_time": "2025-08-28T22:47:48.789902",
     "csv_hash": "1e1ea806",
     "source_url": "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv",
     "symbol_column_used": "Symbol",

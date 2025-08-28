@@ -55,17 +55,20 @@ import {
   useRetryFailedOrdersMutation,
   useLiveOrders,
   useUpdateLiveOrderStatusMutation,
-  useMonitoringStatus
+  useMonitoringStatus,
+  useOrdersWithRetries
 } from '../../hooks/useApi';
 
 const Orders = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [showRetryView, setShowRetryView] = useState(false);
 
   const { data: systemOrders, isLoading: ordersLoading, refetch: refetchOrders } = useSystemOrders();
   const { data: failedOrdersData, isLoading: failedOrdersLoading, refetch: refetchFailedOrders } = useFailedOrders();
   const { data: liveOrdersData, isLoading: liveOrdersLoading, refetch: refetchLiveOrders } = useLiveOrders();
+  const { data: ordersWithRetries, isLoading: retriesLoading, refetch: refetchRetries } = useOrdersWithRetries();
   const { data: monitoringStatus } = useMonitoringStatus();
   const resetOrdersMutation = useResetSystemOrdersMutation();
   const retryOrdersMutation = useRetryFailedOrdersMutation();
@@ -283,6 +286,25 @@ const Orders = () => {
               </Typography>
             </Box>
             
+            <Tooltip title={showRetryView ? "Show regular orders view" : "Show detailed retry history for each order"}>
+              <Button
+                variant={showRetryView ? "outlined" : "contained"}
+                onClick={() => setShowRetryView(!showRetryView)}
+                sx={{
+                  background: showRetryView ? 'transparent' : 'linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)',
+                  borderColor: showRetryView ? 'rgba(139, 92, 246, 0.6)' : 'transparent',
+                  color: showRetryView ? '#8B5CF6' : 'white',
+                  '&:hover': {
+                    background: showRetryView ? 'rgba(139, 92, 246, 0.1)' : 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)',
+                    borderColor: showRetryView ? '#8B5CF6' : 'transparent',
+                  },
+                }}
+                startIcon={<TimelineIcon />}
+              >
+                {showRetryView ? 'Show All Orders' : 'Show Retry History'}
+              </Button>
+            </Tooltip>
+
             {failedOrders.length > 0 && canRetryAll && (
               <Tooltip title="Retry All Failed Orders">
                 <Button
@@ -385,7 +407,123 @@ const Orders = () => {
           }}
         >
           <CardContent sx={{ p: 0 }}>
-            {orders.length > 0 ? (
+            {showRetryView ? (
+              // Retry History View
+              <Box sx={{ p: 3 }}>
+                <Typography variant="h6" sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <TimelineIcon />
+                  Order Retry History
+                </Typography>
+                
+                {ordersWithRetries?.data?.orders_with_retry_history?.length > 0 ? (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {ordersWithRetries.data.orders_with_retry_history.map((orderGroup) => (
+                      <Card key={orderGroup.main_order.order_id} sx={{ 
+                        background: 'rgba(15, 15, 17, 0.8)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)'
+                      }}>
+                        <CardContent>
+                          {/* Main Order Header */}
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                              <Typography variant="h6" sx={{ color: '#3B82F6' }}>
+                                Order #{orderGroup.main_order.order_id} - {orderGroup.main_order.symbol}
+                              </Typography>
+                              <Chip 
+                                label={`${orderGroup.total_attempts} attempt${orderGroup.total_attempts > 1 ? 's' : ''}`} 
+                                size="small"
+                                sx={{ 
+                                  background: orderGroup.has_retries ? 'rgba(255, 165, 0, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                                  color: orderGroup.has_retries ? '#FF9500' : '#22C55E'
+                                }} 
+                              />
+                            </Box>
+                            <Chip 
+                              label={orderGroup.latest_status} 
+                              color={orderGroup.latest_status === 'FAILED' ? 'error' : 'success'}
+                              size="small"
+                            />
+                          </Box>
+                          
+                          {/* Main Order Details */}
+                          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2, mb: 3 }}>
+                            <Box>
+                              <Typography variant="caption" color="rgba(255, 255, 255, 0.6)">Action</Typography>
+                              <Typography variant="body2">{orderGroup.main_order.action} {orderGroup.main_order.shares} shares</Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" color="rgba(255, 255, 255, 0.6)">Price</Typography>
+                              <Typography variant="body2">₹{orderGroup.main_order.price?.toFixed(2)}</Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" color="rgba(255, 255, 255, 0.6)">Value</Typography>
+                              <Typography variant="body2">₹{orderGroup.main_order.value?.toFixed(2)}</Typography>
+                            </Box>
+                          </Box>
+                          
+                          {/* Retry History */}
+                          {orderGroup.has_retries && (
+                            <Box>
+                              <Typography variant="subtitle2" sx={{ mb: 2, color: '#FF9500' }}>
+                                Retry Attempts:
+                              </Typography>
+                              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                {orderGroup.retry_history.map((retry, index) => (
+                                  <Box key={index} sx={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'space-between',
+                                    p: 2,
+                                    background: 'rgba(255, 165, 0, 0.1)',
+                                    borderRadius: 1,
+                                    border: '1px solid rgba(255, 165, 0, 0.2)'
+                                  }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                        Retry #{retry.retry_number}
+                                      </Typography>
+                                      <Typography variant="caption" color="rgba(255, 255, 255, 0.6)">
+                                        {new Date(retry.retry_time).toLocaleString()}
+                                      </Typography>
+                                      {retry.zerodha_order_id && (
+                                        <Typography variant="caption" sx={{ 
+                                          background: 'rgba(59, 130, 246, 0.2)',
+                                          color: '#3B82F6',
+                                          px: 1,
+                                          py: 0.5,
+                                          borderRadius: 1
+                                        }}>
+                                          ID: {retry.zerodha_order_id}
+                                        </Typography>
+                                      )}
+                                    </Box>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                      <Chip 
+                                        label={retry.status} 
+                                        color={retry.status === 'FAILED' ? 'error' : 'success'}
+                                        size="small"
+                                      />
+                                    </Box>
+                                  </Box>
+                                ))}
+                              </Box>
+                            </Box>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </Box>
+                ) : (
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <TimelineIcon sx={{ fontSize: 64, color: 'rgba(255, 255, 255, 0.3)', mb: 2 }} />
+                    <Typography variant="h6" sx={{ mb: 1 }}>No Retry History</Typography>
+                    <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                      No order retries have been performed yet.
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            ) : orders.length > 0 ? (
               <>
                 <TableContainer>
                   <Table>

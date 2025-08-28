@@ -1934,5 +1934,212 @@
     "placed_time": "2025-08-19T17:10:05.968833",
     "error": "Your order could not be converted to a After Market Order (AMO).",
     "execution_details": null
+  },
+  {
+    "system_order_id": null,
+    "zerodha_order_id": null,
+    "symbol": "JSWHL",
+    "action": "BUY",
+    "shares": 1,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-08-28T22:34:17.627191",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null
+  },
+  {
+    "system_order_id": 2,
+    "zerodha_order_id": null,
+    "symbol": "GOLDBEES",
+    "action": "BUY",
+    "shares": 218,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-08-28T22:46:22.314614",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null,
+    "parent_order_id": 2,
+    "is_retry": true,
+    "retry_info": {
+      "retry_number": 2,
+      "retry_time": "2025-08-28T22:46:22.213785",
+      "original_order_id": 2,
+      "zerodha_order_id": null,
+      "status": "PENDING",
+      "failure_reason": null
+    }
+  },
+  {
+    "system_order_id": 2,
+    "zerodha_order_id": null,
+    "symbol": "GOLDBEES",
+    "action": "BUY",
+    "shares": 218,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-08-28T22:46:40.878178",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null,
+    "parent_order_id": 2,
+    "is_retry": true,
+    "retry_info": {
+      "retry_number": 3,
+      "retry_time": "2025-08-28T22:46:40.774197",
+      "original_order_id": 2,
+      "zerodha_order_id": null,
+      "status": "PENDING",
+      "failure_reason": null
+    }
+  },
+  {
+    "system_order_id": null,
+    "zerodha_order_id": null,
+    "symbol": "JSWHL",
+    "action": "BUY",
+    "shares": 1,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-08-28T22:48:09.961256",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null,
+    "parent_order_id": null,
+    "is_retry": false,
+    "retry_info": null
+  },
+  {
+    "system_order_id": null,
+    "zerodha_order_id": null,
+    "symbol": "GOLDBEES",
+    "action": "BUY",
+    "shares": 207,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-08-28T22:48:10.081024",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null,
+    "parent_order_id": null,
+    "is_retry": false,
+    "retry_info": null
+  },
+  {
+    "system_order_id": 1,
+    "zerodha_order_id": null,
+    "symbol": "JSWHL",
+    "action": "BUY",
+    "shares": 1,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-08-28T22:48:16.404268",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null,
+    "parent_order_id": 1,
+    "is_retry": true,
+    "retry_info": {
+      "retry_number": 1,
+      "retry_time": "2025-08-28T22:48:16.161210",
+      "original_order_id": 1,
+      "zerodha_order_id": null,
+      "status": "PENDING",
+      "failure_reason": null
+    }
+  },
+  {
+    "system_order_id": 1,
+    "zerodha_order_id": null,
+    "symbol": "JSWHL",
+    "action": "BUY",
+    "shares": 1,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-08-28T22:57:42.711081",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null,
+    "parent_order_id": 1,
+    "is_retry": true,
+    "retry_info": {
+      "retry_number": 2,
+      "retry_time": "2025-08-28T22:57:42.630055",
+      "original_order_id": 1,
+      "zerodha_order_id": null,
+      "status": "PENDING",
+      "failure_reason": null
+    }
+  },
+  {
+    "system_order_id": 2,
+    "zerodha_order_id": null,
+    "symbol": "GOLDBEES",
+    "action": "BUY",
+    "shares": 207,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-08-28T22:57:42.812727",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null,
+    "parent_order_id": 2,
+    "is_retry": true,
+    "retry_info": {
+      "retry_number": 1,
+      "retry_time": "2025-08-28T22:57:42.740627",
+      "original_order_id": 2,
+      "zerodha_order_id": null,
+      "status": "PENDING",
+      "failure_reason": null
+    }
+  },
+  {
+    "system_order_id": 1,
+    "zerodha_order_id": null,
+    "symbol": "JSWHL",
+    "action": "BUY",
+    "shares": 1,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-08-28T22:57:47.838250",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null,
+    "parent_order_id": 1,
+    "is_retry": true,
+    "retry_info": {
+      "retry_number": 3,
+      "retry_time": "2025-08-28T22:57:47.746256",
+      "original_order_id": 1,
+      "zerodha_order_id": null,
+      "status": "PENDING",
+      "failure_reason": null
+    }
+  },
+  {
+    "system_order_id": 2,
+    "zerodha_order_id": null,
+    "symbol": "GOLDBEES",
+    "action": "BUY",
+    "shares": 207,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-08-28T22:57:47.965070",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null,
+    "parent_order_id": 2,
+    "is_retry": true,
+    "retry_info": {
+      "retry_number": 2,
+      "retry_time": "2025-08-28T22:57:47.884157",
+      "original_order_id": 2,
+      "zerodha_order_id": null,
+      "status": "PENDING",
+      "failure_reason": null
+    }
+  },
+  {
+    "system_order_id": 2,
+    "zerodha_order_id": null,
+    "symbol": "GOLDBEES",
+    "action": "BUY",
+    "shares": 207,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-08-28T22:59:02.682487",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null,
+    "parent_order_id": 2,
+    "is_retry": true,
+    "retry_info": {
+      "retry_number": 3,
+      "retry_time": "2025-08-28T22:59:02.516782",
+      "original_order_id": 2,
+      "zerodha_order_id": null,
+      "status": "PENDING",
+      "failure_reason": null
+    }
   }
 ]

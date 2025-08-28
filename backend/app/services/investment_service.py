@@ -1296,8 +1296,101 @@ class InvestmentService:
             print(f"[ERROR] Error executing rebalancing: {e}")
             raise Exception(f"Cannot execute rebalancing: {str(e)}")
     
+    def _execute_single_order_with_retry(self, order: Dict, order_type: str = "LIVE", retry_attempt: Dict = None) -> Dict:
+        """Execute a single order with retry tracking - enhanced version that tracks retry history"""
+        try:
+            print(f"[INFO] Executing {order_type} order: {order['action']} {order['shares']} {order['symbol']} @ Rs.{order['price']:.2f}")
+            
+            if order_type == "LIVE":
+                # Add retry tracking information to order
+                if retry_attempt:
+                    order['current_retry_attempt'] = retry_attempt
+                    order['system_order_id'] = retry_attempt['original_order_id']
+                
+                # Execute order live on Zerodha
+                try:
+                    result = self.live_order_service.place_live_order(order)
+                    
+                    if result["success"]:
+                        order['status'] = 'LIVE_PLACED'
+                        order['zerodha_order_id'] = result["zerodha_order_id"]
+                        order['execution_time'] = datetime.now().isoformat()
+                        order['live_execution_status'] = 'PLACED'
+                        
+                        # Update retry attempt if provided
+                        if retry_attempt:
+                            retry_attempt['zerodha_order_id'] = result["zerodha_order_id"]
+                            retry_attempt['status'] = 'LIVE_PLACED'
+                        
+                        print(f"[SUCCESS] Live order placed: {order['symbol']} - Order ID: {result['zerodha_order_id']} (Retry #{retry_attempt['retry_number'] if retry_attempt else 'Initial'})")
+                        
+                        # Start monitoring if not already active
+                        if not self.live_order_service.monitoring_active:
+                            self.live_order_service.start_order_monitoring()
+                            
+                        return order
+                        
+                    else:
+                        error_msg = result.get("message", "Unknown live trading error")
+                        order['status'] = 'FAILED'
+                        order['failure_reason'] = error_msg
+                        order['retry_count'] = order.get('retry_count', 0)
+                        order['can_retry'] = True
+                        
+                        # Update retry attempt if provided
+                        if retry_attempt:
+                            retry_attempt['status'] = 'FAILED'
+                            retry_attempt['failure_reason'] = error_msg
+                        
+                        print(f"[ERROR] Live order failed: {order['symbol']} - {error_msg}")
+                        return order
+                        
+                except Exception as live_error:
+                    error_msg = f"Live trading connection error: {str(live_error)}"
+                    order['status'] = 'FAILED'
+                    order['failure_reason'] = error_msg
+                    order['retry_count'] = order.get('retry_count', 0)
+                    order['can_retry'] = True
+                    
+                    # Update retry attempt if provided
+                    if retry_attempt:
+                        retry_attempt['status'] = 'FAILED'
+                        retry_attempt['failure_reason'] = error_msg
+                    
+                    print(f"[ERROR] Live order connection failed: {order['symbol']} - {error_msg}")
+                    return order
+                    
+            else:
+                # SYSTEM execution (keeping existing logic for backwards compatibility)
+                order['status'] = 'EXECUTED_SYSTEM'
+                order['execution_time'] = datetime.now().isoformat()
+                
+                if retry_attempt:
+                    retry_attempt['status'] = 'EXECUTED_SYSTEM'
+                
+                print(f"[SUCCESS] System order executed: {order['symbol']}")
+                return order
+                
+        except Exception as e:
+            error_msg = f"Order execution error: {str(e)}"
+            order['status'] = 'FAILED'
+            order['failure_reason'] = error_msg
+            order['retry_count'] = order.get('retry_count', 0)
+            order['can_retry'] = True
+            
+            if retry_attempt:
+                retry_attempt['status'] = 'FAILED'
+                retry_attempt['failure_reason'] = error_msg
+            
+            print(f"[ERROR] Order execution failed: {order['symbol']} - {error_msg}")
+            return order
+
     def _execute_single_order(self, order: Dict, order_type: str = "LIVE") -> Dict:
         """Execute a single order - now defaults to LIVE trading on Zerodha"""
+        return self._execute_single_order_with_retry(order, order_type, None)
+    
+    def _original_execute_single_order(self, order: Dict, order_type: str = "LIVE") -> Dict:
+        """Original execute single order method - kept for reference"""
         try:
             print(f"[INFO] Executing {order_type} order: {order['action']} {order['shares']} {order['symbol']} @ Rs.{order['price']:.2f}")
             
@@ -1443,13 +1536,18 @@ class InvestmentService:
             for order in orders_to_retry:
                 print(f"[INFO] Retrying order {order['order_id']}: {order['action']} {order['symbol']}")
                 
+                # Initialize retry_history if not exists
+                if 'retry_history' not in order:
+                    order['retry_history'] = []
+                
                 # Increment retry count
-                order['retry_count'] = order.get('retry_count', 0) + 1
+                current_retry_count = order.get('retry_count', 0) + 1
+                order['retry_count'] = current_retry_count
                 order['last_retry_time'] = datetime.now().isoformat()
                 
                 # Check retry limits
                 max_retries = 3
-                if order['retry_count'] > max_retries:
+                if current_retry_count > max_retries:
                     print(f"[WARNING] Order {order['order_id']} exceeded max retries ({max_retries})")
                     order['can_retry'] = False
                     order['status'] = 'FAILED_MAX_RETRIES'
@@ -1462,24 +1560,54 @@ class InvestmentService:
                     })
                     continue
                 
-                # Execute the order
-                retried_order = self._execute_single_order(order, "LIVE")
+                # Create retry attempt record
+                retry_attempt = {
+                    'retry_number': current_retry_count,
+                    'retry_time': datetime.now().isoformat(),
+                    'original_order_id': order['order_id'],
+                    'zerodha_order_id': None,
+                    'status': 'PENDING',
+                    'failure_reason': None
+                }
                 
+                # Execute the order with retry tracking
+                order_copy = order.copy()
+                retried_order = self._execute_single_order_with_retry(order_copy, "LIVE", retry_attempt)
+                
+                # Update the retry attempt with results
+                retry_attempt.update({
+                    'zerodha_order_id': retried_order.get('zerodha_order_id'),
+                    'status': retried_order['status'],
+                    'failure_reason': retried_order.get('failure_reason')
+                })
+                
+                # Add retry attempt to history
+                order['retry_history'].append(retry_attempt)
+                
+                # Update main order with latest retry results
                 if retried_order['status'] in ['EXECUTED_SYSTEM', 'EXECUTED_LIVE', 'LIVE_PLACED']:
+                    order['status'] = retried_order['status']
+                    order['zerodha_order_id'] = retried_order.get('zerodha_order_id')
+                    order['execution_time'] = retried_order.get('execution_time', datetime.now().isoformat())
                     successful_retries += 1
                     retry_results.append({
                         'order_id': order['order_id'],
                         'symbol': order['symbol'],
                         'success': True,
-                        'reason': 'Retry successful'
+                        'reason': 'Retry successful',
+                        'zerodha_order_id': retried_order.get('zerodha_order_id'),
+                        'retry_number': current_retry_count
                     })
                 else:
+                    order['status'] = 'FAILED'
+                    order['failure_reason'] = retried_order.get('failure_reason', 'Retry failed')
                     failed_retries += 1
                     retry_results.append({
                         'order_id': order['order_id'],
                         'symbol': order['symbol'],
                         'success': False,
-                        'reason': retried_order.get('failure_reason', 'Retry failed')
+                        'reason': retried_order.get('failure_reason', 'Retry failed'),
+                        'retry_number': current_retry_count
                     })
             
             # Save updated orders (replace entire orders list, don't append)

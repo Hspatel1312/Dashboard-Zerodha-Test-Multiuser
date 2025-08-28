@@ -57,6 +57,7 @@ const api = {
 
   // Failed orders and retry endpoints
   getFailedOrders: () => axios.get('/investment/failed-orders').then(res => res.data),
+  getOrdersWithRetries: () => axios.get('/investment/orders-with-retries').then(res => res.data),
   retryFailedOrders: (orderIds = null) => 
     axios.post('/investment/retry-orders', { order_ids: orderIds }).then(res => res.data),
 
@@ -369,6 +370,21 @@ export const useFailedOrders = () => {
       retry: 1,
       onError: (error) => {
         console.error('Failed orders fetch failed:', error);
+      },
+    }
+  );
+};
+
+export const useOrdersWithRetries = () => {
+  return useQuery(
+    'ordersWithRetries',
+    api.getOrdersWithRetries,
+    {
+      refetchInterval: 15000, // Refetch every 15 seconds
+      staleTime: 10000, // Consider stale after 10 seconds
+      retry: 1,
+      onError: (error) => {
+        console.error('Orders with retries fetch failed:', error);
       },
     }
   );

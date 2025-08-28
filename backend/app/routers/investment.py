@@ -585,6 +585,57 @@ async def get_failed_orders():
             detail=f"Failed to get failed orders: {str(e)}"
         )
 
+@router.get("/orders-with-retries")
+async def get_orders_with_retry_history():
+    """Get all orders grouped by parent with their retry history"""
+    try:
+        if not investment_service:
+            raise HTTPException(status_code=500, detail="Investment service not initialized")
+        
+        # Get system orders with retry history
+        system_orders = investment_service._load_system_orders()
+        
+        # Get live orders grouped by parent
+        live_orders_by_parent = investment_service.live_order_service.get_orders_by_parent()
+        
+        # Combine the data to show complete retry chains
+        combined_orders = []
+        for order in system_orders:
+            order_id = order.get('order_id')
+            retry_history = order.get('retry_history', [])
+            
+            # Get corresponding live orders
+            live_order_chain = live_orders_by_parent.get(order_id, {})
+            
+            combined_order = {
+                "main_order": order,
+                "retry_history": retry_history,
+                "live_order_chain": live_order_chain,
+                "total_attempts": 1 + len(retry_history),
+                "has_retries": len(retry_history) > 0,
+                "latest_status": order.get('status'),
+                "latest_zerodha_order_id": order.get('zerodha_order_id')
+            }
+            
+            combined_orders.append(combined_order)
+        
+        return {
+            "success": True,
+            "data": {
+                "orders_with_retry_history": combined_orders,
+                "total_orders": len(combined_orders),
+                "orders_with_retries": len([o for o in combined_orders if o["has_retries"]]),
+                "live_order_summary": investment_service.live_order_service.get_order_summary()
+            }
+        }
+    except Exception as e:
+        print(f"[ERROR] Orders with retries error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get orders with retry history: {str(e)}"
+        )
+
 @router.post("/retry-orders")
 async def retry_failed_orders(request: RetryOrdersRequest):
     """Retry failed orders - either specific orders by ID or all failed orders"""

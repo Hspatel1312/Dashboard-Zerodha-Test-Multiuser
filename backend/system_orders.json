@@ -4,31 +4,83 @@
     "symbol": "JSWHL",
     "action": "BUY",
     "shares": 1,
-    "price": 18271.0,
-    "value": 18271.0,
-    "allocation_percent": 50.75277777777778,
-    "execution_time": "2025-08-19T17:10:05.839257",
+    "price": 17847.0,
+    "value": 17847.0,
+    "allocation_percent": 50.99142857142858,
+    "execution_time": "2025-08-28T22:48:09.851946",
     "session_type": "INITIAL_INVESTMENT",
     "status": "FAILED",
     "failure_reason": "Your order could not be converted to a After Market Order (AMO).",
-    "retry_count": 2,
+    "retry_count": 3,
     "can_retry": true,
-    "last_retry_time": "2025-08-19T17:10:05.664475"
+    "retry_history": [
+      {
+        "retry_number": 1,
+        "retry_time": "2025-08-28T22:48:16.161210",
+        "original_order_id": 1,
+        "zerodha_order_id": null,
+        "status": "FAILED",
+        "failure_reason": "Your order could not be converted to a After Market Order (AMO)."
+      },
+      {
+        "retry_number": 2,
+        "retry_time": "2025-08-28T22:57:42.630055",
+        "original_order_id": 1,
+        "zerodha_order_id": null,
+        "status": "FAILED",
+        "failure_reason": "Your order could not be converted to a After Market Order (AMO)."
+      },
+      {
+        "retry_number": 3,
+        "retry_time": "2025-08-28T22:57:47.746256",
+        "original_order_id": 1,
+        "zerodha_order_id": null,
+        "status": "FAILED",
+        "failure_reason": "Your order could not be converted to a After Market Order (AMO)."
+      }
+    ],
+    "last_retry_time": "2025-08-28T22:57:47.746241"
   },
   {
     "order_id": 2,
     "symbol": "GOLDBEES",
     "action": "BUY",
-    "shares": 218,
-    "price": 82.31,
-    "value": 17943.58,
-    "allocation_percent": 49.843277777777786,
-    "execution_time": "2025-08-19T17:10:06.018237",
+    "shares": 207,
+    "price": 84.42,
+    "value": 17474.94,
+    "allocation_percent": 49.928399999999996,
+    "execution_time": "2025-08-28T22:48:09.851946",
     "session_type": "INITIAL_INVESTMENT",
     "status": "FAILED",
     "failure_reason": "Your order could not be converted to a After Market Order (AMO).",
-    "retry_count": 1,
+    "retry_count": 3,
     "can_retry": true,
-    "last_retry_time": "2025-08-19T17:10:05.848019"
+    "retry_history": [
+      {
+        "retry_number": 1,
+        "retry_time": "2025-08-28T22:57:42.740627",
+        "original_order_id": 2,
+        "zerodha_order_id": null,
+        "status": "FAILED",
+        "failure_reason": "Your order could not be converted to a After Market Order (AMO)."
+      },
+      {
+        "retry_number": 2,
+        "retry_time": "2025-08-28T22:57:47.884157",
+        "original_order_id": 2,
+        "zerodha_order_id": null,
+        "status": "FAILED",
+        "failure_reason": "Your order could not be converted to a After Market Order (AMO)."
+      },
+      {
+        "retry_number": 3,
+        "retry_time": "2025-08-28T22:59:02.516782",
+        "original_order_id": 2,
+        "zerodha_order_id": null,
+        "status": "FAILED",
+        "failure_reason": "Your order could not be converted to a After Market Order (AMO)."
+      }
+    ],
+    "last_retry_time": "2025-08-28T22:59:02.516737"
   }
 ]

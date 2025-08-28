@@ -79,7 +79,7 @@ class LiveOrderService:
             # Place the order
             order_id = kite.place_order(**order_params)
             
-            # Create tracking record
+            # Create tracking record with retry information
             tracking_record = {
                 "system_order_id": order_data.get("system_order_id"),
                 "zerodha_order_id": order_id,
@@ -92,7 +92,11 @@ class LiveOrderService:
                 "placed_time": datetime.now().isoformat(),
                 "last_checked": datetime.now().isoformat(),
                 "order_params": order_params,
-                "execution_details": None
+                "execution_details": None,
+                # Add retry tracking information
+                "parent_order_id": order_data.get("system_order_id"),
+                "is_retry": bool(order_data.get("current_retry_attempt")),
+                "retry_info": order_data.get("current_retry_attempt") if order_data.get("current_retry_attempt") else None
             }
             
             # Save to tracking file
@@ -111,7 +115,7 @@ class LiveOrderService:
             error_msg = str(e)
             print(f"[ERROR] Failed to place live order: {error_msg}")
             
-            # Create failed tracking record
+            # Create failed tracking record with retry information
             failed_record = {
                 "system_order_id": order_data.get("system_order_id"),
                 "zerodha_order_id": None,
@@ -121,7 +125,11 @@ class LiveOrderService:
                 "status": "FAILED_TO_PLACE",
                 "placed_time": datetime.now().isoformat(),
                 "error": error_msg,
-                "execution_details": None
+                "execution_details": None,
+                # Add retry tracking information
+                "parent_order_id": order_data.get("system_order_id"),
+                "is_retry": bool(order_data.get("current_retry_attempt")),
+                "retry_info": order_data.get("current_retry_attempt") if order_data.get("current_retry_attempt") else None
             }
             
             self._save_order_tracking(failed_record)
@@ -276,6 +284,51 @@ class LiveOrderService:
                 print(f"[ERROR] Error in order monitoring: {e}")
                 time.sleep(check_interval)
     
+    def get_orders_by_parent(self) -> Dict:
+        """Get orders grouped by their parent order ID"""
+        try:
+            tracking_records = self._load_order_tracking()
+            orders_by_parent = {}
+            
+            for record in tracking_records:
+                parent_id = record.get("parent_order_id", "unknown")
+                
+                if parent_id not in orders_by_parent:
+                    orders_by_parent[parent_id] = {
+                        "parent_order_id": parent_id,
+                        "original_order": None,
+                        "retry_attempts": [],
+                        "total_attempts": 0,
+                        "latest_status": "UNKNOWN",
+                        "latest_zerodha_order_id": None
+                    }
+                
+                # Check if this is a retry or original order
+                if record.get("is_retry"):
+                    orders_by_parent[parent_id]["retry_attempts"].append(record)
+                else:
+                    orders_by_parent[parent_id]["original_order"] = record
+                
+                # Update latest status
+                orders_by_parent[parent_id]["total_attempts"] += 1
+                orders_by_parent[parent_id]["latest_status"] = record.get("status", "UNKNOWN")
+                
+                # Update latest Zerodha order ID if available
+                if record.get("zerodha_order_id"):
+                    orders_by_parent[parent_id]["latest_zerodha_order_id"] = record.get("zerodha_order_id")
+            
+            # Sort retry attempts by retry number
+            for parent_data in orders_by_parent.values():
+                parent_data["retry_attempts"].sort(
+                    key=lambda x: x.get("retry_info", {}).get("retry_number", 0)
+                )
+            
+            return orders_by_parent
+            
+        except Exception as e:
+            print(f"[ERROR] Error getting orders by parent: {e}")
+            return {}
+
     def get_order_summary(self) -> Dict:
         """Get summary of all orders"""
         try:
@@ -289,8 +342,16 @@ class LiveOrderService:
                 "cancelled": 0,
                 "orders_by_status": {},
                 "orders_by_symbol": {},
-                "total_value": 0
+                "total_value": 0,
+                "retry_summary": {
+                    "orders_with_retries": 0,
+                    "total_retry_attempts": 0,
+                    "successful_retries": 0,
+                    "failed_retries": 0
+                }
             }
+            
+            orders_by_parent = self.get_orders_by_parent()
             
             for record in tracking_records:
                 status = record.get("status", "UNKNOWN")
@@ -315,6 +376,20 @@ class LiveOrderService:
                     filled_qty = record["execution_details"].get("filled_quantity", 0)
                     if avg_price and filled_qty:
                         summary["total_value"] += avg_price * filled_qty
+                        
+                # Count retry statistics
+                if record.get("is_retry"):
+                    summary["retry_summary"]["total_retry_attempts"] += 1
+                    if status in ["COMPLETE", "PLACED"]:
+                        summary["retry_summary"]["successful_retries"] += 1
+                    else:
+                        summary["retry_summary"]["failed_retries"] += 1
+            
+            # Count orders with retries
+            summary["retry_summary"]["orders_with_retries"] = len([
+                parent_data for parent_data in orders_by_parent.values()
+                if len(parent_data["retry_attempts"]) > 0
+            ])
             
             return summary
             
