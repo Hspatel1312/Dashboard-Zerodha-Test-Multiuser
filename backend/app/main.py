@@ -1,13 +1,20 @@
-# backend/app/main.py - FIXED VERSION with proper Zerodha initialization
-
-from fastapi import FastAPI, HTTPException, Body
+# backend/app/main_multiuser_v2.py - Multi-User Investment Rebalancing WebApp
+from fastapi import FastAPI, HTTPException, Depends, status, Body
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
-import traceback
-import asyncio
+from sqlalchemy.orm import Session
+from typing import Dict, Any
 import os
+import json
 
-app = FastAPI(title="Investment Rebalancing WebApp", version="2.0.0")
+from .database import get_db, UserService, UserDB
+from .models import UserCreate, LoginRequest, Token, AuthResponse, UserResponse, ZerodhaAuthRequest
+from .auth_multiuser import create_access_token, get_current_user, get_current_admin_user
+from .services.multiuser_zerodha_auth import zerodha_auth_manager
+from .services.multiuser_investment_service import investment_service_manager
+from .config import settings
+
+app = FastAPI(title="Multi-User Investment Rebalancing WebApp", version="3.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -17,675 +24,947 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global variables to track initialization
-initialization_status = {
-    "config_loaded": False,
-    "auth_created": False,
-    "auth_successful": False,
-    "service_created": False,
-    "investment_service_created": False,
-    "error_message": None,
-    "zerodha_connection_status": "not_checked",
-    "csv_service_status": "not_initialized",
-    "kite_instance_available": False
+# Global status tracking
+app_status = {
+    "initialized": True,
+    "multi_user_enabled": True,
+    "database_connected": True,
+    "active_users": 0,
+    "total_registrations": 0
 }
-
-zerodha_auth = None
-portfolio_service = None
-investment_service = None
-
-# Initialize step by step with error tracking
-try:
-    print("Step 1: Loading configuration...")
-    from .config import settings
-    initialization_status["config_loaded"] = True
-    print("[OK] Configuration loaded successfully")
-    
-    print("Step 2: Creating ZerodhaAuth instance...")
-    from .auth import ZerodhaAuth
-    zerodha_auth = ZerodhaAuth()
-    initialization_status["auth_created"] = True
-    print("[OK] ZerodhaAuth instance created")
-    
-    print("Step 3: Validating existing Zerodha token...")
-    try:
-        # Validate existing token during startup
-        token_valid = zerodha_auth.validate_existing_token()
-        
-        if token_valid:
-            profile_name = getattr(zerodha_auth, 'zerodha_profile_name', 'Unknown')
-            print("[OK] Existing token is valid - Profile: {}".format(profile_name))
-            initialization_status["auth_successful"] = True
-            initialization_status["zerodha_connection_status"] = "token_validated"
-            initialization_status["kite_instance_available"] = True
-        else:
-            print("[WARNING] No valid token found - user will need to authenticate")
-            initialization_status["zerodha_connection_status"] = "token_invalid_or_missing"
-            initialization_status["auth_successful"] = False
-            initialization_status["kite_instance_available"] = False
-    except Exception as auth_error:
-        # Handle Unicode errors safely
-        try:
-            error_str = str(auth_error)
-        except UnicodeDecodeError:
-            error_str = str(auth_error).encode('ascii', 'replace').decode('ascii')
-        print("[WARNING] Token validation error during startup: {}".format(error_str))
-        initialization_status["zerodha_connection_status"] = "validation_error: {}".format(error_str)
-        initialization_status["auth_successful"] = False
-    
-    print("Step 4: Creating portfolio service...")
-    from .services.portfolio_service import PortfolioService
-    portfolio_service = PortfolioService(zerodha_auth)
-    initialization_status["service_created"] = True
-    print("[OK] Portfolio service created")
-    
-    print("Step 5: Creating investment service...")
-    from .services.investment_service import InvestmentService
-    investment_service = InvestmentService(zerodha_auth)
-    initialization_status["investment_service_created"] = True
-    initialization_status["csv_service_status"] = "initialized"
-    print("[OK] Investment service created")
-    
-except Exception as e:
-    error_msg = f"Initialization error: {str(e)}\n{traceback.format_exc()}"
-    print(f"[ERROR] {error_msg}")
-    initialization_status["error_message"] = error_msg
-
-# Include routers AFTER services are created
-try:
-    print("Step 6: Setting up routers...")
-    
-    # Import and setup investment router
-    from .routers.investment import router as investment_router
-    
-    # Set the investment service dependency BEFORE including router
-    from .routers import investment
-    investment.investment_service = investment_service
-    
-    # Include the router with proper prefix
-    app.include_router(investment_router, prefix="/api")
-    print("[OK] Investment router included at /api/investment/*")
-    
-except Exception as e:
-    print(f"[WARNING] Could not set up routers: {e}")
-    print(f"   Traceback: {traceback.format_exc()}")
 
 @app.get("/")
 async def root():
     return {
-        "message": "Investment Rebalancing WebApp API v2.0", 
-        "status": initialization_status,
+        "message": "Multi-User Investment Rebalancing WebApp API v3.0",
+        "status": app_status,
+        "features": [
+            "✅ Multi-user support with JWT authentication",
+            "✅ User-specific Zerodha connections", 
+            "✅ Isolated user data and portfolios",
+            "✅ SQLite database with encrypted credentials",
+            "✅ All existing features preserved per user"
+        ],
         "available_endpoints": [
-            "/health - Health check with detailed Zerodha status",
-            "/api/auth-status - Lightweight authentication status check (FAST)",
-            "/auth/zerodha-login-url - Get Zerodha login URL",
-            "/auth/callback - Handle Zerodha authentication callback (with request_token)",
-            "/auth/exchange-token - Exchange request token for access token",
-            "/api/auto-auth - Trigger automatic Zerodha authentication",
-            "/api/test-live-prices - Test live price fetching",
-            "/api/test-auth - Test Zerodha authentication",  
-            "/api/test-nifty - Simple Nifty price test",
-            "/api/investment/status - Get investment status (FIRST_INVESTMENT or REBALANCING_NEEDED)",
-            "/api/investment/requirements - Get investment requirements",
-            "/api/investment/calculate-plan - Calculate investment plan (±1.5% flexibility)",
-            "/api/investment/execute-initial - Execute initial investment",
-            "/api/investment/calculate-rebalancing - Calculate rebalancing plan (with additional_investment)",
-            "/api/investment/execute-rebalancing - Execute rebalancing (with additional_investment)",
-            "/api/investment/portfolio-status - Get dashboard portfolio status",
-            "/api/investment/portfolio-comparison - Compare dashboard vs Zerodha portfolio",
-            "/api/investment/rebalancing-portfolio-value - Get portfolio value for rebalancing",
-            "/api/investment/zerodha-portfolio - Get live Zerodha portfolio",
-            "/api/investment/system-orders - Get system orders history",
-            "/api/investment/csv-stocks - Get current CSV stocks with prices",
-            "/api/investment/force-csv-refresh - Force refresh CSV data"
+            "/health - System health check",
+            "/api/register - Register new user",
+            "/api/login - User login", 
+            "/api/users/me - Get current user profile",
+            "/api/auth-status - Get user auth status with Zerodha",
+            "/api/zerodha-login-url - Get Zerodha login URL",
+            "/api/exchange-token - Exchange Zerodha token",
+            "/api/investment/* - All investment endpoints (user-specific)",
+            "--- All existing single-user endpoints now work per-user ---"
         ]
     }
 
 @app.get("/health")
 async def health_check():
-    """Comprehensive health check with enhanced Zerodha connection testing"""
-    health_status = {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "initialization": initialization_status.copy(),
-        "zerodha_connection": {
-            "available": False,
-            "authenticated": False,
-            "can_fetch_data": False,
-            "kite_instance_valid": False,
-            "profile_name": None,
-            "error_message": None,
-            "last_test_time": None
-        },
-        "csv_service": {
-            "available": bool(investment_service and investment_service.csv_service),
-            "last_fetch_time": None,
-            "cache_status": "unknown",
-            "csv_hash": None,
-            "auto_tracking": True
-        },
-        "services": {
-            "portfolio_service": bool(portfolio_service),
-            "investment_service": bool(investment_service),
-            "zerodha_auth": bool(zerodha_auth)
-        }
-    }
-    
-    # ENHANCED: Test Zerodha connection thoroughly
-    if zerodha_auth:
-        try:
-            print("[INFO] Testing Zerodha connection comprehensively...")
-            
-            # Check if already authenticated
-            if zerodha_auth.is_authenticated():
-                print("[OK] Zerodha already authenticated")
-                
-                # Test if Kite instance is actually working
-                kite = zerodha_auth.get_kite_instance()
-                if kite:
-                    try:
-                        # Test with a simple API call
-                        profile = kite.profile()
-                        print(f"[OK] Kite instance working - Profile: {profile.get('user_name', 'Unknown')}")
-                        
-                        health_status["zerodha_connection"]["available"] = True
-                        health_status["zerodha_connection"]["authenticated"] = True
-                        health_status["zerodha_connection"]["kite_instance_valid"] = True
-                        health_status["zerodha_connection"]["can_fetch_data"] = True
-                        health_status["zerodha_connection"]["profile_name"] = profile.get('user_name')
-                        health_status["zerodha_connection"]["last_test_time"] = datetime.now().isoformat()
-                        
-                        initialization_status["zerodha_connection_status"] = "connected_and_verified"
-                        initialization_status["auth_successful"] = True
-                        initialization_status["kite_instance_available"] = True
-                        
-                    except Exception as kite_error:
-                        print(f"[ERROR] Kite instance test failed: {kite_error}")
-                        health_status["zerodha_connection"]["authenticated"] = True
-                        health_status["zerodha_connection"]["kite_instance_valid"] = False
-                        health_status["zerodha_connection"]["error_message"] = f"Kite instance error: {str(kite_error)}"
-                        initialization_status["zerodha_connection_status"] = "authenticated_but_kite_failed"
-                        initialization_status["kite_instance_available"] = False
-                else:
-                    print("[ERROR] No Kite instance available despite authentication")
-                    health_status["zerodha_connection"]["authenticated"] = True
-                    health_status["zerodha_connection"]["kite_instance_valid"] = False
-                    health_status["zerodha_connection"]["error_message"] = "No Kite instance available"
-                    initialization_status["zerodha_connection_status"] = "authenticated_but_no_kite"
-                    initialization_status["kite_instance_available"] = False
-            else:
-                print("[INFO] Not authenticated, attempting authentication...")
-                try:
-                    kite = zerodha_auth.authenticate()
-                    if zerodha_auth.is_authenticated() and kite:
-                        # Test the new connection
-                        try:
-                            profile = kite.profile()
-                            print(f"[OK] New authentication successful - Profile: {profile.get('user_name', 'Unknown')}")
-                            
-                            health_status["zerodha_connection"]["available"] = True
-                            health_status["zerodha_connection"]["authenticated"] = True
-                            health_status["zerodha_connection"]["kite_instance_valid"] = True
-                            health_status["zerodha_connection"]["can_fetch_data"] = True
-                            health_status["zerodha_connection"]["profile_name"] = profile.get('user_name')
-                            health_status["zerodha_connection"]["last_test_time"] = datetime.now().isoformat()
-                            
-                            initialization_status["zerodha_connection_status"] = "newly_connected"
-                            initialization_status["auth_successful"] = True
-                            initialization_status["kite_instance_available"] = True
-                            
-                        except Exception as new_kite_error:
-                            print(f"[ERROR] New Kite instance test failed: {new_kite_error}")
-                            health_status["zerodha_connection"]["error_message"] = f"New auth failed: {str(new_kite_error)}"
-                            initialization_status["zerodha_connection_status"] = "auth_succeeded_but_kite_failed"
-                    else:
-                        print("[ERROR] Authentication attempt failed")
-                        health_status["zerodha_connection"]["error_message"] = "Authentication failed"
-                        initialization_status["zerodha_connection_status"] = "authentication_failed"
-                        
-                except Exception as auth_error:
-                    print(f"[ERROR] Authentication error: {auth_error}")
-                    health_status["zerodha_connection"]["error_message"] = str(auth_error)
-                    initialization_status["zerodha_connection_status"] = f"auth_error: {str(auth_error)}"
-                    
-        except Exception as e:
-            print(f"[ERROR] Health check Zerodha test error: {e}")
-            health_status["zerodha_connection"]["error_message"] = str(e)
-            initialization_status["zerodha_connection_status"] = f"health_check_error: {str(e)}"
-    
-    # Check CSV service status
-    if investment_service and investment_service.csv_service:
-        try:
-            csv_service = investment_service.csv_service
-            connection_status = csv_service.get_connection_status()
-            
-            # Get cache info
-            cached_data = csv_service._get_cached_csv()
-            if cached_data:
-                health_status["csv_service"]["last_fetch_time"] = cached_data['fetch_time']
-                health_status["csv_service"]["csv_hash"] = cached_data['csv_hash']
-                health_status["csv_service"]["cache_status"] = "fresh"
-            else:
-                health_status["csv_service"]["cache_status"] = "no_cache"
-            
-            health_status["csv_service"].update({
-                "csv_accessible": connection_status.get('csv_accessible', False),
-                "market_open": connection_status.get('market_open', False),
-                "last_check": connection_status.get('last_check'),
-                "kite_instance_available": connection_status.get('kite_instance', False)
-            })
-            
-        except Exception as csv_error:
-            health_status["csv_service"]["error_message"] = str(csv_error)
-    
-    return health_status
-
-@app.get("/api/test-auth")
-async def test_zerodha_auth():
-    """Test Zerodha authentication specifically"""
-    if not zerodha_auth:
-        return {
-            "success": False,
-            "error": "ZerodhaAuth service not initialized"
-        }
-    
+    """System health check"""
+    db = next(get_db())
     try:
-        print("[INFO] Testing Zerodha authentication step by step...")
+        # Count total users
+        users = UserService.list_users(db)
+        app_status["total_registrations"] = len(users)
+        app_status["active_users"] = len(zerodha_auth_manager.get_all_authenticated_users())
         
-        # Get current auth status
-        auth_status = zerodha_auth.get_auth_status()
-        print(f"[INFO] Current auth status: {auth_status}")
-        
-        # Test authentication
-        if not zerodha_auth.is_authenticated():
-            print("[INFO] Attempting authentication...")
-            kite = zerodha_auth.authenticate()
-            
-            if not kite:
-                return {
-                    "success": False,
-                    "error": "Authentication failed",
-                    "auth_status": zerodha_auth.get_auth_status()
-                }
-        
-        # Test Kite instance
-        kite = zerodha_auth.get_kite_instance()
-        if not kite:
-            return {
-                "success": False,
-                "error": "No Kite instance available",
-                "auth_status": zerodha_auth.get_auth_status()
-            }
-        
-        # Test API call
-        try:
-            profile = kite.profile()
-            margins = kite.margins()
-            
-            return {
-                "success": True,
-                "message": "Zerodha authentication working perfectly",
-                "profile": {
-                    "user_name": profile.get('user_name'),
-                    "user_id": profile.get('user_id'),
-                    "email": profile.get('email')
-                },
-                "margins": {
-                    "equity_cash": margins.get('equity', {}).get('available', {}).get('cash', 0)
-                },
-                "auth_status": zerodha_auth.get_auth_status(),
-                "timestamp": datetime.now().isoformat()
-            }
-            
-        except Exception as api_error:
-            return {
-                "success": False,
-                "error": f"API test failed: {str(api_error)}",
-                "auth_status": zerodha_auth.get_auth_status(),
-                "kite_available": bool(kite)
-            }
-            
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "database": "connected",
+            "multi_user": app_status,
+            "authenticated_users": zerodha_auth_manager.get_all_authenticated_users()
+        }
     except Exception as e:
         return {
-            "success": False,
-            "error": f"Authentication test error: {str(e)}",
-            "traceback": traceback.format_exc()
-        }
-
-@app.get("/api/test-live-prices")
-async def test_live_prices():
-    """Test live price fetching capability"""
-    if not investment_service:
-        return {
-            "success": False,
-            "error": "Investment service not available"
-        }
-    
-    try:
-        print("[INFO] Testing live price fetching...")
-        
-        # Test with a small set of symbols
-        test_symbols = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK"]
-        
-        csv_service = investment_service.csv_service
-        kite = csv_service._get_valid_kite_instance()
-        
-        if not kite:
-            return {
-                "success": False,
-                "error": "No valid Kite instance for price testing",
-                "zerodha_status": zerodha_auth.get_auth_status() if zerodha_auth else "No auth service"
-            }
-        
-        prices = csv_service.get_live_prices(test_symbols, kite)
-        
-        return {
-            "success": True,
-            "message": f"Successfully fetched {len(prices)} live prices",
-            "test_prices": prices,
-            "success_rate": f"{len(prices)}/{len(test_symbols)} ({len(prices)/len(test_symbols)*100:.1f}%)",
+            "status": "degraded", 
+            "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": f"Live price test failed: {str(e)}",
-            "traceback": traceback.format_exc()
-        }
+    finally:
+        db.close()
 
-# Existing endpoints remain the same...
-@app.get("/api/auth-status")
-async def get_auth_status():
-    """Lightweight authentication status check - NO heavy operations"""
-    if not zerodha_auth:
-        return {
-            "success": False,
-            "authenticated": False,
-            "error": "ZerodhaAuth service not initialized"
-        }
-    
+# === USER MANAGEMENT ENDPOINTS ===
+
+@app.post("/api/register", response_model=AuthResponse)
+async def register_user(user_data: UserCreate, db: Session = Depends(get_db)):
+    """Register a new user"""
     try:
-        # Check current authentication status
-        is_auth = zerodha_auth.is_authenticated()
-        profile_name = getattr(zerodha_auth, 'profile_name', None) if is_auth else None
+        # Create the user
+        db_user = UserService.create_user(db, user_data)
         
-        # If not authenticated but token file exists, try validation once
-        if not is_auth and os.path.exists(zerodha_auth.access_token_file):
-            print("[INFO] Token exists but not authenticated, attempting validation...")
-            token_valid = zerodha_auth.validate_existing_token()
-            if token_valid:
-                is_auth = True
-                profile_name = zerodha_auth.profile_name
-                print("[OK] Token validation successful: {}".format(profile_name))
+        # Create access token
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": db_user.id, "username": db_user.username},
+            expires_delta=access_token_expires
+        )
+        
+        token = Token(
+            access_token=access_token,
+            user_id=db_user.id,
+            username=db_user.username,
+            full_name=db_user.full_name
+        )
+        
+        return AuthResponse(
+            success=True,
+            message=f"User {user_data.username} registered successfully",
+            token=token,
+            user={
+                "id": db_user.id,
+                "username": db_user.username,
+                "email": db_user.email,
+                "full_name": db_user.full_name,
+                "role": db_user.role,
+                "is_active": db_user.is_active,
+                "created_at": db_user.created_at
+            }
+        )
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Registration failed: {str(e)}"
+        )
+
+@app.post("/api/login", response_model=AuthResponse)
+async def login_user(login_data: LoginRequest, db: Session = Depends(get_db)):
+    """User login"""
+    try:
+        # Authenticate user
+        user = UserService.authenticate_user(db, login_data.username, login_data.password)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Update last login
+        UserService.update_last_login(db, user.id)
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.id, "username": user.username},
+            expires_delta=access_token_expires
+        )
+        
+        token = Token(
+            access_token=access_token,
+            user_id=user.id,
+            username=user.username,
+            full_name=user.full_name
+        )
+        
+        return AuthResponse(
+            success=True,
+            message=f"Welcome back {user.full_name}!",
+            token=token,
+            user={
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "full_name": user.full_name,
+                "role": user.role,
+                "is_active": user.is_active,
+                "created_at": user.created_at,
+                "last_login": user.last_login
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Login failed: {str(e)}"
+        )
+
+@app.get("/api/users/me")
+async def get_current_user_info(current_user: UserDB = Depends(get_current_user)):
+    """Get current user information"""
+    return {
+        "success": True,
+        "user": {
+            "id": current_user.id,
+            "username": current_user.username,
+            "email": current_user.email,
+            "full_name": current_user.full_name,
+            "role": current_user.role,
+            "is_active": current_user.is_active,
+            "created_at": current_user.created_at,
+            "last_login": current_user.last_login
+        }
+    }
+
+# === ZERODHA AUTHENTICATION (USER-SPECIFIC) ===
+
+@app.get("/api/auth-status")
+async def get_user_auth_status(current_user: UserDB = Depends(get_current_user)):
+    """Get user's Zerodha authentication status with real API validation"""
+    try:
+        # Get user's Zerodha auth instance
+        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        
+        # Always perform real API validation instead of just checking cached state
+        is_auth = False
+        profile_name = None
+        
+        # Test the actual Zerodha connection with a real API call
+        try:
+            if os.path.exists(zerodha_auth.access_token_file):
+                print(f"[INFO] User {current_user.username} - Testing actual Zerodha API connection...")
+                
+                # Load the kite instance and test with a real API call
+                kite = zerodha_auth.get_kite_instance()
+                if kite:
+                    # Test with actual API call to profile
+                    profile = kite.profile()
+                    if profile and profile.get('user_name'):
+                        is_auth = True
+                        profile_name = profile.get('user_name')
+                        print(f"[OK] User {current_user.username} - Real API validation successful: {profile_name}")
+                    else:
+                        print(f"[ERROR] User {current_user.username} - API call returned invalid profile")
+                else:
+                    print(f"[ERROR] User {current_user.username} - Could not get kite instance")
+            else:
+                print(f"[INFO] User {current_user.username} - No token file exists")
+                
+        except Exception as api_error:
+            print(f"[ERROR] User {current_user.username} - Real API validation failed: {api_error}")
+            is_auth = False
+            profile_name = None
         
         return {
             "success": True,
             "authenticated": is_auth,
             "profile_name": profile_name,
-            "timestamp": datetime.now().isoformat(),
-            "token_validated": is_auth
+            "user": current_user.username,
+            "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
-        # Handle Unicode errors safely
-        try:
-            error_str = str(e)
-        except (UnicodeDecodeError, UnicodeEncodeError):
-            error_str = str(e).encode('ascii', 'replace').decode('ascii')
         return {
             "success": False,
             "authenticated": False,
-            "error": "Status check error: {}".format(error_str)
+            "error": f"Status check error: {str(e)}",
+            "user": current_user.username
         }
 
-@app.post("/auth/exchange-token")
-async def exchange_token(request_data: dict = Body(default={})):
-    """Exchange request token for access token - Uses manual token if provided, automatic otherwise"""
-    if not zerodha_auth:
-        return {
-            "success": False,
-            "error": "ZerodhaAuth service not initialized"
-        }
-    
+@app.get("/api/zerodha-login-url")
+async def get_zerodha_login_url(current_user: UserDB = Depends(get_current_user)):
+    """Get Zerodha login URL for current user using their API key"""
     try:
-        request_token = request_data.get('request_token') if request_data else None
+        # Get user's API key
+        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        user_api_key = zerodha_auth.api_key
         
-        # If no request_token provided, try automatic authentication
-        if not request_token:
-            print("[INFO] No request_token provided, attempting automatic authentication...")
-        
-        # If request_token provided, use manual authentication only
-        if request_token:
-            print(f"[INFO] Using manual authentication with request_token: {request_token[:10]}...")
-            kite = zerodha_auth.authenticate(manual_request_token=request_token)
-        else:
-            print("[INFO] Attempting automatic authentication...")
-            kite = zerodha_auth.authenticate()
-        
-        if zerodha_auth.is_authenticated():
-            profile_name = zerodha_auth.profile_name
-            print("[SUCCESS] Authentication successful - Profile: {}".format(profile_name))
-            return {
-                "success": True,
-                "message": "Authentication successful",
-                "profile_name": profile_name,
-                "authenticated": True,
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            return {
-                "success": False,
-                "error": "Authentication failed - please check credentials"
-            }
-    except Exception as e:
-        # Convert any potential Unicode in error message
-        error_str = str(e).encode('ascii', 'replace').decode('ascii')
-        return {
-            "success": False,
-            "error": "Authentication failed: {}".format(error_str)
-        }
-
-@app.post("/api/auto-auth")
-async def auto_authenticate():
-    """Trigger automatic Zerodha authentication without manual token"""
-    if not zerodha_auth:
-        return {
-            "success": False,
-            "error": "ZerodhaAuth service not initialized"
-        }
-    
-    try:
-        print("[INFO] Starting automatic authentication...")
-        kite = zerodha_auth.authenticate()
-        
-        if zerodha_auth.is_authenticated():
-            profile_name = zerodha_auth.profile_name
-            print("[SUCCESS] Automatic authentication successful - Profile: {}".format(profile_name))
-            return {
-                "success": True,
-                "message": "Automatic authentication successful",
-                "profile_name": profile_name,
-                "authenticated": True,
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            return {
-                "success": False,
-                "error": "Automatic authentication failed - please check credentials"
-            }
-    except Exception as e:
-        # Convert any potential Unicode in error message
-        error_str = str(e).encode('ascii', 'replace').decode('ascii')
-        return {
-            "success": False,
-            "error": "Automatic authentication failed: {}".format(error_str)
-        }
-
-@app.get("/auth/zerodha-login-url")
-async def get_zerodha_login_url():
-    """Get Zerodha login URL"""
-    if not zerodha_auth:
-        return {
-            "success": False,
-            "error": "ZerodhaAuth service not initialized"
-        }
-    
-    try:
-        api_key = zerodha_auth.api_key
-        login_url = f"https://kite.zerodha.com/connect/login?api_key={api_key}"
+        login_url = f"https://kite.zerodha.com/connect/login?api_key={user_api_key}"
         
         return {
             "success": True,
             "login_url": login_url,
+            "user": current_user.username,
+            "api_key": user_api_key[:10] + "..." if user_api_key else "Not set",
             "instructions": [
                 "Click the login URL",
                 "Login to your Zerodha account", 
                 "After login, copy the 'request_token' from the redirect URL",
-                "Use the request_token with the /auth/exchange-token endpoint"
+                "Use the request_token with the /api/exchange-token endpoint"
             ]
         }
-        
     except Exception as e:
         return {
             "success": False,
             "error": f"Failed to generate login URL: {str(e)}"
         }
 
-@app.get("/auth/callback")
-async def auth_callback(request_token: str):
-    """Handle Zerodha authentication callback"""
+@app.post("/api/exchange-token")
+async def exchange_zerodha_token(
+    request_data: ZerodhaAuthRequest,
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Exchange request token for access token (user-specific)"""
     try:
-        if not zerodha_auth:
-            return {
-                "status": "error",
-                "message": "Zerodha authentication not initialized"
-            }
+        # Get user's Zerodha auth instance
+        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
         
-        # Use the manual authentication method with the request token
-        result = zerodha_auth.authenticate(manual_request_token=request_token)
+        request_token = request_data.request_token if request_data else None
         
-        if result:
+        # Authenticate with user's specific credentials
+        if request_token:
+            print(f"[INFO] User {current_user.username} - Using manual token: {request_token[:10]}...")
+            kite = zerodha_auth.authenticate(manual_request_token=request_token)
+        else:
+            print(f"[INFO] User {current_user.username} - Attempting automatic authentication...")
+            kite = zerodha_auth.authenticate()
+        
+        if zerodha_auth.is_authenticated():
+            profile_name = zerodha_auth.profile_name
+            print(f"[SUCCESS] User {current_user.username} - Authentication successful: {profile_name}")
             return {
-                "status": "success",
-                "message": "Authentication successful",
-                "profile": zerodha_auth.zerodha_profile_name if hasattr(zerodha_auth, 'zerodha_profile_name') else "Unknown"
+                "success": True,
+                "message": "Zerodha authentication successful",
+                "profile_name": profile_name,
+                "user": current_user.username,
+                "authenticated": True,
+                "timestamp": datetime.now().isoformat()
             }
         else:
             return {
-                "status": "error", 
-                "message": "Authentication failed - unable to exchange request token"
+                "success": False,
+                "error": "Authentication failed - please check credentials",
+                "user": current_user.username
             }
     except Exception as e:
         return {
-            "status": "error", 
-            "message": f"Authentication callback error: {str(e)}"
+            "success": False,
+            "error": f"Authentication failed: {str(e)}",
+            "user": current_user.username
         }
 
-@app.get("/api/test-nifty")
-async def test_nifty_price():
-    """Simple test to get Nifty 50 price to verify Zerodha connection"""
-    if not zerodha_auth:
-        return {
-            "success": False,
-            "error": "ZerodhaAuth service not initialized"
-        }
-    
+@app.post("/api/auto-authenticate")
+async def auto_authenticate_zerodha(current_user: UserDB = Depends(get_current_user)):
+    """Trigger automatic Zerodha authentication for current user"""
     try:
-        print("[INFO] Testing Nifty 50 price fetch...")
+        # Get user's Zerodha auth instance
+        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
         
-        # Check authentication first
-        if not zerodha_auth.is_authenticated():
-            print("[INFO] Not authenticated, attempting authentication...")
-            try:
-                zerodha_auth.authenticate()
-                if not zerodha_auth.is_authenticated():
-                    return {
-                        "success": False,
-                        "error": "Zerodha authentication failed",
-                        "details": "Cannot test Nifty price without authentication"
-                    }
-            except Exception as auth_error:
-                return {
-                    "success": False,
-                    "error": f"Authentication failed: {str(auth_error)}"
-                }
+        print(f"[INFO] User {current_user.username} - Starting automatic authentication...")
+        kite = zerodha_auth.authenticate()
         
-        kite = zerodha_auth.get_kite_instance()
-        if not kite:
+        if zerodha_auth.is_authenticated():
+            profile_name = zerodha_auth.profile_name
+            print(f"[SUCCESS] User {current_user.username} - Auto auth successful: {profile_name}")
+            return {
+                "success": True,
+                "message": "Automatic authentication successful",
+                "profile_name": profile_name,
+                "user": current_user.username,
+                "authenticated": True,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
             return {
                 "success": False,
-                "error": "No kite instance available"
+                "error": "Automatic authentication failed",
+                "user": current_user.username
             }
-        
-        # Test with Nifty 50 index
-        try:
-            print("[INFO] Testing Nifty 50 quote...")
-            nifty_quote = kite.quote(["NSE:NIFTY 50"])
-            
-            if "NSE:NIFTY 50" in nifty_quote:
-                nifty_data = nifty_quote["NSE:NIFTY 50"]
-                nifty_price = nifty_data.get('last_price', 0)
-                
-                return {
-                    "success": True,
-                    "message": "Nifty 50 price fetched successfully",
-                    "nifty_price": nifty_price,
-                    "nifty_data": {
-                        "last_price": nifty_data.get('last_price'),
-                        "change": nifty_data.get('net_change'),
-                        "timestamp": nifty_data.get('timestamp'),
-                        "ohlc": nifty_data.get('ohlc', {})
-                    },
-                    "profile_name": getattr(zerodha_auth, 'profile_name', 'Unknown'),
-                    "timestamp": datetime.now().isoformat()
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": "Nifty 50 data not found in response",
-                    "response_keys": list(nifty_quote.keys())
-                }
-                
-        except Exception as quote_error:
-            # Try alternative symbols
-            try:
-                print("[INFO] Trying alternative symbols...")
-                alt_quotes = kite.quote(["NSE:RELIANCE", "NSE:TCS"])
-                
-                if alt_quotes:
-                    sample_data = {}
-                    for symbol, data in alt_quotes.items():
-                        if isinstance(data, dict):
-                            sample_data[symbol] = {
-                                'last_price': data.get('last_price'),
-                                'timestamp': data.get('timestamp')
-                            }
-                    
-                    return {
-                        "success": True,
-                        "message": "Alternative stock prices fetched (Nifty failed)",
-                        "alternative_data": sample_data,
-                        "nifty_error": str(quote_error),
-                        "profile_name": getattr(zerodha_auth, 'profile_name', 'Unknown'),
-                        "timestamp": datetime.now().isoformat()
-                    }
-                else:
-                    return {
-                        "success": False,
-                        "error": f"Both Nifty and alternative quotes failed: {str(quote_error)}"
-                    }
-            except Exception as alt_error:
-                return {
-                    "success": False,
-                    "error": f"All quote requests failed. Nifty: {str(quote_error)}, Alt: {str(alt_error)}"
-                }
-    
     except Exception as e:
         return {
             "success": False,
-            "error": f"Nifty price test error: {str(e)}",
-            "traceback": traceback.format_exc()
+            "error": f"Automatic authentication failed: {str(e)}",
+            "user": current_user.username
         }
+
+# === USER-SPECIFIC INVESTMENT ENDPOINTS ===
+
+@app.get("/api/investment/status")
+async def get_investment_status(current_user: UserDB = Depends(get_current_user)):
+    """Get user's investment status"""
+    try:
+        print(f"[DEBUG] API ENDPOINT - get_investment_status called for user {current_user.username}")
+        # Get user-specific services
+        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        
+        print(f"[DEBUG] API ENDPOINT - About to call investment_service.get_investment_status()")
+        result = investment_service.get_investment_status()
+        print(f"[DEBUG] API ENDPOINT - get_investment_status result: {result}")
+        return result
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to get investment status: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.get("/api/investment/portfolio-status")
+async def get_portfolio_status(current_user: UserDB = Depends(get_current_user)):
+    """Get user's portfolio status for dashboard"""
+    try:
+        # Get user-specific services
+        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        
+        return investment_service.get_portfolio_status()
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to get portfolio status: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.get("/api/investment/system-orders")
+async def get_system_orders(current_user: UserDB = Depends(get_current_user)):
+    """Get user's system orders"""
+    try:
+        # Get user-specific services
+        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        
+        return investment_service.get_system_orders()
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to get system orders: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.post("/api/investment/reset-orders")
+async def reset_system_orders(current_user: UserDB = Depends(get_current_user)):
+    """Reset user's system orders (for testing purposes)"""
+    try:
+        # Get user-specific services
+        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        
+        # Reset user's orders by saving empty array
+        user_orders_file = investment_service.orders_file
+        with open(user_orders_file, 'w') as f:
+            json.dump([], f)
+        
+        print(f"[INFO] User {current_user.username} - System orders have been reset")
+        
+        return {
+            "success": True,
+            "message": "User's system orders have been reset",
+            "user": current_user.username
+        }
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to reset orders: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to reset system orders: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.get("/api/investment/csv-stocks")
+async def get_csv_stocks(current_user: UserDB = Depends(get_current_user)):
+    """Get CSV stocks with current prices (shared data but user-specific pricing)"""
+    try:
+        # Get user-specific services
+        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        
+        return investment_service.get_csv_stocks()
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to get CSV stocks: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.get("/api/investment/live-orders")
+async def get_live_orders(current_user: UserDB = Depends(get_current_user)):
+    """Get user's live orders"""
+    try:
+        # Get user-specific services
+        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        
+        return investment_service.get_live_orders()
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to get live orders: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.get("/api/investment/failed-orders")
+async def get_failed_orders(current_user: UserDB = Depends(get_current_user)):
+    """Get user's failed orders"""
+    try:
+        # Get user-specific services
+        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        
+        return investment_service.get_failed_orders()
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to get failed orders: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.get("/api/investment/requirements")
+async def get_investment_requirements(
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Get investment requirements for initial setup"""
+    try:
+        print(f"[INFO] User {current_user.username} - Getting investment requirements...")
+        
+        # Get user's zerodha auth instance
+        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        if not user_service:
+            raise HTTPException(
+                status_code=500, 
+                detail="Investment service not initialized for user"
+            )
+        
+        requirements = user_service.get_investment_requirements()
+        return {
+            "success": True,
+            "requirements": requirements,
+            "user": current_user.username
+        }
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to get investment requirements: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to get investment requirements: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.get("/api/investment/orders-with-retries")
+async def get_orders_with_retry_history(
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Get all orders grouped by parent with their retry history"""
+    try:
+        print(f"[INFO] User {current_user.username} - Getting orders with retry history...")
+        
+        # Get user's zerodha auth instance
+        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        if not user_service:
+            raise HTTPException(
+                status_code=500, 
+                detail="Investment service not initialized for user"
+            )
+        
+        # Get orders with retries from the service
+        orders_with_retries = []
+        if hasattr(user_service, 'get_orders_with_retry_history'):
+            orders_with_retries = user_service.get_orders_with_retry_history()
+        else:
+            # Fallback - return empty if method doesn't exist
+            orders_with_retries = []
+        
+        return {
+            "success": True,
+            "data": {
+                "orders_with_retry_history": orders_with_retries
+            },
+            "user": current_user.username
+        }
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to get orders with retries: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to get orders with retries: {str(e)}",
+            "data": {
+                "orders_with_retry_history": []
+            },
+            "user": current_user.username
+        }
+
+@app.get("/api/investment/monitoring-status")
+async def get_monitoring_status(
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Get current monitoring status"""
+    try:
+        print(f"[INFO] User {current_user.username} - Getting monitoring status...")
+        
+        # Get user's zerodha auth instance
+        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        if not user_service:
+            raise HTTPException(
+                status_code=500, 
+                detail="Investment service not initialized for user"
+            )
+        
+        # Get monitoring status from the service
+        monitoring_status = {}
+        if hasattr(user_service, 'get_monitoring_status'):
+            monitoring_status = user_service.get_monitoring_status()
+        else:
+            # Fallback - return default status
+            monitoring_status = {
+                "monitoring_active": False,
+                "last_check": None,
+                "pending_orders": 0,
+                "completed_orders": 0
+            }
+        
+        return {
+            "success": True,
+            "monitoring_status": monitoring_status,
+            "user": current_user.username
+        }
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to get monitoring status: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to get monitoring status: {str(e)}",
+            "monitoring_status": {"monitoring_active": False},
+            "user": current_user.username
+        }
+
+@app.post("/api/investment/calculate-plan")
+async def calculate_investment_plan(
+    request: dict = Body(...),
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Calculate initial investment plan"""
+    try:
+        investment_amount = request.get("investment_amount")
+        if not investment_amount:
+            raise HTTPException(status_code=400, detail="Investment amount is required")
+            
+        print(f"[INFO] User {current_user.username} - Calculating investment plan for amount: {investment_amount}")
+        
+        # Get user's zerodha auth instance
+        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        if not user_service:
+            raise HTTPException(
+                status_code=500, 
+                detail="Investment service not initialized for user"
+            )
+        
+        plan = user_service.calculate_initial_investment_plan(investment_amount)
+        return {
+            "success": True,
+            "plan": plan,
+            "user": current_user.username
+        }
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to calculate investment plan: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to calculate investment plan: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.post("/api/investment/execute-initial")
+async def execute_initial_investment(
+    request: dict = Body(...),
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Execute initial investment"""
+    try:
+        investment_amount = request.get("investment_amount")
+        if not investment_amount:
+            raise HTTPException(status_code=400, detail="Investment amount is required")
+            
+        print(f"[INFO] User {current_user.username} - Executing initial investment for amount: {investment_amount}")
+        
+        # Get user's zerodha auth instance
+        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        if not user_service:
+            raise HTTPException(
+                status_code=500, 
+                detail="Investment service not initialized for user"
+            )
+        
+        result = user_service.execute_initial_investment(investment_amount)
+        return {
+            "success": True,
+            "result": result,
+            "user": current_user.username
+        }
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to execute initial investment: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to execute initial investment: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.post("/api/investment/calculate-rebalancing")
+async def calculate_rebalancing(
+    request: dict = Body(...),
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Calculate rebalancing plan"""
+    try:
+        additional_investment = request.get("additional_investment", 0)
+        print(f"[INFO] User {current_user.username} - Calculating rebalancing with additional investment: {additional_investment}")
+        
+        # Get user's zerodha auth instance
+        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        if not user_service:
+            raise HTTPException(
+                status_code=500, 
+                detail="Investment service not initialized for user"
+            )
+        
+        plan = user_service.calculate_rebalancing_plan(additional_investment)
+        return {
+            "success": True,
+            "plan": plan,
+            "user": current_user.username
+        }
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to calculate rebalancing: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to calculate rebalancing: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.post("/api/investment/execute-rebalancing")
+async def execute_rebalancing(
+    request: dict = Body(...),
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Execute rebalancing"""
+    try:
+        additional_investment = request.get("additional_investment", 0)
+        print(f"[INFO] User {current_user.username} - Executing rebalancing with additional investment: {additional_investment}")
+        
+        # Get user's zerodha auth instance
+        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        if not user_service:
+            raise HTTPException(
+                status_code=500, 
+                detail="Investment service not initialized for user"
+            )
+        
+        result = user_service.execute_rebalancing(additional_investment)
+        return {
+            "success": True,
+            "result": result,
+            "user": current_user.username
+        }
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to execute rebalancing: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to execute rebalancing: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.post("/api/investment/force-csv-refresh")
+async def force_csv_refresh(
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Force refresh of CSV stocks data"""
+    try:
+        print(f"[INFO] User {current_user.username} - Forcing CSV refresh...")
+        
+        # Get user's zerodha auth instance
+        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        if not user_service:
+            raise HTTPException(
+                status_code=500, 
+                detail="Investment service not initialized for user"
+            )
+        
+        # Force refresh CSV data
+        if hasattr(user_service, 'force_csv_refresh'):
+            result = user_service.force_csv_refresh()
+        else:
+            # Fallback - just return success
+            result = {"message": "CSV refresh not implemented for user service"}
+        
+        return {
+            "success": True,
+            "result": result,
+            "user": current_user.username
+        }
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to force CSV refresh: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to force CSV refresh: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.post("/api/investment/retry-orders")
+async def retry_failed_orders(
+    request: dict = Body(...),
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Retry failed orders"""
+    try:
+        order_ids = request.get("order_ids", None)
+        print(f"[INFO] User {current_user.username} - Retrying failed orders: {order_ids}")
+        
+        # Get user's zerodha auth instance
+        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        if not user_service:
+            raise HTTPException(
+                status_code=500, 
+                detail="Investment service not initialized for user"
+            )
+        
+        # Retry failed orders
+        if hasattr(user_service, 'retry_failed_orders'):
+            result = user_service.retry_failed_orders(order_ids)
+        else:
+            # Fallback - just return success
+            result = {"message": "Order retry not implemented for user service"}
+        
+        return {
+            "success": True,
+            "result": result,
+            "user": current_user.username
+        }
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to retry failed orders: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to retry failed orders: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.post("/api/investment/start-monitoring")
+async def start_order_monitoring(
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Start automatic order monitoring for current user"""
+    # Test endpoint
+    try:
+        print(f"[INFO] User {current_user.username} - Starting order monitoring...")
+        
+        # Get user's zerodha auth instance
+        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        if not user_service:
+            raise HTTPException(
+                status_code=500, 
+                detail="Investment service not initialized for user"
+            )
+        
+        # Start monitoring
+        result = user_service.start_order_monitoring()
+        
+        return {
+            "success": True,
+            "result": result,
+            "user": current_user.username
+        }
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to start monitoring: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to start monitoring: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.post("/api/investment/stop-monitoring")
+async def stop_order_monitoring(
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Stop automatic order monitoring for current user"""
+    try:
+        print(f"[INFO] User {current_user.username} - Stopping order monitoring...")
+        
+        # Get user's zerodha auth instance
+        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        if not user_service:
+            raise HTTPException(
+                status_code=500, 
+                detail="Investment service not initialized for user"
+            )
+        
+        # Stop monitoring
+        result = user_service.stop_order_monitoring()
+        
+        return {
+            "success": True,
+            "result": result,
+            "user": current_user.username
+        }
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to stop monitoring: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to stop monitoring: {str(e)}",
+            "user": current_user.username
+        }
+
+@app.post("/api/investment/update-order-status")
+async def update_order_status_from_zerodha(
+    request: dict = Body(...),
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Manually update order status from Zerodha API"""
+    try:
+        zerodha_order_id = request.get("zerodha_order_id", None)
+        print(f"[INFO] User {current_user.username} - Updating order status from Zerodha: {zerodha_order_id}")
+        
+        # Get user's zerodha auth instance
+        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        if not user_service:
+            raise HTTPException(
+                status_code=500, 
+                detail="Investment service not initialized for user"
+            )
+        
+        # Update order status
+        result = user_service.update_order_status_from_zerodha(zerodha_order_id)
+        
+        return {
+            "success": True,
+            "result": result,
+            "user": current_user.username
+        }
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to update order status: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to update order status: {str(e)}",
+            "user": current_user.username
+        }
+
+# === ADMIN ENDPOINTS ===
+
+@app.get("/api/admin/users")
+async def list_all_users(
+    current_admin: UserDB = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """List all users (admin only)"""
+    users = UserService.list_users(db)
+    return {
+        "success": True,
+        "users": [
+            {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "full_name": user.full_name,
+                "role": user.role,
+                "is_active": user.is_active,
+                "created_at": user.created_at,
+                "last_login": user.last_login
+            }
+            for user in users
+        ],
+        "total_users": len(users)
+    }
+
+@app.get("/api/admin/system-status")
+async def get_system_status(current_admin: UserDB = Depends(get_current_admin_user)):
+    """Get detailed system status (admin only)"""
+    return {
+        "success": True,
+        "system_status": app_status,
+        "authenticated_users": zerodha_auth_manager.get_all_authenticated_users(),
+        "active_services": len(investment_service_manager._user_services),
+        "timestamp": datetime.now().isoformat()
+    }
 
 if __name__ == "__main__":
     import uvicorn

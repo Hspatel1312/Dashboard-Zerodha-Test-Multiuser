@@ -129,12 +129,6 @@ const Portfolio = () => {
       };
 
       const portfolioHoldings = portfolioStatus?.data?.holdings || {};
-      console.log('FRONTEND DEBUG - portfolioStatus:', portfolioStatus);
-      console.log('FRONTEND DEBUG - portfolioStatus.data:', portfolioStatus?.data);
-      console.log('FRONTEND DEBUG - portfolioHoldings:', portfolioHoldings);
-      console.log('FRONTEND DEBUG - portfolioHoldings type:', typeof portfolioHoldings);
-      console.log('FRONTEND DEBUG - Object.entries(portfolioHoldings):', Object.entries(portfolioHoldings));
-      
       const holdingsArray = Object.entries(portfolioHoldings).map(([symbol, data]) => ({
         symbol,
         ...data

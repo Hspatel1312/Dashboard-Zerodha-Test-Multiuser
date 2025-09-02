@@ -27,7 +27,7 @@ echo [INFO] API documentation: http://127.0.0.1:8000/docs
 echo [INFO] Register new users via the web interface
 echo.
 
-python -c "from app.main_multiuser_v2 import app; import uvicorn; uvicorn.run(app, host='127.0.0.1', port=8000, reload=True)"
+python -c "from app.main import app; import uvicorn; uvicorn.run(app, host='127.0.0.1', port=8000, reload=True)"
 
 echo.
 echo Press any key to exit...

@@ -261,8 +261,7 @@ class MultiUserInvestmentService:
             print(f"[DEBUG]   Portfolio current value: {portfolio_summary.get('current_value', 0)}")
             print(f"[DEBUG]   Total investment: {portfolio_summary.get('total_investment', 0)}")
             print(f"[DEBUG]   Holdings count: {portfolio_summary.get('stock_count', 0)}")
-            print(f"[DEBUG]   *** HOLDINGS DATA DEBUG ***: {portfolio_summary.get('holdings', {})}")
-            print(f"[DEBUG]   *** EXPOSING AT TOP LEVEL ***: {len(portfolio_summary.get('holdings', {}))}")
+            print(f"[DEBUG]   Holdings data: {len(portfolio_summary.get('holdings', {}))} holdings found")
             
             return response_data
             
