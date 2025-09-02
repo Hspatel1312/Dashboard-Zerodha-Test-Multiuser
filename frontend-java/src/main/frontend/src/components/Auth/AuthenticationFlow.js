@@ -24,7 +24,7 @@ import {
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { useZerodhaLoginMutation, useTokenExchangeMutation, useAutoAuthenticateMutation } from '../../hooks/useApi';
+import { useZerodhaLoginUrlQuery, useZerodhaTokenExchangeMutation, useAutoAuthenticateZerodhaMutation } from '../../hooks/useUserApi';
 
 const steps = ['Generate Login URL', 'Login to Zerodha', 'Enter Request Token'];
 
@@ -33,19 +33,18 @@ const AuthenticationFlow = () => {
   const [loginUrl, setLoginUrl] = useState('');
   const [requestToken, setRequestToken] = useState('');
 
-  const loginMutation = useZerodhaLoginMutation();
-  const tokenMutation = useTokenExchangeMutation();
-  const autoAuthMutation = useAutoAuthenticateMutation();
+  const { data: loginUrlData, refetch: fetchLoginUrl, isLoading: urlLoading } = useZerodhaLoginUrlQuery();
+  const tokenMutation = useZerodhaTokenExchangeMutation();
+  const autoAuthMutation = useAutoAuthenticateZerodhaMutation();
 
-  const handleGenerateLoginUrl = () => {
-    loginMutation.mutate(undefined, {
-      onSuccess: (data) => {
-        if (data.success) {
-          setLoginUrl(data.login_url);
-          setActiveStep(1);
-        }
-      },
-    });
+  const handleGenerateLoginUrl = async () => {
+    const result = await fetchLoginUrl();
+    if (result.data?.success) {
+      setLoginUrl(result.data.login_url);
+      setActiveStep(1);
+    } else {
+      toast.error('Failed to generate login URL');
+    }
   };
 
   const handleCopyUrl = () => {
@@ -53,16 +52,15 @@ const AuthenticationFlow = () => {
     toast.success('Login URL copied to clipboard');
   };
 
-  const handleAutoAuthenticate = () => {
-    autoAuthMutation.mutate(undefined, {
-      onSuccess: (data) => {
-        if (data.success) {
-          setActiveStep(3);
-          // The page will automatically refresh due to auth status change
-        }
-      },
-    });
+  const handleAutoAuthenticate = async () => {
+    try {
+      await autoAuthMutation.mutateAsync();
+      // Success handling is done in the mutation's onSuccess callback
+    } catch (error) {
+      // Error handling is done in the mutation's onError callback
+    }
   };
+
 
   const handleTokenSubmit = () => {
     if (!requestToken.trim()) {
@@ -70,7 +68,7 @@ const AuthenticationFlow = () => {
       return;
     }
 
-    tokenMutation.mutate(requestToken, {
+    tokenMutation.mutate({ request_token: requestToken }, {
       onSuccess: (data) => {
         if (data.success) {
           setActiveStep(2);
@@ -292,7 +290,7 @@ const AuthenticationFlow = () => {
                 size="large"
                 fullWidth
                 onClick={handleGenerateLoginUrl}
-                disabled={loginMutation.isLoading}
+                disabled={urlLoading}
                 sx={{
                   py: 2,
                   background: 'linear-gradient(135deg, #007AFF 0%, #5856D6 100%)',
@@ -300,7 +298,7 @@ const AuthenticationFlow = () => {
                   fontWeight: 600,
                 }}
               >
-                {loginMutation.isLoading ? (
+                {urlLoading ? (
                   <CircularProgress size={24} color="inherit" />
                 ) : (
                   'Generate Login URL'

@@ -37,22 +37,25 @@ import {
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { useQueryClient } from 'react-query';
 
 // Components
 import LoadingScreen from '../../components/UI/LoadingScreen';
-import AuthenticationFlow from '../../components/Auth/AuthenticationFlow';
+import ZerodhaConnectionFlow from '../../components/Auth/ZerodhaConnectionFlow';
 
-// Hooks
+// Hooks  
 import {
-  useAuthStatus,
-  useInvestmentStatus,
-  usePortfolioStatus,
-  useInvestmentRequirements,
-  useCalculateInvestmentPlanMutation,
-  useExecuteInitialInvestmentMutation,
-  useCalculateRebalancingMutation,
-  useExecuteRebalancingMutation,
-} from '../../hooks/useApi';
+  useUserAuthStatus as useAuthStatus,
+  useUserInvestmentStatus as useInvestmentStatus,
+  useUserPortfolioStatus as usePortfolioStatus,
+  useUserInvestmentRequirements as useInvestmentRequirements,
+} from '../../hooks/useUserApi';
+import {
+  useUserCalculateInvestmentPlanMutation as useCalculateInvestmentPlanMutation,
+  useUserExecuteInitialInvestmentMutation as useExecuteInitialInvestmentMutation,
+  useUserCalculateRebalancingMutation as useCalculateRebalancingMutation,
+  useUserExecuteRebalancingMutation as useExecuteRebalancingMutation,
+} from '../../hooks/useUserApi';
 
 const Portfolio = () => {
   const [tabValue, setTabValue] = useState(0);
@@ -60,6 +63,8 @@ const Portfolio = () => {
   const [investmentPlan, setInvestmentPlan] = useState(null);
   const [rebalancingPlan, setRebalancingPlan] = useState(null);
   const [niftyData, setNiftyData] = useState(null);
+  
+  const queryClient = useQueryClient();
 
   // Queries with error handling
   const authQuery = useAuthStatus();
@@ -79,6 +84,13 @@ const Portfolio = () => {
       fetchNiftyData();
     }
   }, [authQuery?.data?.authenticated]);
+
+  // Force cache invalidation on component mount to ensure fresh data
+  useEffect(() => {
+    console.log('Portfolio - Component mounted, invalidating cache for fresh data');
+    queryClient.invalidateQueries('userInvestmentStatus');
+    queryClient.invalidateQueries('userInvestmentRequirements');
+  }, [queryClient]);
 
   const fetchNiftyData = async () => {
     try {
@@ -117,6 +129,12 @@ const Portfolio = () => {
       };
 
       const portfolioHoldings = portfolioStatus?.data?.holdings || {};
+      console.log('FRONTEND DEBUG - portfolioStatus:', portfolioStatus);
+      console.log('FRONTEND DEBUG - portfolioStatus.data:', portfolioStatus?.data);
+      console.log('FRONTEND DEBUG - portfolioHoldings:', portfolioHoldings);
+      console.log('FRONTEND DEBUG - portfolioHoldings type:', typeof portfolioHoldings);
+      console.log('FRONTEND DEBUG - Object.entries(portfolioHoldings):', Object.entries(portfolioHoldings));
+      
       const holdingsArray = Object.entries(portfolioHoldings).map(([symbol, data]) => ({
         symbol,
         ...data
@@ -130,10 +148,43 @@ const Portfolio = () => {
         holdings: holdingsArray,
       };
 
+      // Debug log both APIs responses
+      console.log('Portfolio - API Data Debug:', {
+        investmentStatus,
+        investmentStatusMinInvestment: investmentStatus?.data?.min_investment || investmentStatus?.min_investment,
+        investmentStatusDataExists: !!investmentStatus?.data,
+        investmentStatusDirectExists: !!investmentStatus?.min_investment,
+        requirements,
+        requirementsData: requirements?.data,
+        requirementsMinInvestment: requirements?.data?.minimum_investment || requirements?.minimum_investment
+      });
+
+      console.log('Portfolio - Raw Investment Status Response:', JSON.stringify(investmentStatus, null, 2));
+      console.log('Portfolio - Raw Requirements Response:', JSON.stringify(requirements, null, 2));
+
+      // Use minimum investment from investment status API (which returns calculated live data)
+      // This avoids caching issues and ensures we get the fresh calculated minimum
+      console.log('DEBUGGING - investmentStatus?.data?.min_investment:', investmentStatus?.data?.min_investment);
+      console.log('DEBUGGING - investmentStatus?.min_investment:', investmentStatus?.min_investment);
+      const calculatedMinInvestment = investmentStatus?.data?.min_investment || investmentStatus?.min_investment;
+      console.log('DEBUGGING - final calculatedMinInvestment:', calculatedMinInvestment);
+      
+      // Fallback to requirements API if investment status doesn't have min_investment
+      const minimumInvestmentData = requirements?.data?.minimum_investment || requirements?.minimum_investment;
+      
       const safeRequirements = {
-        minimum_investment: Number(requirements?.data?.minimum_investment?.minimum_investment) || 10000,
-        recommended_minimum: Number(requirements?.data?.minimum_investment?.recommended_minimum) || 0,
+        minimum_investment: Number(calculatedMinInvestment) || Number(minimumInvestmentData?.minimum_investment) || 200000,
+        recommended_minimum: Number(minimumInvestmentData?.recommended_minimum) || 0,
       };
+
+      // Debug log the final calculated values
+      console.log('Portfolio - Final safeRequirements calculation:', {
+        calculatedMinInvestment,
+        calculatedMinInvestmentNumber: Number(calculatedMinInvestment),
+        minimumInvestmentDataNumber: Number(minimumInvestmentData?.minimum_investment),
+        finalMinimumInvestment: safeRequirements.minimum_investment,
+        willShow200000: safeRequirements.minimum_investment === 200000
+      });
 
       return {
         authStatus,
@@ -141,7 +192,7 @@ const Portfolio = () => {
         investmentLoading: investmentQuery?.isLoading,
         safePortfolio,
         safeRequirements,
-        currentStatus: investmentStatus?.data?.status || 'UNKNOWN'
+        currentStatus: investmentStatus?.data?.status || investmentStatus?.status || 'UNKNOWN'
       };
     } catch (error) {
       console.error('Safe data extraction error:', error);
@@ -174,11 +225,20 @@ const Portfolio = () => {
 
   const handleRefresh = () => {
     try {
+      // Invalidate all user-specific queries to force fresh data fetch
+      queryClient.invalidateQueries('userInvestmentStatus');
+      queryClient.invalidateQueries('userPortfolioStatus');
+      queryClient.invalidateQueries('userInvestmentRequirements');
+      queryClient.invalidateQueries('userAuthStatus');
+      
+      // Also manually refetch
       investmentQuery?.refetch();
       portfolioQuery?.refetch();
       requirementsQuery?.refetch();
       fetchNiftyData();
-      toast.success('Portfolio data refreshed');
+      
+      console.log('Portfolio - Cache invalidated and data refreshed');
+      toast.success('Portfolio data refreshed with fresh cache');
     } catch (error) {
       console.error('Refresh error:', error);
       toast.error('Failed to refresh data');
@@ -194,8 +254,30 @@ const Portfolio = () => {
     try {
       const result = await calculatePlanMutation.mutateAsync(parseFloat(investmentAmount));
       console.log('Investment plan API response:', result);
+      const planData = result.plan || result.data;
+      const actualPlan = result.plan?.plan || result.plan || result.data;
+      console.log('Investment plan data structure:', {
+        hasData: !!result.data,
+        hasPlan: !!result.plan,
+        planData: planData,
+        actualPlan: actualPlan,
+        nestedPlan: result.plan?.plan,
+        hasOrdersInPlan: !!planData?.orders,
+        hasOrdersInActualPlan: !!actualPlan?.orders,
+        ordersLength: actualPlan?.orders?.length,
+        hasAllocations: !!actualPlan?.allocations,
+        allocationsLength: actualPlan?.allocations?.length,
+        hasAllocationPlan: !!actualPlan?.allocation_plan,
+        allocationPlanAllocations: actualPlan?.allocation_plan?.allocations?.length,
+        planKeys: Object.keys(planData || {}),
+        actualPlanKeys: Object.keys(actualPlan || {}),
+        fullActualPlan: actualPlan
+      });
+      
       if (result.success) {
-        setInvestmentPlan(result.data);
+        // Handle nested plan structure: result.plan.plan or result.plan or result.data
+        const actualPlan = result.plan?.plan || result.plan || result.data;
+        setInvestmentPlan(actualPlan);
         toast.success('Investment plan calculated successfully');
       }
     } catch (error) {
@@ -256,7 +338,7 @@ const Portfolio = () => {
     try {
       const result = await calculateRebalancingMutation.mutateAsync(0); // Pass 0 for no additional investment
       if (result.success) {
-        setRebalancingPlan(result.data.data); // Fix: Use result.data.data to get the actual plan data
+        setRebalancingPlan(result.plan.plan); // Fix: Use result.plan.plan to get the actual rebalancing data
       }
     } catch (error) {
       console.error('Calculate rebalancing error:', error);
@@ -322,7 +404,7 @@ const Portfolio = () => {
   if (!authStatus?.authenticated) {
     return (
       <Container maxWidth="lg" sx={{ py: 4 }}>
-        <AuthenticationFlow />
+        <ZerodhaConnectionFlow />
       </Container>
     );
   }
@@ -610,18 +692,30 @@ const Portfolio = () => {
                         </Grid>
                       )}
                       
-                      {(investmentPlan?.orders || investmentPlan?.allocations) && (
+                      {/* Debug log for investment plan rendering */}
+                      {investmentPlan && console.log('Portfolio - Render investmentPlan debug:', {
+                        plan: investmentPlan,
+                        hasOrders: !!investmentPlan?.orders,
+                        hasAllocations: !!investmentPlan?.allocations,
+                        hasAllocationPlan: !!investmentPlan?.allocation_plan,
+                        ordersLength: investmentPlan?.orders?.length || 0,
+                        allocationsLength: investmentPlan?.allocations?.length || 0,
+                        allocationPlanLength: investmentPlan?.allocation_plan?.allocations?.length || 0,
+                        shouldShowTradeDetails: !!(investmentPlan?.orders || investmentPlan?.allocations || investmentPlan?.allocation_plan?.allocations)
+                      })}
+                      
+                      {(investmentPlan?.orders || investmentPlan?.allocations || investmentPlan?.allocation_plan?.allocations) && (
                         <Grid item xs={12}>
                           <Paper sx={{ p: 3, background: 'rgba(28, 28, 30, 0.8)', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
                             <Typography variant="h6" sx={{ mb: 2, color: '#007AFF' }}>
-                              Trade Details ({(investmentPlan.orders || investmentPlan.allocations || []).length} stocks)
+                              Trade Details ({(investmentPlan.orders || investmentPlan.allocations || investmentPlan.allocation_plan?.allocations || []).length} stocks)
                             </Typography>
                             <Alert severity="warning" sx={{ mb: 2 }}>
                               These are LIVE trades that will be executed on Zerodha. Real money will be invested.
                             </Alert>
                             <Box sx={{ maxHeight: 300, overflowY: 'auto', mb: 2 }}>
                               <Grid container spacing={1}>
-                                {(investmentPlan.orders || investmentPlan.allocations || []).map((order, index) => (
+                                {(investmentPlan.orders || investmentPlan.allocations || investmentPlan.allocation_plan?.allocations || []).map((order, index) => (
                                   <Grid item xs={12} sm={6} md={4} key={index}>
                                     <Box sx={{ 
                                       p: 2, 

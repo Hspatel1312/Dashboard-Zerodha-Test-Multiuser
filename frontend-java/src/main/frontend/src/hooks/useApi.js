@@ -3,7 +3,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 
 // Configure axios defaults
-axios.defaults.baseURL = '/api';
+axios.defaults.baseURL = 'http://localhost:8000/api';
 axios.defaults.timeout = 30000;
 
 // API functions

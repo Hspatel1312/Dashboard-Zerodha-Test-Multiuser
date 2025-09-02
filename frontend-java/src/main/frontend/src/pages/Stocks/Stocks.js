@@ -40,7 +40,10 @@ import toast from 'react-hot-toast';
 import LoadingScreen from '../../components/UI/LoadingScreen';
 
 // Hooks
-import { useCsvStocks, useForceCsvRefreshMutation } from '../../hooks/useApi';
+import { 
+  useUserCsvStocks as useCsvStocks,
+  useUserForceCsvRefreshMutation as useForceCsvRefreshMutation
+} from '../../hooks/useUserApi';
 
 const Stocks = () => {
   const [page, setPage] = useState(0);

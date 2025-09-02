@@ -23,25 +23,43 @@ public class ApiController {
 
     private final InvestmentApiService investmentApiService;
 
+    @PostMapping("/login")
+    public Mono<ResponseEntity<JsonNode>> login(@RequestBody Map<String, String> credentials) {
+        log.info("User login attempt for: {}", credentials.get("username"));
+        return investmentApiService.login(credentials)
+                .map(ResponseEntity::ok);
+    }
+
+    @PostMapping("/register")
+    public Mono<ResponseEntity<JsonNode>> register(@RequestBody Map<String, Object> userData) {
+        log.info("User registration attempt for: {}", userData.get("username"));
+        return investmentApiService.register(userData)
+                .map(ResponseEntity::ok);
+    }
+
     @GetMapping("/auth-status")
-    public Mono<ResponseEntity<JsonNode>> getAuthStatus() {
+    public Mono<ResponseEntity<JsonNode>> getAuthStatus(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("Getting auth status");
-        return investmentApiService.getAuthStatus()
+        return investmentApiService.getAuthStatus(authHeader)
                 .map(ResponseEntity::ok);
     }
 
     @GetMapping("/zerodha-login-url")
-    public Mono<ResponseEntity<JsonNode>> getZerodhaLoginUrl() {
+    public Mono<ResponseEntity<JsonNode>> getZerodhaLoginUrl(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("Getting Zerodha login URL");
-        return investmentApiService.getZerodhaLoginUrl()
+        return investmentApiService.getZerodhaLoginUrl(authHeader)
                 .map(ResponseEntity::ok);
     }
 
     @PostMapping("/exchange-token")
-    public Mono<ResponseEntity<JsonNode>> exchangeToken(@RequestBody Map<String, String> request) {
+    public Mono<ResponseEntity<JsonNode>> exchangeToken(
+            @RequestBody Map<String, String> request,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
         String requestToken = request.get("request_token");
         log.info("Exchanging token: {}", requestToken != null ? requestToken.substring(0, Math.min(10, requestToken.length())) + "..." : "null");
-        return investmentApiService.exchangeToken(requestToken)
+        return investmentApiService.exchangeToken(requestToken, authHeader)
                 .map(ResponseEntity::ok);
     }
 
@@ -185,6 +203,40 @@ public class ApiController {
         }
         log.info("Retrying failed orders: {}", orderIds != null ? orderIds : "all");
         return investmentApiService.retryFailedOrders(orderIds)
+                .map(ResponseEntity::ok);
+    }
+
+    @PostMapping("/investment/start-monitoring")
+    public Mono<ResponseEntity<JsonNode>> startOrderMonitoring() {
+        log.info("Starting order monitoring");
+        return investmentApiService.startOrderMonitoring()
+                .map(ResponseEntity::ok);
+    }
+
+    @PostMapping("/investment/stop-monitoring")
+    public Mono<ResponseEntity<JsonNode>> stopOrderMonitoring(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestHeader(value = "Cookie", required = false) String cookieHeader) {
+        log.info("Stopping order monitoring");
+        return investmentApiService.stopOrderMonitoring(authHeader, cookieHeader)
+                .map(ResponseEntity::ok);
+    }
+
+
+    @PostMapping("/investment/update-order-status")
+    public Mono<ResponseEntity<JsonNode>> updateOrderStatusFromZerodha(
+            @RequestBody(required = false) Map<String, Object> request,
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestHeader(value = "Cookie", required = false) String cookieHeader) {
+        String zerodhaOrderId = null;
+        if (request != null && request.containsKey("zerodha_order_id")) {
+            Object orderIdObj = request.get("zerodha_order_id");
+            if (orderIdObj instanceof String) {
+                zerodhaOrderId = (String) orderIdObj;
+            }
+        }
+        log.info("Updating order status from Zerodha: {}", zerodhaOrderId != null ? zerodhaOrderId : "all orders");
+        return investmentApiService.updateOrderStatusFromZerodha(zerodhaOrderId, authHeader, cookieHeader)
                 .map(ResponseEntity::ok);
     }
 

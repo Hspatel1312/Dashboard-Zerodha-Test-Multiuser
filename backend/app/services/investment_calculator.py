@@ -104,7 +104,8 @@ class InvestmentCalculator:
                     
                     # Use MAXIMUM allocation for the most expensive stock to minimize investment
                     max_allocation_percent = allocation_info['max_allocation_per_stock']  # e.g., 4.5%
-                    min_investment_required = most_expensive_regular['price'] * (100 / max_allocation_percent)
+                    price = most_expensive_regular['price']
+                    min_investment_required = price * (100 / max_allocation_percent)
                     most_expensive_stock = most_expensive_regular
                     
                     print(f"   Most expensive stock: {most_expensive_regular['symbol']} at Rs.{most_expensive_regular['price']:,.2f}")
@@ -134,6 +135,10 @@ class InvestmentCalculator:
             for stock in stocks_data:
                 symbol = stock['symbol']
                 price = stock['price']
+                # Safety check: ensure price is always a number
+                if isinstance(price, dict):
+                    price = price.get('price', price.get('last_price', 0))
+                price = float(price) if price else 0
                 
                 # Use different allocation based on whether it's GOLDBEES or regular stock
                 if symbol == self.goldbees_symbol and allocation_info['has_goldbees']:
@@ -222,6 +227,10 @@ class InvestmentCalculator:
             for stock in stocks_data:
                 symbol = stock['symbol']
                 price = stock['price']
+                # Safety check: ensure price is always a number
+                if isinstance(price, dict):
+                    price = price.get('price', price.get('last_price', 0))
+                price = float(price) if price else 0
                 
                 # Use different allocation targets based on stock type
                 if symbol == self.goldbees_symbol and allocation_info['has_goldbees']:
@@ -319,6 +328,12 @@ class InvestmentCalculator:
         Sophisticated optimization to distribute remaining cash
         Prioritizes getting stocks closer to 5% target
         """
+        
+        # Safety check: ensure all allocation prices are numeric
+        for alloc in allocations:
+            if isinstance(alloc['price'], dict):
+                alloc['price'] = alloc['price'].get('price', alloc['price'].get('last_price', 0))
+            alloc['price'] = float(alloc['price']) if alloc['price'] else 0
         
         iteration = 0
         max_iterations = 20  # Increased iterations for better optimization

@@ -92,7 +92,7 @@ async def calculate_investment_plan(request: InvestmentRequest):
                 return {
                     "success": False,
                     "error": "INVESTMENT_BELOW_MINIMUM",
-                    "message": f"Investment amount ₹{request.investment_amount:,.0f} is below minimum required",
+                    "message": f"Investment amount Rs.{request.investment_amount:,.0f} is below minimum required",
                     "details": {
                         "requested_amount": request.investment_amount,
                         "minimum_required": minimum_required,
@@ -101,8 +101,8 @@ async def calculate_investment_plan(request: InvestmentRequest):
                         "reason": "Expensive stocks require higher minimum investment for proper allocation"
                     },
                     "suggestions": [
-                        f"Increase investment to at least ₹{minimum_required:,.0f}",
-                        f"Recommended amount: ₹{recommended_minimum:,.0f} (with 20% buffer)",
+                        f"Increase investment to at least Rs.{minimum_required:,.0f}",
+                        f"Recommended amount: Rs.{recommended_minimum:,.0f} (with 20% buffer)",
                         "This ensures every stock gets at least 1 share with proper allocation"
                     ]
                 }
@@ -148,7 +148,7 @@ async def execute_initial_investment(request: InvestmentRequest):
                 return {
                     "success": False,
                     "error": "INVESTMENT_BELOW_MINIMUM",
-                    "message": f"Cannot execute investment: Amount ₹{request.investment_amount:,.0f} is below minimum required",
+                    "message": f"Cannot execute investment: Amount Rs.{request.investment_amount:,.0f} is below minimum required",
                     "details": {
                         "requested_amount": request.investment_amount,
                         "minimum_required": minimum_required,
@@ -157,8 +157,8 @@ async def execute_initial_investment(request: InvestmentRequest):
                         "reason": "Expensive stocks require higher minimum investment for proper allocation"
                     },
                     "suggestions": [
-                        f"Increase investment to at least ₹{minimum_required:,.0f}",
-                        f"Recommended amount: ₹{recommended_minimum:,.0f} (with 20% buffer)",
+                        f"Increase investment to at least Rs.{minimum_required:,.0f}",
+                        f"Recommended amount: Rs.{recommended_minimum:,.0f} (with 20% buffer)",
                         "This ensures every stock gets at least 1 share with proper allocation"
                     ]
                 }

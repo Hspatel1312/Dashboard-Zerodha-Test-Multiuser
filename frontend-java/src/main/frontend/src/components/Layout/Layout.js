@@ -26,11 +26,13 @@ import {
   Settings as SettingsIcon,
   Notifications as NotificationsIcon,
   AccountCircle as AccountIcon,
+  Logout,
 } from '@mui/icons-material';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import ConnectionStatus from '../UI/ConnectionStatus';
-import { useAuthStatus } from '../../hooks/useApi';
+import { useUserAuthStatus } from '../../hooks/useUserApi';
+import { useUser } from '../../contexts/UserContext';
 
 const DRAWER_WIDTH = 280;
 
@@ -48,7 +50,8 @@ const Layout = ({ children }) => {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const location = useLocation();
   const navigate = useNavigate();
-  const { data: authStatus } = useAuthStatus();
+  const { data: authStatus } = useUserAuthStatus();
+  const { user, logout } = useUser();
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -202,7 +205,7 @@ const Layout = ({ children }) => {
               mr: 2,
             }}
           >
-            {authStatus?.profile_name ? authStatus.profile_name.charAt(0).toUpperCase() : 'U'}
+            {user?.full_name ? user.full_name.charAt(0).toUpperCase() : 'U'}
           </Avatar>
           <Box sx={{ flex: 1 }}>
             <Typography
@@ -213,7 +216,7 @@ const Layout = ({ children }) => {
                 fontSize: '0.875rem',
               }}
             >
-              {authStatus?.profile_name || 'Not Connected'}
+              {user?.full_name || 'User'}
             </Typography>
             <Typography
               variant="caption"
@@ -224,9 +227,25 @@ const Layout = ({ children }) => {
                 fontSize: '0.75rem',
               }}
             >
-              {authStatus?.authenticated ? 'Connected' : 'Disconnected'}
+              {authStatus?.authenticated ? `Zerodha: ${authStatus.profile_name}` : 'Zerodha: Not Connected'}
             </Typography>
           </Box>
+          
+          {/* Logout Button */}
+          <IconButton
+            onClick={logout}
+            size="small"
+            sx={{
+              color: 'rgba(255, 255, 255, 0.7)',
+              '&:hover': {
+                color: 'white',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+              },
+            }}
+            title="Logout"
+          >
+            <Logout />
+          </IconButton>
         </Box>
       </Box>
     </Box>

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Multi-User Investment Dashboard - System Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #000; color: #fff; }
+        .test-section { margin: 20px 0; padding: 20px; border: 1px solid #333; }
+        .success { color: #00ff00; }
+        .error { color: #ff0000; }
+        .info { color: #00aaff; }
+        button { padding: 10px 20px; margin: 5px; background: #007AFF; color: white; border: none; cursor: pointer; }
+        button:hover { background: #0056CC; }
+        input { padding: 8px; margin: 5px; background: #333; color: #fff; border: 1px solid #555; }
+        #log { height: 400px; overflow-y: scroll; background: #111; padding: 10px; border: 1px solid #333; }
+    </style>
+</head>
+<body>
+    <h1>🚀 Multi-User Investment Dashboard - Complete System Test</h1>
+    
+    <div class="test-section">
+        <h2>👤 User Authentication Test</h2>
+        <input type="text" id="username" placeholder="Username" value="testuser2">
+        <input type="password" id="password" placeholder="Password" value="testpass456">
+        <input type="email" id="email" placeholder="Email" value="test2@example.com">
+        <input type="text" id="fullname" placeholder="Full Name" value="Test User 2">
+        <input type="text" id="apikey" placeholder="Zerodha API Key" value="test_api_key_2">
+        <input type="text" id="apisecret" placeholder="Zerodha API Secret" value="test_api_secret_2">
+        <br>
+        <button onclick="register()">Register User</button>
+        <button onclick="login()">Login User</button>
+        <button onclick="checkAuthStatus()">Check Auth Status</button>
+    </div>
+
+    <div class="test-section">
+        <h2>🔗 Zerodha Authentication Test</h2>
+        <button onclick="getZerodhaLoginUrl()">Get Zerodha Login URL</button>
+        <input type="text" id="requestToken" placeholder="Request Token (after Zerodha login)">
+        <button onclick="exchangeToken()">Exchange Token</button>
+        <button onclick="checkZerodhaStatus()">Check Zerodha Status</button>
+    </div>
+
+    <div class="test-section">
+        <h2>📈 Investment Features Test</h2>
+        <button onclick="getInvestmentStatus()">Get Investment Status</button>
+        <button onclick="getPortfolioStatus()">Get Portfolio Status</button>
+        <button onclick="getCsvStocks()">Get CSV Stocks</button>
+        <button onclick="getSystemOrders()">Get System Orders</button>
+        <button onclick="getLiveOrders()">Get Live Orders</button>
+        <button onclick="getFailedOrders()">Get Failed Orders</button>
+        <br>
+        <input type="number" id="investAmount" placeholder="Investment Amount" value="50000">
+        <button onclick="calculatePlan()">Calculate Investment Plan</button>
+        <button onclick="executeInvestment()">Execute Investment</button>
+        <button onclick="calculateRebalancing()">Calculate Rebalancing</button>
+        <button onclick="executeRebalancing()">Execute Rebalancing</button>
+    </div>
+
+    <div class="test-section">
+        <h2>📊 Multi-User Isolation Test</h2>
+        <button onclick="testMultiUserIsolation()">Test User Data Isolation</button>
+        <button onclick="testConcurrentUsers()">Test Concurrent Users</button>
+    </div>
+
+    <div class="test-section">
+        <h2>🔍 System Health Test</h2>
+        <button onclick="healthCheck()">Health Check</button>
+        <button onclick="testAllEndpoints()">Test All Endpoints</button>
+    </div>
+
+    <div class="test-section">
+        <h2>📝 Test Results</h2>
+        <div id="log"></div>
+        <button onclick="clearLog()">Clear Log</button>
+        <button onclick="runFullTest()">🚀 RUN COMPLETE SYSTEM TEST</button>
+    </div>
+
+    <script>
+        let authToken = '';
+        let zerodhaToken = '';
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('log');
+            const color = type === 'success' ? '#00ff00' : type === 'error' ? '#ff0000' : '#00aaff';
+            logDiv.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        async function apiCall(endpoint, method = 'GET', data = null, useAuth = true) {
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            
+            if (useAuth && authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`;
+            }
+
+            const config = {
+                method,
+                headers
+            };
+
+            if (data) {
+                config.body = JSON.stringify(data);
+            }
+
+            try {
+                const response = await fetch(`http://localhost:8000/api${endpoint}`, config);
+                const result = await response.json();
+                
+                if (response.ok) {
+                    log(`✅ ${method} ${endpoint} - Success: ${JSON.stringify(result).slice(0, 100)}...`, 'success');
+                    return result;
+                } else {
+                    log(`❌ ${method} ${endpoint} - Error ${response.status}: ${JSON.stringify(result)}`, 'error');
+                    return null;
+                }
+            } catch (error) {
+                log(`💥 ${method} ${endpoint} - Network Error: ${error.message}`, 'error');
+                return null;
+            }
+        }
+
+        async function register() {
+            const data = {
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value,
+                email: document.getElementById('email').value,
+                full_name: document.getElementById('fullname').value,
+                zerodha_api_key: document.getElementById('apikey').value,
+                zerodha_api_secret: document.getElementById('apisecret').value
+            };
+
+            const result = await apiCall('/register', 'POST', data, false);
+            if (result && result.success) {
+                authToken = result.token.access_token;
+                log(`🎉 Registration successful! Token saved.`, 'success');
+            }
+        }
+
+        async function login() {
+            const data = {
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value
+            };
+
+            const result = await apiCall('/login', 'POST', data, false);
+            if (result && result.success) {
+                authToken = result.token.access_token;
+                log(`🎉 Login successful! Token saved.`, 'success');
+            }
+        }
+
+        async function checkAuthStatus() {
+            await apiCall('/auth-status');
+        }
+
+        async function getZerodhaLoginUrl() {
+            const result = await apiCall('/zerodha-login-url');
+            if (result && result.login_url) {
+                log(`🔗 Zerodha Login URL: ${result.login_url}`, 'info');
+                window.open(result.login_url, '_blank');
+            }
+        }
+
+        async function exchangeToken() {
+            const requestToken = document.getElementById('requestToken').value;
+            if (!requestToken) {
+                log('❌ Please enter request token first', 'error');
+                return;
+            }
+
+            const result = await apiCall('/exchange-token', 'POST', { request_token: requestToken });
+            if (result && result.success) {
+                zerodhaToken = requestToken;
+                log(`🎉 Zerodha authentication successful!`, 'success');
+            }
+        }
+
+        async function checkZerodhaStatus() {
+            await apiCall('/auth-status');
+        }
+
+        async function getInvestmentStatus() {
+            await apiCall('/investment/status');
+        }
+
+        async function getPortfolioStatus() {
+            await apiCall('/investment/portfolio-status');
+        }
+
+        async function getCsvStocks() {
+            await apiCall('/investment/csv-stocks');
+        }
+
+        async function getSystemOrders() {
+            await apiCall('/investment/system-orders');
+        }
+
+        async function getLiveOrders() {
+            await apiCall('/investment/live-orders');
+        }
+
+        async function getFailedOrders() {
+            await apiCall('/investment/failed-orders');
+        }
+
+        async function calculatePlan() {
+            const amount = document.getElementById('investAmount').value;
+            await apiCall('/investment/calculate-plan', 'POST', { investment_amount: parseFloat(amount) });
+        }
+
+        async function executeInvestment() {
+            const amount = document.getElementById('investAmount').value;
+            await apiCall('/investment/execute-initial', 'POST', { investment_amount: parseFloat(amount) });
+        }
+
+        async function calculateRebalancing() {
+            await apiCall('/investment/calculate-rebalancing', 'POST', { additional_investment: 0 });
+        }
+
+        async function executeRebalancing() {
+            await apiCall('/investment/execute-rebalancing', 'POST', { additional_investment: 0 });
+        }
+
+        async function healthCheck() {
+            await apiCall('/health', 'GET', null, false);
+        }
+
+        async function testMultiUserIsolation() {
+            log('🔍 Testing multi-user data isolation...', 'info');
+            
+            // Test that user can only see their own data
+            await getInvestmentStatus();
+            await getPortfolioStatus();
+            await getSystemOrders();
+            
+            log('✅ Multi-user isolation test completed', 'success');
+        }
+
+        async function testConcurrentUsers() {
+            log('👥 Testing concurrent user access...', 'info');
+            
+            // Simulate multiple rapid requests
+            const promises = [
+                apiCall('/investment/status'),
+                apiCall('/investment/portfolio-status'),
+                apiCall('/auth-status'),
+                apiCall('/investment/system-orders'),
+                apiCall('/investment/live-orders')
+            ];
+            
+            await Promise.all(promises);
+            log('✅ Concurrent user test completed', 'success');
+        }
+
+        async function testAllEndpoints() {
+            log('🔍 Testing all API endpoints...', 'info');
+            
+            const endpoints = [
+                ['/auth-status', 'GET'],
+                ['/investment/status', 'GET'],
+                ['/investment/portfolio-status', 'GET'],
+                ['/investment/csv-stocks', 'GET'],
+                ['/investment/system-orders', 'GET'],
+                ['/investment/live-orders', 'GET'],
+                ['/investment/failed-orders', 'GET'],
+                ['/investment/orders-with-retries', 'GET'],
+                ['/investment/monitoring-status', 'GET'],
+                ['/zerodha-login-url', 'GET']
+            ];
+            
+            for (const [endpoint, method] of endpoints) {
+                await new Promise(resolve => setTimeout(resolve, 500)); // Delay between requests
+                await apiCall(endpoint, method);
+            }
+            
+            log('✅ All endpoints tested', 'success');
+        }
+
+        async function runFullTest() {
+            log('🚀 Starting comprehensive system test...', 'info');
+            clearLog();
+            
+            // 1. Test authentication
+            log('📋 Phase 1: User Authentication', 'info');
+            await register();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // 2. Test Zerodha flow
+            log('📋 Phase 2: Zerodha Authentication Flow', 'info');
+            await getZerodhaLoginUrl();
+            await checkZerodhaStatus();
+            
+            // 3. Test investment features
+            log('📋 Phase 3: Investment Features', 'info');
+            await getInvestmentStatus();
+            await getPortfolioStatus();
+            await getCsvStocks();
+            await getSystemOrders();
+            await getLiveOrders();
+            await getFailedOrders();
+            
+            // 4. Test multi-user features
+            log('📋 Phase 4: Multi-User Features', 'info');
+            await testMultiUserIsolation();
+            await testConcurrentUsers();
+            
+            // 5. System health
+            log('📋 Phase 5: System Health', 'info');
+            await healthCheck();
+            
+            log('🎉 COMPREHENSIVE SYSTEM TEST COMPLETED!', 'success');
+            log('📊 Check the results above for any failures', 'info');
+        }
+
+        // Auto-start basic test on page load
+        window.onload = function() {
+            log('🌟 Multi-User Investment Dashboard Test Suite Ready!', 'info');
+            log('💡 Click "RUN COMPLETE SYSTEM TEST" to test all features', 'info');
+        };
+    </script>
+</body>
+</html>

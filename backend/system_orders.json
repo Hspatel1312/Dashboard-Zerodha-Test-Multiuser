@@ -9,10 +9,10 @@
     "allocation_percent": 50.99142857142858,
     "execution_time": "2025-08-28T22:48:09.851946",
     "session_type": "INITIAL_INVESTMENT",
-    "status": "FAILED",
+    "status": "FAILED_MAX_RETRIES",
     "failure_reason": "Your order could not be converted to a After Market Order (AMO).",
-    "retry_count": 3,
-    "can_retry": true,
+    "retry_count": 4,
+    "can_retry": false,
     "retry_history": [
       {
         "retry_number": 1,
@@ -39,7 +39,7 @@
         "failure_reason": "Your order could not be converted to a After Market Order (AMO)."
       }
     ],
-    "last_retry_time": "2025-08-28T22:57:47.746241"
+    "last_retry_time": "2025-08-29T22:55:56.345461"
   },
   {
     "order_id": 2,
@@ -51,10 +51,10 @@
     "allocation_percent": 49.928399999999996,
     "execution_time": "2025-08-28T22:48:09.851946",
     "session_type": "INITIAL_INVESTMENT",
-    "status": "FAILED",
+    "status": "FAILED_MAX_RETRIES",
     "failure_reason": "Your order could not be converted to a After Market Order (AMO).",
-    "retry_count": 3,
-    "can_retry": true,
+    "retry_count": 4,
+    "can_retry": false,
     "retry_history": [
       {
         "retry_number": 1,
@@ -81,6 +81,6 @@
         "failure_reason": "Your order could not be converted to a After Market Order (AMO)."
       }
     ],
-    "last_retry_time": "2025-08-28T22:59:02.516737"
+    "last_retry_time": "2025-08-29T22:56:01.819924"
   }
 ]

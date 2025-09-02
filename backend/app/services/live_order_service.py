@@ -8,9 +8,10 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 class LiveOrderService:
-    def __init__(self, zerodha_auth):
+    def __init__(self, zerodha_auth, user_data_dir=None):
         self.zerodha_auth = zerodha_auth
-        self.live_orders_file = "live_orders.json"
+        self.user_data_dir = user_data_dir or ""
+        self.live_orders_file = os.path.join(self.user_data_dir, "live_orders.json") if user_data_dir else "live_orders.json"
         self.order_status_cache = {}
         self.monitoring_active = False
         self.monitoring_thread = None
@@ -414,6 +415,204 @@ class LiveOrderService:
             print(f"[ERROR] Error loading order tracking: {e}")
             return []
     
+    def retry_failed_orders(self, order_ids: list = None) -> Dict:
+        """Retry failed orders from system orders"""
+        try:
+            print(f"[INFO] LiveOrderService - Starting retry process for orders: {order_ids}")
+            
+            # Load system orders from the user-specific orders file (not live_orders.json)
+            system_orders_file = os.path.join(self.user_data_dir, "system_orders.json") if self.user_data_dir else "system_orders.json"
+            if not os.path.exists(system_orders_file):
+                return {
+                    'success': False,
+                    'error': 'No system orders file found',
+                    'message': 'Cannot retry orders - no system orders file exists'
+                }
+            
+            with open(system_orders_file, 'r') as f:
+                orders = json.load(f)
+            
+            print(f"[DEBUG] LiveOrderService - Loaded {len(orders)} orders from {system_orders_file}")
+            for i, order in enumerate(orders):
+                print(f"[DEBUG] Order {i+1}: id={order.get('order_id')}, status={order.get('status')}, can_retry={order.get('can_retry', True)}")
+            
+            # Filter orders to retry (handle both int and string order_ids)
+            if order_ids:
+                # Convert order_ids to both int and string for comparison
+                order_ids_to_match = []
+                for oid in order_ids:
+                    order_ids_to_match.append(oid)  # original
+                    order_ids_to_match.append(str(oid))  # string version
+                    try:
+                        order_ids_to_match.append(int(oid))  # int version
+                    except (ValueError, TypeError):
+                        pass
+                
+                orders_to_retry = [
+                    order for order in orders 
+                    if order.get('order_id') in order_ids_to_match 
+                    and order.get('status') in ['FAILED', 'CANCELLED', 'REJECTED'] 
+                    and order.get('can_retry', True)
+                ]
+                print(f"[INFO] Retrying specific orders: {order_ids}")
+                print(f"[DEBUG] Order IDs to match: {order_ids_to_match}")
+                
+                # Debug each order's matching
+                for order in orders:
+                    order_id = order.get('order_id')
+                    status = order.get('status')
+                    can_retry = order.get('can_retry', True)
+                    id_match = order_id in order_ids_to_match
+                    status_match = status in ['FAILED', 'CANCELLED', 'REJECTED']
+                    
+                    print(f"[DEBUG] Order {order_id}: status={status}, can_retry={can_retry}, id_match={id_match}, status_match={status_match}")
+                
+                print(f"[DEBUG] Found {len(orders_to_retry)} orders matching criteria")
+            else:
+                orders_to_retry = [
+                    order for order in orders 
+                    if order.get('status') in ['FAILED', 'CANCELLED', 'REJECTED'] 
+                    and order.get('can_retry', True)
+                ]
+                print(f"[INFO] Retrying all failed orders")
+                print(f"[DEBUG] Found {len(orders_to_retry)} orders matching criteria")
+            
+            if not orders_to_retry:
+                return {
+                    'success': True,
+                    'message': 'No failed orders found to retry',
+                    'data': {
+                        'retried_count': 0,
+                        'successful_retries': 0,
+                        'failed_retries': 0,
+                        'orders': []
+                    }
+                }
+            
+            print(f"[INFO] Found {len(orders_to_retry)} orders to retry")
+            
+            # Execute retry for each order
+            retry_results = []
+            successful_retries = 0
+            failed_retries = 0
+            
+            for order in orders_to_retry:
+                print(f"[INFO] Retrying order {order['order_id']}: {order['action']} {order['symbol']}")
+                
+                # Initialize retry_history if not exists
+                if 'retry_history' not in order:
+                    order['retry_history'] = []
+                
+                # Increment retry count
+                current_retry_count = order.get('retry_count', 0) + 1
+                order['retry_count'] = current_retry_count
+                order['last_retry_time'] = datetime.now().isoformat()
+                
+                # Check retry limits
+                max_retries = 3
+                if current_retry_count > max_retries:
+                    print(f"[WARNING] Order {order['order_id']} exceeded max retries ({max_retries})")
+                    order['can_retry'] = False
+                    order['status'] = 'FAILED_MAX_RETRIES'
+                    failed_retries += 1
+                    retry_results.append({
+                        'order_id': order['order_id'],
+                        'symbol': order['symbol'],
+                        'success': False,
+                        'reason': f"Exceeded maximum retry attempts ({max_retries})"
+                    })
+                    continue
+                
+                # Create retry attempt record
+                retry_attempt = {
+                    'retry_number': current_retry_count,
+                    'retry_time': datetime.now().isoformat(),
+                    'original_order_id': order['order_id'],
+                    'zerodha_order_id': None,
+                    'status': 'PENDING',
+                    'failure_reason': None,
+                    'current_retry_attempt': {
+                        'retry_number': current_retry_count,
+                        'retry_time': datetime.now().isoformat(),
+                        'parent_order_id': order['order_id']
+                    }
+                }
+                
+                # Prepare order data for retry
+                order_data = {
+                    'system_order_id': order['order_id'],
+                    'symbol': order['symbol'],
+                    'action': order['action'],
+                    'shares': order['shares'],
+                    'price': order.get('price'),
+                    'order_type': 'MARKET',
+                    'current_retry_attempt': retry_attempt['current_retry_attempt']
+                }
+                
+                # Execute the retry using live order placement
+                retry_result = self.place_live_order(order_data)
+                
+                # Update the retry attempt with results
+                retry_attempt.update({
+                    'zerodha_order_id': retry_result.get('zerodha_order_id'),
+                    'status': 'PLACED' if retry_result.get('success') else 'FAILED',
+                    'failure_reason': retry_result.get('message') if not retry_result.get('success') else None
+                })
+                
+                # Add retry attempt to history
+                order['retry_history'].append(retry_attempt)
+                
+                # Update main order with latest retry results
+                if retry_result.get('success'):
+                    order['status'] = 'LIVE_PLACED'
+                    order['zerodha_order_id'] = retry_result.get('zerodha_order_id')
+                    order['execution_time'] = datetime.now().isoformat()
+                    successful_retries += 1
+                    retry_results.append({
+                        'order_id': order['order_id'],
+                        'symbol': order['symbol'],
+                        'success': True,
+                        'reason': 'Retry successful - order placed',
+                        'zerodha_order_id': retry_result.get('zerodha_order_id'),
+                        'retry_number': current_retry_count
+                    })
+                else:
+                    order['status'] = 'FAILED'
+                    order['error'] = retry_result.get('message', 'Retry failed')
+                    failed_retries += 1
+                    retry_results.append({
+                        'order_id': order['order_id'],
+                        'symbol': order['symbol'],
+                        'success': False,
+                        'reason': retry_result.get('message', 'Retry failed'),
+                        'retry_number': current_retry_count
+                    })
+            
+            # Save updated orders back to system_orders.json
+            with open(system_orders_file, 'w') as f:
+                json.dump(orders, f, indent=2)
+            
+            print(f"[SUCCESS] Retry complete: {successful_retries} successful, {failed_retries} failed")
+            
+            return {
+                'success': True,
+                'message': f'Retry completed: {successful_retries} successful, {failed_retries} failed',
+                'data': {
+                    'retried_count': len(orders_to_retry),
+                    'successful_retries': successful_retries,
+                    'failed_retries': failed_retries,
+                    'orders': retry_results
+                }
+            }
+            
+        except Exception as e:
+            print(f"[ERROR] LiveOrderService - Failed to retry orders: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'message': 'Failed to retry orders due to system error'
+            }
+
     def _save_order_tracking_list(self, tracking_records: List[Dict]):
         """Save order tracking records"""
         try:

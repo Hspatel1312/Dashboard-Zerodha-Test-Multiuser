@@ -1,0 +1,56 @@
+[
+  {
+    "system_order_id": 1,
+    "zerodha_order_id": null,
+    "symbol": "JSWHL",
+    "action": "BUY",
+    "shares": 1,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-09-02T17:37:54.970921",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null,
+    "parent_order_id": 1,
+    "is_retry": true,
+    "retry_info": {
+      "retry_number": 1,
+      "retry_time": "2025-09-02T17:37:54.843523",
+      "parent_order_id": 1
+    }
+  },
+  {
+    "system_order_id": 2,
+    "zerodha_order_id": null,
+    "symbol": "GOLDBEES",
+    "action": "BUY",
+    "shares": 202,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-09-02T17:38:01.226539",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null,
+    "parent_order_id": 2,
+    "is_retry": true,
+    "retry_info": {
+      "retry_number": 1,
+      "retry_time": "2025-09-02T17:38:01.128427",
+      "parent_order_id": 2
+    }
+  },
+  {
+    "system_order_id": 2,
+    "zerodha_order_id": null,
+    "symbol": "GOLDBEES",
+    "action": "BUY",
+    "shares": 202,
+    "status": "FAILED_TO_PLACE",
+    "placed_time": "2025-09-02T17:38:03.470581",
+    "error": "Your order could not be converted to a After Market Order (AMO).",
+    "execution_details": null,
+    "parent_order_id": 2,
+    "is_retry": true,
+    "retry_info": {
+      "retry_number": 2,
+      "retry_time": "2025-09-02T17:38:03.348444",
+      "parent_order_id": 2
+    }
+  }
+]

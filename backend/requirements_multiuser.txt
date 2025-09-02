@@ -1,0 +1,48 @@
+# Multi-User Investment Rebalancing Backend Requirements
+
+# Core FastAPI and web framework
+fastapi>=0.104.1
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+python-jose[cryptography]>=3.3.0
+
+# Database and ORM
+sqlalchemy>=2.0.23
+alembic>=1.12.1
+
+# Authentication and Security
+passlib[bcrypt]>=1.7.4
+python-jose>=3.3.0
+cryptography>=41.0.8
+
+# HTTP Client and API
+requests>=2.31.0
+httpx>=0.25.2
+aiohttp>=3.9.1
+
+# Data handling and validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Financial and trading libraries
+kiteconnect>=4.2.0
+pyotp>=2.9.0
+
+# Data processing
+pandas>=2.1.4
+numpy>=1.26.2
+
+# Utilities
+python-dateutil>=2.8.2
+pytz>=2023.3
+
+# File handling and JSON
+jsonschema>=4.20.0
+
+# Development and testing (optional)
+pytest>=7.4.3
+pytest-asyncio>=0.21.1
+httpx>=0.25.2
+
+# Environment and configuration
+python-dotenv>=1.0.0

@@ -37,24 +37,37 @@ import toast from 'react-hot-toast';
 
 // Components
 import LoadingScreen from '../../components/UI/LoadingScreen';
-import AuthenticationFlow from '../../components/Auth/AuthenticationFlow';
+import ZerodhaConnectionFlow from '../../components/Auth/ZerodhaConnectionFlow';
 
 // Hooks
 import { 
-  useAuthStatus, 
-  useInvestmentStatus, 
-  usePortfolioStatus,
-  useCsvStocks,
-  useSystemOrders,
-} from '../../hooks/useApi';
+  useUserAuthStatus, 
+  useUserInvestmentStatus, 
+  useUserPortfolioStatus,
+  useUserCsvStocks,
+  useUserSystemOrders,
+} from '../../hooks/useUserApi';
+import { useUser } from '../../contexts/UserContext';
 
 const Dashboard = () => {
+  const { user } = useUser();
   
-  const { data: authStatus, isLoading: authLoading } = useAuthStatus();
-  const { data: investmentStatus, isLoading: investmentLoading, refetch: refetchInvestment } = useInvestmentStatus();
-  const { data: portfolioStatus, isLoading: portfolioLoading, refetch: refetchPortfolio } = usePortfolioStatus();
-  const { data: csvStocks, isLoading: csvLoading, refetch: refetchCsv } = useCsvStocks();
-  const { data: systemOrders, isLoading: ordersLoading, refetch: refetchOrders } = useSystemOrders();
+  const { data: authStatus, isLoading: authLoading } = useUserAuthStatus();
+  
+  // Debug logging for auth status
+  React.useEffect(() => {
+    console.log('Dashboard - Auth Status Debug:', {
+      authStatus,
+      authenticated: authStatus?.authenticated,
+      profile: authStatus?.profile_name,
+      user: authStatus?.user,
+      loading: authLoading
+    });
+  }, [authStatus, authLoading]);
+  const { data: investmentStatus, isLoading: investmentLoading, refetch: refetchInvestment } = useUserInvestmentStatus();
+  const { data: portfolioStatus, isLoading: portfolioLoading, refetch: refetchPortfolio } = useUserPortfolioStatus();
+  const { data: csvStocks, isLoading: csvLoading, refetch: refetchCsv } = useUserCsvStocks();
+  const { data: systemOrders, isLoading: ordersLoading, refetch: refetchOrders } = useUserSystemOrders();
 
   const handleRefresh = () => {
     refetchInvestment();
@@ -69,11 +82,11 @@ const Dashboard = () => {
     return <LoadingScreen message="Loading dashboard..." />;
   }
 
-  // Not authenticated
+  // Not authenticated with Zerodha (but user is logged into the app)
   if (!authStatus?.authenticated) {
     return (
       <Container maxWidth="lg" sx={{ py: 4 }}>
-        <AuthenticationFlow />
+        <ZerodhaConnectionFlow />
       </Container>
     );
   }

@@ -416,3 +416,72 @@ class PortfolioMetricsService:
             'worst_performer': worst_performer,
             'avg_return': weighted_return
         }
+    
+    def calculate_portfolio_summary(self, orders: list, csv_stocks: list) -> dict:
+        """Calculate basic portfolio summary for dashboard display"""
+        try:
+            if not orders:
+                return {
+                    'current_value': 0,
+                    'total_investment': 0,
+                    'returns_percentage': 0.0,
+                    'stock_count': 0,
+                    'holdings': {}
+                }
+            
+            # Calculate basic totals from orders
+            total_investment = 0
+            current_value = 0
+            holdings = {}
+            
+            for order in orders:
+                # Only include successfully executed orders in portfolio calculation
+                if order.get('status') != 'EXECUTED':
+                    continue
+                    
+                symbol = order.get('symbol', '')
+                shares = order.get('shares', 0)
+                price = order.get('price', 0)
+                order_value = shares * price
+                
+                total_investment += order_value
+                current_value += order_value  # Without live prices, assume same value
+                
+                if symbol not in holdings:
+                    holdings[symbol] = {
+                        'symbol': symbol,
+                        'shares': 0,
+                        'investment_value': 0,
+                        'current_value': 0,
+                        'avg_price': 0
+                    }
+                
+                holdings[symbol]['shares'] += shares
+                holdings[symbol]['investment_value'] += order_value
+                holdings[symbol]['current_value'] += order_value
+                
+                if holdings[symbol]['shares'] > 0:
+                    holdings[symbol]['avg_price'] = holdings[symbol]['investment_value'] / holdings[symbol]['shares']
+            
+            # Calculate returns
+            returns_percentage = 0.0
+            if total_investment > 0:
+                returns_percentage = ((current_value - total_investment) / total_investment) * 100
+            
+            return {
+                'current_value': current_value,
+                'total_investment': total_investment,
+                'returns_percentage': returns_percentage,
+                'stock_count': len(holdings),
+                'holdings': holdings
+            }
+            
+        except Exception as e:
+            print(f"[ERROR] Portfolio summary calculation failed: {e}")
+            return {
+                'current_value': 0,
+                'total_investment': 0,
+                'returns_percentage': 0.0,
+                'stock_count': 0,
+                'holdings': {}
+            }

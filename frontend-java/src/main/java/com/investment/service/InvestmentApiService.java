@@ -33,11 +33,42 @@ public class InvestmentApiService {
     }
 
     /**
+     * User login
+     */
+    public Mono<JsonNode> login(Map<String, String> credentials) {
+        return webClient.post()
+                .uri("/api/login")
+                .bodyValue(credentials)
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(10))
+                .onErrorResume(this::handleError);
+    }
+
+    /**
+     * User registration
+     */
+    public Mono<JsonNode> register(Map<String, Object> userData) {
+        return webClient.post()
+                .uri("/api/register")
+                .bodyValue(userData)
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(15))
+                .onErrorResume(this::handleError);
+    }
+
+    /**
      * Check Zerodha authentication status
      */
-    public Mono<JsonNode> getAuthStatus() {
+    public Mono<JsonNode> getAuthStatus(String authHeader) {
         return webClient.get()
                 .uri("/api/auth-status")
+                .headers(headers -> {
+                    if (authHeader != null) {
+                        headers.add("Authorization", authHeader);
+                    }
+                })
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .timeout(Duration.ofSeconds(10))
@@ -47,9 +78,14 @@ public class InvestmentApiService {
     /**
      * Get Zerodha login URL
      */
-    public Mono<JsonNode> getZerodhaLoginUrl() {
+    public Mono<JsonNode> getZerodhaLoginUrl(String authHeader) {
         return webClient.get()
-                .uri("/auth/zerodha-login-url")
+                .uri("/api/zerodha-login-url")
+                .headers(headers -> {
+                    if (authHeader != null) {
+                        headers.add("Authorization", authHeader);
+                    }
+                })
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .timeout(Duration.ofSeconds(10))
@@ -59,11 +95,16 @@ public class InvestmentApiService {
     /**
      * Exchange request token for access token
      */
-    public Mono<JsonNode> exchangeToken(String requestToken) {
+    public Mono<JsonNode> exchangeToken(String requestToken, String authHeader) {
         Map<String, String> request = Map.of("request_token", requestToken);
         
         return webClient.post()
-                .uri("/auth/exchange-token")
+                .uri("/api/exchange-token")
+                .headers(headers -> {
+                    if (authHeader != null) {
+                        headers.add("Authorization", authHeader);
+                    }
+                })
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(JsonNode.class)
@@ -264,6 +305,62 @@ public class InvestmentApiService {
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .timeout(Duration.ofSeconds(30))
+                .onErrorResume(this::handleError);
+    }
+
+    /**
+     * Start order monitoring
+     */
+    public Mono<JsonNode> startOrderMonitoring() {
+        return webClient.post()
+                .uri("/api/investment/start-monitoring")
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(30))
+                .onErrorResume(this::handleError);
+    }
+
+    /**
+     * Stop order monitoring
+     */
+    public Mono<JsonNode> stopOrderMonitoring(String authHeader, String cookieHeader) {
+        return webClient.post()
+                .uri("/api/investment/stop-monitoring")
+                .headers(headers -> {
+                    if (authHeader != null) {
+                        headers.add("Authorization", authHeader);
+                    }
+                    if (cookieHeader != null) {
+                        headers.add("Cookie", cookieHeader);
+                    }
+                })
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(30))
+                .onErrorResume(this::handleError);
+    }
+
+
+    /**
+     * Update order status from Zerodha
+     */
+    public Mono<JsonNode> updateOrderStatusFromZerodha(String zerodhaOrderId, String authHeader, String cookieHeader) {
+        return webClient.post()
+                .uri("/api/investment/update-order-status")
+                .headers(headers -> {
+                    if (authHeader != null) {
+                        headers.add("Authorization", authHeader);
+                    }
+                    if (cookieHeader != null) {
+                        headers.add("Cookie", cookieHeader);
+                    }
+                })
+                .bodyValue(zerodhaOrderId != null ? 
+                    Map.of("zerodha_order_id", zerodhaOrderId) : 
+                    Map.of())
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(60))
                 .onErrorResume(this::handleError);
     }
 
