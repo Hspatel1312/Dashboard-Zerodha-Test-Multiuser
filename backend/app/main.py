@@ -494,6 +494,60 @@ async def get_failed_orders(current_user: UserDB = Depends(get_current_user)):
             "user": current_user.username
         }
 
+@app.post("/api/investment/execute-live-orders")
+async def execute_live_orders(current_user: UserDB = Depends(get_current_user)):
+    """Execute all PENDING orders by sending them to Zerodha"""
+    try:
+        print(f"[INFO] User {current_user.username} - Executing live orders...")
+        
+        # Get user-specific services
+        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        
+        if not investment_service:
+            raise HTTPException(
+                status_code=500, 
+                detail="Investment service not initialized for user"
+            )
+        
+        # Get all PENDING orders
+        orders = investment_service._load_orders()
+        pending_orders = [order for order in orders if order.get('status') == 'PENDING']
+        
+        if not pending_orders:
+            return {
+                "success": True,
+                "message": "No pending orders to execute",
+                "orders_executed": 0,
+                "user": current_user.username
+            }
+        
+        print(f"[INFO] User {current_user.username} - Found {len(pending_orders)} pending orders to execute")
+        
+        # Use the professional execute orders method
+        execution_result = investment_service._execute_orders_to_zerodha(pending_orders)
+        
+        # Save updated orders
+        investment_service._save_orders(orders)
+        
+        return {
+            "success": True,
+            "message": execution_result['message'],
+            "orders_executed": execution_result['orders_sent_successfully'],
+            "orders_failed": execution_result['orders_failed'],
+            "total_orders": execution_result['total_orders'],
+            "execution_results": execution_result['execution_results'],
+            "user": current_user.username
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] User {current_user.username} - Failed to execute live orders: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to execute live orders: {str(e)}",
+            "user": current_user.username
+        }
+
 @app.get("/api/investment/requirements")
 async def get_investment_requirements(
     current_user: UserDB = Depends(get_current_user)

@@ -726,18 +726,19 @@ class MultiUserInvestmentService:
                     executed_orders.append(system_order)
                     order_id += 1
             
-            # Save executed orders to user's file
+            # Execute orders to Zerodha using the professional method
+            execution_result = self._execute_orders_to_zerodha(executed_orders)
+            
+            # Save executed orders to user's file (now with updated Zerodha status)
             self._save_orders(executed_orders)
             
-            successful_orders = [o for o in executed_orders if o.get('status') == 'EXECUTED']
-            failed_orders = [o for o in executed_orders if o.get('status') == 'FAILED']
-            
             return {
-                "success": len(successful_orders) > 0,
-                "message": f"Executed {len(successful_orders)} orders successfully, {len(failed_orders)} failed",
-                "orders_executed": len(successful_orders),
-                "orders_failed": len(failed_orders),
-                "total_orders": len(executed_orders),
+                "success": execution_result['orders_sent_successfully'] > 0,
+                "message": execution_result['message'],
+                "orders_executed": execution_result['orders_sent_successfully'],
+                "orders_failed": execution_result['orders_failed'],
+                "total_orders": execution_result['total_orders'],
+                "zerodha_execution_results": execution_result['execution_results'],
                 "user": self.user.username
             }
             
@@ -1026,7 +1027,13 @@ class MultiUserInvestmentService:
                 order_id += 1
                 print(f"   BUY {buy_order['shares']} {buy_order['symbol']} @ Rs.{buy_order['price']:.2f} - {buy_order.get('reason', '')}")
             
-            # Save new orders to user's file
+            print(f"[DEBUG] ********** CREATED {len(new_orders)} NEW ORDERS **********")
+            # Execute orders to Zerodha immediately
+            print(f"[DEBUG] ********** ABOUT TO EXECUTE {len(new_orders)} ORDERS TO ZERODHA **********")
+            execution_result = self._execute_orders_to_zerodha(new_orders)
+            print(f"[DEBUG] ********** ZERODHA EXECUTION RESULT: {execution_result} **********")
+            
+            # Save new orders to user's file (now with updated Zerodha status)
             all_orders = existing_orders + new_orders
             self._save_orders(all_orders)
             
@@ -1034,9 +1041,12 @@ class MultiUserInvestmentService:
             
             result = {
                 "success": True,
-                "message": f"Rebalancing executed with {len(new_orders)} new orders",
+                "message": f"Rebalancing executed with {len(new_orders)} new orders ({execution_result['orders_sent_successfully']} sent to Zerodha, {execution_result['orders_failed']} failed)",
                 "execution_successful": True,
                 "orders_executed": len(new_orders),
+                "orders_sent_to_zerodha": execution_result['orders_sent_successfully'],
+                "orders_failed_zerodha": execution_result['orders_failed'],
+                "zerodha_execution_results": execution_result['execution_results'],
                 "buy_orders": len(buy_orders),
                 "sell_orders": len(sell_orders),
                 "total_buy_value": plan_summary.get('total_buy_value', 0),
@@ -1064,6 +1074,81 @@ class MultiUserInvestmentService:
                 "user": self.user.username
             }
     
+    def _execute_orders_to_zerodha(self, orders: list) -> Dict:
+        """
+        Professional reusable method to execute a list of orders to Zerodha
+        
+        Args:
+            orders: List of order dictionaries to execute
+            
+        Returns:
+            Dict with execution results and statistics
+        """
+        if not orders:
+            return {
+                "orders_sent_successfully": 0,
+                "orders_failed": 0,
+                "execution_results": [],
+                "message": "No orders to execute"
+            }
+        
+        orders_sent_successfully = 0
+        orders_failed = 0
+        execution_results = []
+        
+        print(f"[INFO] User {self.user.username} - Executing {len(orders)} orders to Zerodha...")
+        
+        for order in orders:
+            try:
+                # Use the professional live order service
+                result = self.live_order_service.place_live_order({
+                    "system_order_id": order.get("order_id"),
+                    "symbol": order["symbol"],
+                    "action": order["action"],
+                    "shares": order["shares"],
+                    "price": order.get("price", 0),
+                    "order_type": "MARKET"
+                })
+                
+                if result["success"]:
+                    # Update order status to SENT with Zerodha details
+                    order["status"] = "SENT"
+                    order["zerodha_order_id"] = result.get("zerodha_order_id")
+                    order["sent_time"] = datetime.now().isoformat()
+                    orders_sent_successfully += 1
+                    print(f"[SUCCESS] User {self.user.username} - Order sent to Zerodha: {order['symbol']} {order['action']} {order['shares']} (ID: {result.get('zerodha_order_id')})")
+                else:
+                    # Keep as PENDING but log the failure
+                    order["last_error"] = result.get("error", "Unknown error")
+                    order["last_error_time"] = datetime.now().isoformat()
+                    orders_failed += 1
+                    print(f"[ERROR] User {self.user.username} - Failed to send order to Zerodha: {order['symbol']} - {result.get('error')}")
+                
+                execution_results.append(result)
+                
+            except Exception as e:
+                # Handle any exceptions during execution
+                order["last_error"] = str(e)
+                order["last_error_time"] = datetime.now().isoformat()
+                orders_failed += 1
+                print(f"[ERROR] User {self.user.username} - Exception executing order {order['symbol']}: {e}")
+                execution_results.append({
+                    "success": False,
+                    "error": str(e),
+                    "symbol": order["symbol"]
+                })
+        
+        execution_summary = {
+            "orders_sent_successfully": orders_sent_successfully,
+            "orders_failed": orders_failed,
+            "execution_results": execution_results,
+            "total_orders": len(orders),
+            "message": f"Executed {orders_sent_successfully} orders successfully, {orders_failed} failed"
+        }
+        
+        print(f"[INFO] User {self.user.username} - Zerodha execution summary: {orders_sent_successfully} sent, {orders_failed} failed")
+        return execution_summary
+
     def retry_failed_orders(self, order_ids: list = None) -> Dict:
         """Retry failed orders"""
         try:
