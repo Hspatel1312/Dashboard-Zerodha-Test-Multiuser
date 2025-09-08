@@ -12,10 +12,27 @@ from .portfolio_comparison_service import PortfolioComparisonService
 from .multiuser_zerodha_auth import MultiUserZerodhaAuth
 from ..database import UserDB
 
-class MultiUserInvestmentService:
+# Import our foundation utilities for better structure and maintainability
+from .utils.error_handler import ErrorHandler
+from .utils.logger import LoggerFactory
+from .utils.date_time_utils import DateTimeUtils
+from .utils.financial_calculations import FinancialCalculations
+from .base.base_service import BaseService
+from .base.file_operations_mixin import UserSpecificFileOperationsMixin
+
+class MultiUserInvestmentService(UserSpecificFileOperationsMixin, BaseService):
     """User-specific investment service - each user has their own portfolio and orders"""
     
     def __init__(self, user: UserDB, zerodha_auth: MultiUserZerodhaAuth):
+        # Initialize base services
+        super().__init__(user.user_data_dir)  # Initialize file operations mixin
+        BaseService.__init__(
+            self,
+            service_name="multiuser_investment_service",
+            user_context=f"User {user.username}",
+            enable_performance_tracking=True
+        )
+        
         self.user = user
         self.zerodha_auth = zerodha_auth
         
@@ -58,21 +75,15 @@ class MultiUserInvestmentService:
         self._auto_start_monitoring()
     
     def _ensure_directories(self):
-        """Ensure all required directories and files exist"""
+        """Ensure all required directories and files exist - now uses FileOperationsMixin"""
         try:
-            os.makedirs(self.user_data_dir, exist_ok=True)
-            
-            # Initialize empty files if they don't exist
-            for file_path in [self.orders_file, self.portfolio_state_file, 
-                             self.csv_history_file, self.failed_orders_file, self.live_orders_file]:
-                if not os.path.exists(file_path):
-                    with open(file_path, 'w', encoding='utf-8') as f:
-                        json.dump([], f)
-                        
-            print(f"[INFO] User {self.user.username} - Data directory initialized: {self.user_data_dir}")
-            
+            success = self.initialize_all_files()
+            if success:
+                self.log_info("directory_initialization", f"Data directory initialized: {self.user_data_dir}")
+            return success
         except Exception as e:
-            print(f"[ERROR] User {self.user.username} - Failed to create directories: {e}")
+            self.log_error("ensure_directories", e)
+            return False
     
     def _auto_start_monitoring(self):
         """Auto-start monitoring if there are pending orders"""
@@ -169,32 +180,48 @@ class MultiUserInvestmentService:
                 }
                 
         except Exception as e:
-            print(f"[ERROR] User {self.user.username} - Investment status error: {e}")
-            return {
-                "success": False,
-                "error": f"Failed to get investment status: {str(e)}",
+            return self.handle_operation_error("get_investment_status", e, {
                 "user": self.user.username
-            }
+            })
     
     def _load_orders(self):
-        """Load user's orders from their specific file"""
-        try:
-            if os.path.exists(self.orders_file):
-                with open(self.orders_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            return []
-        except Exception as e:
-            print(f"[ERROR] User {self.user.username} - Error loading orders: {e}")
-            return []
+        """Load user's orders from their specific file - now uses FileOperationsMixin"""
+        return self.load_orders_data()
     
     def _save_orders(self, orders):
-        """Save user's orders to their specific file"""
+        """Save user's orders to their specific file - now uses FileOperationsMixin"""
+        return self.save_orders_data(orders, create_backup=True)
+    
+    # Helper methods for breaking down mega-functions
+    
+    def _extract_portfolio_data_for_rebalancing(self, portfolio_response: Dict) -> Dict:
+        """
+        Extract and validate portfolio data for rebalancing operations
+        
+        This helper method extracts common portfolio data validation logic
+        that was repeated in mega-functions like calculate_rebalancing_plan
+        """
         try:
-            with open(self.orders_file, 'w', encoding='utf-8') as f:
-                json.dump(orders, f, indent=2, ensure_ascii=False, default=str)
-            print(f"[INFO] User {self.user.username} - Orders saved: {len(orders)} orders")
+            portfolio_data = portfolio_response.get("data", {})
+            current_holdings = portfolio_data.get("portfolio_summary", {}).get("holdings", {})
+            current_portfolio_value = portfolio_data.get("portfolio_summary", {}).get("current_value", 0)
+            
+            if not current_holdings:
+                return self.create_error_response(
+                    "No current holdings found for rebalancing",
+                    "portfolio_data_extraction"
+                )
+            
+            self.log_financial_metric("current_portfolio_value", current_portfolio_value, format_as_currency=True)
+            
+            return self.create_success_response({
+                "portfolio_data": portfolio_data,
+                "current_holdings": current_holdings,
+                "current_portfolio_value": current_portfolio_value
+            }, "Portfolio data extracted successfully", "portfolio_data_extraction")
+            
         except Exception as e:
-            print(f"[ERROR] User {self.user.username} - Error saving orders: {e}")
+            return self.handle_operation_error("extract_portfolio_data", e)
     
     def get_portfolio_status(self):
         """Get user's portfolio status for dashboard"""
@@ -266,12 +293,9 @@ class MultiUserInvestmentService:
             return response_data
             
         except Exception as e:
-            print(f"[ERROR] User {self.user.username} - Portfolio status error: {e}")
-            return {
-                "success": False,
-                "error": f"Failed to get portfolio status: {str(e)}",
+            return self.handle_operation_error("get_portfolio_status", e, {
                 "user": self.user.username
-            }
+            })
     
     def get_csv_stocks(self):
         """Get CSV stocks with current prices (shared across all users)"""

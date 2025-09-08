@@ -300,9 +300,9 @@
     "allocation_percent": 0,
     "execution_time": "2025-09-05T10:17:47.624620",
     "session_type": "REBALANCING",
-    "status": "LIVE_PLACED",
-    "can_retry": true,
-    "retry_count": 2,
+    "status": "FAILED_MAX_RETRIES",
+    "can_retry": false,
+    "retry_count": 4,
     "retry_history": [
       {
         "retry_number": 1,
@@ -322,17 +322,31 @@
         "retry_time": "2025-09-05T10:17:47.463639",
         "original_order_id": 20,
         "zerodha_order_id": "250905600293476",
-        "status": "PLACED",
+        "status": "REJECTED",
         "failure_reason": null,
         "current_retry_attempt": {
           "retry_number": 2,
           "retry_time": "2025-09-05T10:17:47.463652",
           "parent_order_id": 20
         }
+      },
+      {
+        "retry_number": 3,
+        "retry_time": "2025-09-05T23:56:42.205713",
+        "original_order_id": 20,
+        "zerodha_order_id": null,
+        "status": "FAILED",
+        "failure_reason": "Your order could not be converted to a After Market Order (AMO).",
+        "current_retry_attempt": {
+          "retry_number": 3,
+          "retry_time": "2025-09-05T23:56:42.205728",
+          "parent_order_id": 20
+        }
       }
     ],
     "zerodha_order_id": "250905600293476",
     "sent_time": "2025-09-05T10:15:44.548866",
-    "last_retry_time": "2025-09-05T10:17:47.463594"
+    "last_retry_time": "2025-09-06T11:58:09.858591",
+    "error": "Your order could not be converted to a After Market Order (AMO)."
   }
 ]

@@ -1,4 +1,4 @@
-# backend/app/services/csv_service.py - FIXED VERSION with proper Zerodha connection handling
+# backend/app/services/csv_service.py - Refactored to use foundation utilities
 
 import requests
 import pandas as pd
@@ -12,50 +12,64 @@ import time as time_module
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-class CSVService:
+# Import foundation utilities for enhanced functionality
+from .utils.error_handler import ErrorHandler
+from .utils.logger import LoggerFactory
+from .base.base_service import BaseService
+from .base.zerodha_integration_mixin import DataFetchingZerodhaIntegrationMixin
+
+
+class CSVService(BaseService, DataFetchingZerodhaIntegrationMixin):
+    
     def __init__(self, zerodha_auth):
+        super().__init__(service_name="csv_service")
+        DataFetchingZerodhaIntegrationMixin.__init__(self, zerodha_auth)
+        
         self.csv_url = "https://raw.githubusercontent.com/Hspatel1312/Stock-scanner/refs/heads/main/data/nifty_smallcap_momentum_scan.csv"
-        self.zerodha_auth = zerodha_auth
         self._cache_file = "csv_cache.json"
         self._cache_duration = 300  # 5 minutes
         self._change_detection_enabled = True
         self._last_check_time = None
         
     def get_stocks_with_prices(self, force_refresh: bool = False) -> Dict:
-        """Get complete stock data with live prices - FIXED: Proper Zerodha connection handling"""
+        """Get complete stock data with live prices - FIXED: Using foundation utilities"""
         try:
             # Fetch CSV data with force refresh option
             csv_data = self.fetch_csv_data(force_refresh=force_refresh)
             
-            # Try to get REAL live prices - FIXED: Proper connection check
+            # Check authentication using mixin
+            auth_error = self.require_zerodha_authentication("get_stocks_with_prices")
+            if auth_error:
+                return auth_error
+            
+            # Try to get REAL live prices using mixin
             price_fetch_error = None
             prices = {}
             live_prices_used = False
             market_data_source = "UNAVAILABLE"
             
             try:
-                print("[INFO] Attempting to fetch LIVE prices from Zerodha...")
+                self.log_info("price_fetch", f"Attempting to fetch LIVE prices for {len(csv_data['symbols'])} symbols")
                 
-                # FIXED: Ensure we have a valid Kite instance
-                kite = self._get_valid_kite_instance()
+                # Use mixin to get validated Kite instance
+                kite = self.get_validated_kite_instance()
                 if not kite:
                     raise Exception("PRICE_DATA_UNAVAILABLE: No valid Zerodha connection")
                 
                 prices = self.get_live_prices(csv_data['symbols'], kite)
                 live_prices_used = True
                 market_data_source = "Zerodha Live API"
-                print(f"[SUCCESS] Successfully fetched {len(prices)} live prices")
+                self.log_success("price_fetch", f"Successfully fetched {len(prices)} live prices")
                 
             except Exception as price_error:
                 price_fetch_error = str(price_error)
-                print(f"[ERROR] Live price fetching failed: {price_error}")
+                self.log_error("price_fetch", price_error)
                 
                 # STRICT: No fallback to fake data
                 if "PRICE_DATA_UNAVAILABLE" in price_fetch_error:
-                    print("[ERROR] STRICT MODE: No fake prices - returning error state")
+                    self.log_error("price_data_strict", Exception("STRICT MODE: No fake prices - returning error state"))
                     
-                    return {
-                        'error': 'PRICE_DATA_UNAVAILABLE',
+                    return self.create_price_data_error({
                         'error_message': price_fetch_error,
                         'csv_info': {
                             'fetch_time': csv_data['fetch_time'],
@@ -65,23 +79,23 @@ class CSVService:
                         },
                         'price_data_status': {
                             'live_prices_used': False,
-                            'zerodha_connected': self._check_zerodha_connection_status(),
+                            'zerodha_connected': self.is_zerodha_authenticated(),
                             'success_rate': 0,
                             'market_data_source': 'UNAVAILABLE - Connection Failed',
                             'market_open': self._is_market_open(),
                             'error_reason': price_fetch_error,
                             'last_check_time': self._last_check_time.isoformat() if self._last_check_time else None,
-                            'kite_instance_available': bool(self._get_valid_kite_instance()),
+                            'kite_instance_available': bool(self.get_validated_kite_instance()),
                             'auth_status': self.zerodha_auth.get_auth_status() if self.zerodha_auth else {}
                         }
-                    }
+                    })
                 else:
                     # For other errors, re-raise
                     raise Exception(f"PRICE_DATA_UNAVAILABLE: {price_fetch_error}")
             
             # Only proceed if we have REAL prices, or provide fallback for basic stocks
             if not prices:
-                print("[WARNING] No live prices available - using fallback data for basic portfolio display")
+                self.log_warning("price_fallback", "No live prices available - using fallback data for basic portfolio display")
                 # Provide fallback prices for the basic CSV stocks to allow portfolio interface to work
                 fallback_prices = {
                     'JSWHL': {'price': 500.0, 'ltp': 500.0},  # Fallback price for JSWHL
@@ -89,7 +103,7 @@ class CSVService:
                 }
                 prices = fallback_prices
                 market_data_source = "FALLBACK - Demo prices (Connect to Zerodha for real prices)"
-                print(f"[INFO] Using fallback prices for {len(prices)} stocks to enable dashboard")
+                self.log_info("price_fallback", f"Using fallback prices for {len(prices)} stocks to enable dashboard")
             
             # Combine CSV data with REAL prices only
             stocks_data = []
@@ -152,9 +166,9 @@ class CSVService:
                     stocks_data.append(stock_data)
                 else:
                     if symbol in prices:
-                        print(f"   [WARNING] {symbol}: Excluded - invalid price data")
+                        self.log_warning("stock_exclusion", f"{symbol}: Excluded - invalid price data")
                     else:
-                        print(f"   [WARNING] {symbol}: Excluded - no live price data available")
+                        self.log_warning("stock_exclusion", f"{symbol}: Excluded - no live price data available")
                     excluded_count += 1
             
             if len(stocks_data) == 0:
@@ -181,7 +195,7 @@ class CSVService:
                 },
                 'price_data_status': {
                     'live_prices_used': live_prices_used,
-                    'zerodha_connected': self._check_zerodha_connection_status(),
+                    'zerodha_connected': self.is_zerodha_authenticated(),
                     'success_rate': success_rate,
                     'last_updated': datetime.now().isoformat(),
                     'market_data_source': market_data_source,
@@ -189,22 +203,18 @@ class CSVService:
                     'price_fetch_reason': "Live data fetched successfully",
                     'last_check_time': self._last_check_time.isoformat() if self._last_check_time else None,
                     'data_quality': 'HIGH - All prices from live API',
-                    'kite_instance_available': bool(self._get_valid_kite_instance())
+                    'kite_instance_available': bool(self.get_validated_kite_instance())
                 }
             }
             
-            print(f"[SUCCESS] Complete stock data prepared with LIVE prices:")
-            print(f"   CSV symbols: {len(csv_data['symbols'])}")
-            print(f"   With live prices: {len(stocks_data)}")
-            print(f"   Excluded due to no live price: {excluded_count}")
-            print(f"   Success rate: {success_rate:.1f}%")
-            print(f"   Data source: {market_data_source}")
-            print(f"   Market status: {'OPEN' if self._is_market_open() else 'CLOSED'}")
+            self.log_success("complete_stock_data", 
+                f"CSV symbols: {len(csv_data['symbols'])}, With live prices: {len(stocks_data)}, "
+                f"Success rate: {success_rate:.1f}%, Data source: {market_data_source}")
             
             return result
             
         except Exception as e:
-            print(f"[ERROR] Error preparing stock data: {e}")
+            self.log_error("get_stocks_with_prices", e)
             
             # If it's a price data unavailable error, return structured error
             if "PRICE_DATA_UNAVAILABLE" in str(e):
@@ -220,123 +230,53 @@ class CSVService:
                 except:
                     csv_info = {}
                 
-                return {
-                    'error': 'PRICE_DATA_UNAVAILABLE',
+                return self.create_price_data_error({
                     'error_message': str(e),
-                    'stocks': [],
-                    'total_stocks': 0,
                     'csv_info': csv_info,
                     'price_data_status': {
                         'live_prices_used': False,
-                        'zerodha_connected': self._check_zerodha_connection_status(),
+                        'zerodha_connected': self.is_zerodha_authenticated(),
                         'success_rate': 0,
                         'market_data_source': 'UNAVAILABLE',
                         'market_open': self._is_market_open(),
                         'error_reason': str(e),
                         'data_quality': 'UNAVAILABLE - No live prices',
-                        'kite_instance_available': bool(self._get_valid_kite_instance()),
+                        'kite_instance_available': bool(self.get_validated_kite_instance()),
                         'auth_status': self.zerodha_auth.get_auth_status() if self.zerodha_auth else {}
                     }
-                }
+                })
             
-            raise Exception(f"Cannot prepare investment data: {str(e)}")
-    
-    def _get_valid_kite_instance(self):
-        """FIXED: Get a valid Kite instance with proper connection handling"""
-        try:
-            if not self.zerodha_auth:
-                print("[ERROR] No Zerodha auth service available")
-                return None
-            
-            # Check if authenticated
-            if not self.zerodha_auth.is_authenticated():
-                print("[INFO] Zerodha not authenticated, attempting authentication...")
-                try:
-                    result = self.zerodha_auth.authenticate()
-                    if not result:
-                        print("[ERROR] Authentication failed")
-                        return None
-                except Exception as e:
-                    print(f"[ERROR] Authentication error: {e}")
-                    return None
-            
-            # Get Kite instance
-            kite = self.zerodha_auth.get_kite_instance()
-            if not kite:
-                print("[ERROR] No Kite instance available after authentication")
-                return None
-            
-            # Test the connection with a simple call
-            try:
-                profile = kite.profile()
-                print(f"[SUCCESS] Kite instance validated with profile: {profile.get('user_name', 'Unknown')}")
-                return kite
-            except Exception as e:
-                print(f"[ERROR] Kite instance validation failed: {e}")
-                # Try to refresh the token
-                try:
-                    print("[INFO] Attempting to refresh token...")
-                    refreshed_kite = self.zerodha_auth.force_refresh_token()
-                    if refreshed_kite:
-                        print("[SUCCESS] Token refreshed successfully")
-                        return refreshed_kite
-                    else:
-                        print("[ERROR] Token refresh failed")
-                        return None
-                except Exception as refresh_error:
-                    print(f"[ERROR] Token refresh error: {refresh_error}")
-                    return None
-                    
-        except Exception as e:
-            print(f"[ERROR] Error getting valid Kite instance: {e}")
-            return None
-    
-    def _check_zerodha_connection_status(self) -> bool:
-        """Check current Zerodha connection status"""
-        try:
-            if not self.zerodha_auth:
-                return False
-            
-            if not self.zerodha_auth.is_authenticated():
-                return False
-            
-            kite = self._get_valid_kite_instance()
-            return bool(kite)
-            
-        except Exception as e:
-            print(f"[WARNING] Error checking Zerodha connection: {e}")
-            return False
+            return self.handle_operation_error("get_stocks_with_prices", e)
 
     def get_live_prices(self, symbols: List[str], kite=None) -> Dict[str, float]:
-        """Get live prices using Zerodha API - FIXED: Accept kite instance parameter"""
+        """Get live prices using Zerodha API - Using mixin for connection handling"""
         if not symbols:
             raise Exception("PRICE_DATA_UNAVAILABLE: No symbols provided for price fetching")
             
-        print(f"[INFO] Attempting to fetch live prices for {len(symbols)} stocks...")
-        print(f"[INFO] First 5 symbols: {symbols[:5]}")
+        self.log_info("live_prices", f"Attempting to fetch live prices for {len(symbols)} stocks")
         
-        # Use provided kite instance or get a new one
+        # Use provided kite instance or get a new one using mixin
         if kite is None:
-            kite = self._get_valid_kite_instance()
+            kite = self.get_validated_kite_instance()
         
         if not kite:
-            print("[ERROR] No valid Kite instance available")
+            self.log_error("kite_instance", Exception("No valid Kite instance available"))
             raise Exception("PRICE_DATA_UNAVAILABLE: No valid Zerodha API connection")
         
-        print("[SUCCESS] Zerodha connection verified and kite instance available")
+        self.log_success("zerodha_connection", "Zerodha connection verified and kite instance available")
         
         # Test with a single known stock first
         try:
-            print("[INFO] Testing connection with RELIANCE...")
+            self.log_info("connection_test", "Testing connection with RELIANCE...")
             test_quote = kite.quote(["NSE:RELIANCE"])
             if test_quote and "NSE:RELIANCE" in test_quote:
                 test_price = test_quote["NSE:RELIANCE"].get("last_price", 0)
-                print(f"[SUCCESS] Connection test successful - RELIANCE: Rs.{test_price}")
+                self.log_success("connection_test", f"Connection test successful - RELIANCE: Rs.{test_price}")
             else:
-                print("[ERROR] Connection test failed - empty response")
+                self.log_error("connection_test", Exception("Connection test failed - empty response"))
                 raise Exception("PRICE_DATA_UNAVAILABLE: Zerodha API connection test failed")
         except Exception as e:
-            print(f"[ERROR] Connection test error: {e}")
+            self.log_error("connection_test", e)
             raise Exception(f"PRICE_DATA_UNAVAILABLE: API test failed - {str(e)}")
         
         # Process symbols in parallel batches - REAL DATA ONLY
@@ -346,7 +286,7 @@ class CSVService:
         batch_size = 15  # Reduced batch size for better reliability
         total_batches = (len(symbols) + batch_size - 1) // batch_size
         
-        print(f"[INFO] Processing {total_batches} batches of {batch_size} symbols each")
+        self.log_info("batch_processing", f"Processing {total_batches} batches of {batch_size} symbols each")
         
         # Use ThreadPoolExecutor for parallel processing
         with ThreadPoolExecutor(max_workers=3) as executor:
@@ -367,35 +307,33 @@ class CSVService:
                     prices.update(batch_prices)
                     failed_symbols.extend(batch_failed)
                 except Exception as e:
-                    print(f"[ERROR] Batch processing error: {e}")
+                    self.log_error("batch_processing", e)
         
         # Calculate success rate
         success_rate = len(prices) / len(symbols) * 100 if symbols else 0
         
-        print(f"[INFO] Live price fetching results:")
-        print(f"   Successful: {len(prices)}/{len(symbols)} ({success_rate:.1f}%)")
-        print(f"   Failed: {len(failed_symbols)}")
+        self.log_info("price_results", f"Successful: {len(prices)}/{len(symbols)} ({success_rate:.1f}%), Failed: {len(failed_symbols)}")
         
         # STRICT: If we can't get reasonable success rate, fail completely
         if len(prices) == 0:
-            print("[ERROR] No live prices fetched - complete failure")
+            self.log_error("price_complete_failure", Exception("No live prices fetched - complete failure"))
             raise Exception("PRICE_DATA_UNAVAILABLE: Failed to fetch any live prices from Zerodha")
         
         # STRICT: If success rate is too low, this indicates a problem
         if success_rate < 50:  # At least 50% success required
-            print(f"[ERROR] Success rate too low ({success_rate:.1f}%) - data quality insufficient")
+            self.log_error("price_low_success", Exception(f"Success rate too low ({success_rate:.1f}%) - data quality insufficient"))
             raise Exception(f"PRICE_DATA_UNAVAILABLE: Low success rate ({success_rate:.1f}%) - data unreliable")
         
-        print(f"[SUCCESS] Returning {len(prices)} REAL live prices from Zerodha")
+        self.log_success("live_prices", f"Returning {len(prices)} REAL live prices from Zerodha")
         return prices
 
     def _fetch_batch_prices_strict(self, symbols: List[str], batch_num: int, total_batches: int, kite) -> tuple:
-        """Fetch prices for a batch of symbols - FIXED: Accept kite parameter"""
+        """Fetch prices for a batch of symbols"""
         prices = {}
         failed_symbols = []
         
         try:
-            print(f"   [INFO] Processing batch {batch_num}/{total_batches}: {len(symbols)} symbols")
+            self.log_info("batch_processing", f"Processing batch {batch_num}/{total_batches}: {len(symbols)} symbols")
             
             # Prepare symbols for quote request
             quote_symbols = []
@@ -413,12 +351,12 @@ class CSVService:
                 quote_symbols.append(nse_symbol)
                 symbol_mapping[nse_symbol] = clean_symbol
             
-            print(f"   [INFO] Requesting quotes for: {quote_symbols[:3]}{'...' if len(quote_symbols) > 3 else ''}")
+            self.log_debug("quote_request", f"Requesting quotes for: {quote_symbols[:3]}{'...' if len(quote_symbols) > 3 else ''}")
             
             # Make the API call with timeout
             quote_response = kite.quote(quote_symbols)
             
-            print(f"   [INFO] Received {len(quote_response)} quote responses")
+            self.log_info("quote_response", f"Received {len(quote_response)} quote responses")
             
             for quote_key, quote_data in quote_response.items():
                 if quote_key in symbol_mapping:
@@ -455,45 +393,44 @@ class CSVService:
                                 'change_percent': float(change_percent),
                                 'ohlc': ohlc
                             }
-                            print(f"   [SUCCESS] {original_symbol}: Rs.{last_price:.2f} ({price_change:+.2f}, {change_percent:+.2f}%) (LIVE)")
+                            self.log_success("price_extraction", f"{original_symbol}: Rs.{last_price:.2f} ({price_change:+.2f}, {change_percent:+.2f}%) (LIVE)")
                         else:
                             failed_symbols.append(original_symbol)
-                            print(f"   [ERROR] {original_symbol}: Price out of range Rs.{last_price}")
+                            self.log_error("price_range", Exception(f"{original_symbol}: Price out of range Rs.{last_price}"))
                     else:
                         failed_symbols.append(original_symbol)
-                        print(f"   [ERROR] {original_symbol}: Invalid price data {last_price}")
+                        self.log_error("price_invalid", Exception(f"{original_symbol}: Invalid price data {last_price}"))
             
             # Add symbols that weren't in the response to failed list
             for symbol in symbols:
                 if symbol not in prices and symbol not in failed_symbols:
                     failed_symbols.append(symbol)
-                    print(f"   [ERROR] {symbol}: No data received from Zerodha")
+                    self.log_error("price_missing", Exception(f"{symbol}: No data received from Zerodha"))
             
         except Exception as e:
-            print(f"   [ERROR] Batch {batch_num} quote request failed: {e}")
+            self.log_error("batch_processing", e)
             failed_symbols.extend(symbols)
         
         return prices, failed_symbols
 
-    # Add the missing fetch_csv_data method and other required methods
     def fetch_csv_data(self, force_refresh: bool = False) -> Dict:
         """Fetch and parse CSV data from GitHub"""
         try:
-            print("[INFO] Fetching CSV data from GitHub...")
+            self.log_info("csv_fetch", "Fetching CSV data from GitHub")
             
             # Try to get cached data first (unless force refresh)
             if not force_refresh:
                 cached_data = self._get_cached_csv()
                 if cached_data:
-                    print("[SUCCESS] Using cached CSV data")
+                    self.log_success("csv_cache", "Using cached CSV data")
                     # But check if we should still refresh based on time
                     cached_time = datetime.fromisoformat(cached_data['fetch_time'])
                     if (datetime.now() - cached_time).total_seconds() < self._cache_duration:
                         return cached_data
                     else:
-                        print("[INFO] Cache expired, fetching fresh data...")
+                        self.log_info("csv_cache", "Cache expired, fetching fresh data...")
             else:
-                print("[INFO] Force refresh requested, bypassing cache...")
+                self.log_info("csv_force_refresh", "Force refresh requested, bypassing cache...")
             
             # Record the check time
             self._last_check_time = datetime.now()
@@ -514,7 +451,7 @@ class CSVService:
             if symbol_column is None:
                 # If no symbol column found, use first column
                 symbol_column = df.columns[0]
-                print(f"[WARNING] No standard symbol column found, using {symbol_column}")
+                self.log_warning("symbol_column", f"No standard symbol column found, using {symbol_column}")
             
             symbols = df[symbol_column].tolist()
             
@@ -551,18 +488,17 @@ class CSVService:
             # Always cache the new data
             self._cache_csv_data(csv_data)
             
-            print(f"[SUCCESS] Fresh CSV data fetched: {len(unique_symbols)} unique stocks")
-            print(f"   Hash: {new_hash}")
+            self.log_success("csv_fresh", f"Fresh CSV data fetched: {len(unique_symbols)} unique stocks, Hash: {new_hash}")
             
             return csv_data
             
         except Exception as e:
-            print(f"[ERROR] Error fetching CSV data: {e}")
+            self.log_error("csv_fetch", e)
             
             # Try to use cached data as fallback
             cached_data = self._get_cached_csv(ignore_age=True)
             if cached_data:
-                print("[WARNING] Using stale cached data as fallback")
+                self.log_warning("csv_fallback", "Using stale cached data as fallback")
                 return cached_data
             
             raise Exception(f"Failed to fetch CSV data and no cache available: {str(e)}")
@@ -584,7 +520,7 @@ class CSVService:
             return stocks
             
         except Exception as e:
-            print(f"[ERROR] Error getting CSV data: {e}")
+            self.log_error("get_csv_data", e)
             return []
 
     def _get_cached_csv(self, ignore_age: bool = False) -> Optional[Dict]:
@@ -600,13 +536,13 @@ class CSVService:
                 # Check if cache is less than cache_duration old
                 cached_time = datetime.fromisoformat(cached_data['fetch_time'])
                 if (datetime.now() - cached_time).total_seconds() > self._cache_duration:
-                    print("[WARNING] Cached CSV data is stale")
+                    self.log_warning("cache_stale", "Cached CSV data is stale")
                     return None
             
             return cached_data
             
         except Exception as e:
-            print(f"[WARNING] Error reading CSV cache: {e}")
+            self.log_warning("cache_read", f"Error reading CSV cache: {e}")
             return None
     
     def _cache_csv_data(self, csv_data: Dict):
@@ -614,9 +550,9 @@ class CSVService:
         try:
             with open(self._cache_file, 'w') as f:
                 json.dump(csv_data, f, indent=2)
-            print("[INFO] CSV data cached successfully")
+            self.log_info("cache_write", "CSV data cached successfully")
         except Exception as e:
-            print(f"[WARNING] Error caching CSV data: {e}")
+            self.log_warning("cache_write", f"Error caching CSV data: {e}")
 
     def _is_market_open(self) -> bool:
         """Check if market is currently open"""
@@ -645,11 +581,11 @@ class CSVService:
             'price_data_policy': 'STRICT - Real data only, no fallbacks'
         }
         
-        # Check Zerodha status
+        # Check Zerodha status using mixin
         if self.zerodha_auth:
             try:
-                status['zerodha_authenticated'] = self.zerodha_auth.is_authenticated()
-                status['kite_instance'] = bool(self._get_valid_kite_instance())
+                status['zerodha_authenticated'] = self.is_zerodha_authenticated()
+                status['kite_instance'] = bool(self.get_validated_kite_instance())
                 
                 # Get detailed auth status
                 auth_status = self.zerodha_auth.get_auth_status()

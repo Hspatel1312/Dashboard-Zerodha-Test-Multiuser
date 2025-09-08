@@ -3,13 +3,21 @@ from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 import json
 
-class PortfolioConstructionService:
+# Foundation imports
+from .base.base_service import BaseService
+from .base.file_operations_mixin import GlobalFileOperationsMixin
+from .utils.error_handler import ErrorHandler
+from .utils.date_time_utils import DateTimeUtils
+from .utils.logger import LoggerFactory
+
+class PortfolioConstructionService(GlobalFileOperationsMixin, BaseService):
     """
     Service responsible for constructing portfolio from order history
     """
     
     def __init__(self):
-        pass
+        BaseService.__init__(self, service_name="portfolio_construction_service")
+        GlobalFileOperationsMixin.__init__(self)
     
     def construct_portfolio_from_orders(self, all_orders: List[Dict]) -> Dict:
         """
@@ -25,155 +33,121 @@ class PortfolioConstructionService:
             'total_orders': int
         }
         """
-        print("[INFO] Constructing portfolio from order history...")
+        with self.handle_operation_error("construct_portfolio_from_orders"):
+            self.logger.info("Constructing portfolio from order history...")
+            
+            if not all_orders:
+                self.logger.warning("No orders provided")
+                return {
+                    'holdings': {},
+                    'order_timeline': [],
+                    'total_cash_outflow': 0,
+                    'first_order_date': None,
+                    'last_order_date': None,
+                    'total_orders': 0
+                }
         
-        if not all_orders:
-            print("   [WARNING] No orders provided")
-            return {
-                'holdings': {},
-                'order_timeline': [],
-                'total_cash_outflow': 0,
-                'first_order_date': None,
-                'last_order_date': None,
-                'total_orders': 0
+            # Filter to only successfully executed orders
+            successful_orders = self._filter_successful_orders(all_orders)
+        
+            if not successful_orders:
+                self.logger.warning("No successfully executed orders found")
+                return {
+                    'holdings': {},
+                    'order_timeline': [],
+                    'total_cash_outflow': 0,
+                    'first_order_date': None,
+                    'last_order_date': None,
+                    'total_orders': 0
+                }
+        
+            # Process all successful orders
+            holdings, order_timeline, total_cash_flow, processed_count, error_count = self._process_orders(successful_orders)
+        
+            # Clean up and finalize holdings
+            active_holdings = self._finalize_holdings(holdings)
+        
+            # Determine date range
+            first_order_date, last_order_date = self._get_date_range(successful_orders)
+        
+            construction_result = {
+                'holdings': active_holdings,
+                'order_timeline': order_timeline,
+                'total_cash_outflow': total_cash_flow,
+                'first_order_date': first_order_date,
+                'last_order_date': last_order_date,
+                'total_orders': len(all_orders),
+                'processed_orders': processed_count,
+                'error_orders': error_count
             }
-        
-        # IMPORTANT: Only consider successfully executed orders for portfolio construction
+            
+            self.logger.success("Portfolio construction complete:")
+            self.logger.info(f"Total orders processed: {processed_count}/{len(all_orders)}")
+            self.logger.info(f"Errors encountered: {error_count}")
+            self.logger.info(f"Active holdings: {len(active_holdings)}")
+            self.logger.info(f"Total cash outflow: Rs.{total_cash_flow:,.2f}")
+            self.logger.info(f"Date range: {first_order_date} to {last_order_date}")
+            
+            return construction_result
+    
+    def _filter_successful_orders(self, all_orders: List[Dict]) -> List[Dict]:
+        """Filter orders to only include successfully executed ones"""
         successful_orders = []
         for order in all_orders:
             status = order.get('status', '').upper()
             live_execution_status = order.get('live_execution_status', '').upper()
             
             # Include order if it's successfully executed
-            # Check multiple status fields to ensure we catch all success cases
             if (status in ['EXECUTED_SYSTEM', 'EXECUTED_LIVE', 'COMPLETE'] or 
                 live_execution_status in ['COMPLETE', 'EXECUTED'] or
                 (status == 'LIVE_PLACED' and live_execution_status == 'COMPLETE')):
                 successful_orders.append(order)
-                print(f"   [INFO] Including successful order: {order.get('symbol')} {order.get('action')} - Status: {status}, Live Status: {live_execution_status}")
+                self.logger.info(f"Including successful order: {order.get('symbol')} {order.get('action')} - Status: {status}, Live Status: {live_execution_status}")
             else:
-                print(f"   [WARNING] Excluding failed/pending order: {order.get('symbol')} {order.get('action')} - Status: {status}, Live Status: {live_execution_status}")
+                self.logger.warning(f"Excluding failed/pending order: {order.get('symbol')} {order.get('action')} - Status: {status}, Live Status: {live_execution_status}")
         
-        print(f"   [INFO] Portfolio construction: {len(successful_orders)} successful orders out of {len(all_orders)} total orders")
-        
-        if not successful_orders:
-            print("   [WARNING] No successfully executed orders found")
-            return {
-                'holdings': {},
-                'order_timeline': [],
-                'total_cash_outflow': 0,
-                'first_order_date': None,
-                'last_order_date': None,
-                'total_orders': 0
-            }
-        
+        self.logger.info(f"Portfolio construction: {len(successful_orders)} successful orders out of {len(all_orders)} total orders")
+        return successful_orders
+    
+    def _process_orders(self, successful_orders: List[Dict]) -> tuple:
+        """Process all successful orders to build holdings"""
         holdings = {}
         order_timeline = []
         total_cash_flow = 0
-        
-        # Sort orders by execution time with better error handling
-        try:
-            sorted_orders = sorted(
-                successful_orders, 
-                key=lambda x: self._parse_date_safely(x.get('execution_time', ''))
-            )
-            print(f"   [INFO] Processing {len(sorted_orders)} successful orders...")
-        except Exception as e:
-            print(f"   [WARNING] Error sorting orders: {e}")
-            sorted_orders = successful_orders
-        
-        # Track order processing statistics
         processed_count = 0
         error_count = 0
         
+        # Sort orders by execution time
+        try:
+            sorted_orders = sorted(
+                successful_orders, 
+                key=lambda x: DateTimeUtils.safe_parse_date(x.get('execution_time', ''))
+            )
+            self.logger.info(f"Processing {len(sorted_orders)} successful orders...")
+        except Exception as e:
+            self.logger.warning(f"Error sorting orders: {e}")
+            sorted_orders = successful_orders
+        
         for order_idx, order in enumerate(sorted_orders):
             try:
-                # Extract order data with better validation
-                symbol = str(order.get('symbol', f'UNKNOWN_{order_idx}')).strip()
-                action = str(order.get('action', 'BUY')).upper().strip()
-                
-                # Handle both 'shares' and 'quantity' fields
-                shares = int(order.get('shares', order.get('quantity', 0)))
-                
-                # Handle price with validation
-                price_value = order.get('price', 0)
-                if isinstance(price_value, str):
-                    price = float(price_value.replace('Rs.', '').replace(',', ''))
-                else:
-                    price = float(price_value)
-                
-                # Calculate value with fallback
-                value_from_order = order.get('value')
-                if value_from_order:
-                    if isinstance(value_from_order, str):
-                        value = float(value_from_order.replace('Rs.', '').replace(',', ''))
-                    else:
-                        value = float(value_from_order)
-                else:
-                    value = shares * price
-                
-                execution_time = order.get('execution_time', datetime.now().isoformat())
-                
-                # Validate data
-                if shares <= 0 or price <= 0:
-                    print(f"   [WARNING] Invalid data for order {order_idx}: shares={shares}, price={price}")
+                # Extract and validate order data
+                order_data = self._extract_order_data(order, order_idx)
+                if not order_data:
                     error_count += 1
                     continue
                 
-                print(f"   [INFO] Processing: {symbol} {action} {shares} @ Rs.{price:.2f} = Rs.{value:.2f}")
+                symbol, action, shares, price, value, execution_time = order_data
                 
-                # Initialize holding if not exists
-                if symbol not in holdings:
-                    holdings[symbol] = {
-                        'total_shares': 0,
-                        'total_investment': 0.0,
-                        'avg_price': 0.0,
-                        'transactions': [],
-                        'first_purchase_date': None,
-                        'last_transaction_date': None
-                    }
+                self.logger.info(f"Processing: {symbol} {action} {shares} @ Rs.{price:.2f} = Rs.{value:.2f}")
                 
-                holding = holdings[symbol]
+                # Initialize or get holding
+                holding = self._get_or_create_holding(holdings, symbol)
                 
-                if action == 'BUY':
-                    # Add to position
-                    old_total_investment = holding['total_investment']
-                    old_total_shares = holding['total_shares']
-                    
-                    holding['total_shares'] += shares
-                    holding['total_investment'] += value
-                    
-                    # Calculate new average price
-                    if holding['total_shares'] > 0:
-                        holding['avg_price'] = holding['total_investment'] / holding['total_shares']
-                    
-                    # Set first purchase date
-                    if holding['first_purchase_date'] is None:
-                        holding['first_purchase_date'] = execution_time
-                    
-                    total_cash_flow += value  # Cash outflow
-                    
-                    print(f"      [SUCCESS] BUY: {symbol} now has {holding['total_shares']} shares at avg Rs.{holding['avg_price']:.2f}")
-                    
-                elif action == 'SELL':
-                    # Reduce position
-                    if holding['total_shares'] >= shares:
-                        holding['total_shares'] -= shares
-                        
-                        if holding['total_shares'] > 0:
-                            # Reduce investment proportionally (maintain avg price)
-                            holding['total_investment'] = holding['total_shares'] * holding['avg_price']
-                        else:
-                            # Position closed
-                            holding['total_investment'] = 0.0
-                            holding['avg_price'] = 0.0
-                            print(f"      [WARNING] SELL: {symbol} position closed")
-                    else:
-                        print(f"      [WARNING] SELL: Insufficient shares for {symbol} (have {holding['total_shares']}, trying to sell {shares})")
-                    
-                    total_cash_flow -= value  # Cash inflow
+                # Process the transaction
+                cash_flow_delta = self._process_transaction(holding, action, shares, price, value, execution_time)
+                total_cash_flow += cash_flow_delta
                 
-                # Record transaction with better data
+                # Record transaction
                 transaction = {
                     'date': execution_time,
                     'action': action,
@@ -199,73 +173,134 @@ class PortfolioConstructionService:
                 processed_count += 1
                 
             except Exception as e:
-                print(f"   [ERROR] Error processing order {order_idx}: {e}")
-                print(f"      Order data: {order}")
+                self.logger.error(f"Error processing order {order_idx}: {e}")
+                self.logger.error(f"Order data: {order}")
                 error_count += 1
                 continue
         
-        # Remove positions with zero or negative shares
+        return holdings, order_timeline, total_cash_flow, processed_count, error_count
+    
+    def _extract_order_data(self, order: Dict, order_idx: int) -> Optional[tuple]:
+        """Extract and validate order data"""
+        try:
+            symbol = str(order.get('symbol', f'UNKNOWN_{order_idx}')).strip()
+            action = str(order.get('action', 'BUY')).upper().strip()
+            
+            # Handle both 'shares' and 'quantity' fields
+            shares = int(order.get('shares', order.get('quantity', 0)))
+            
+            # Handle price with validation
+            price_value = order.get('price', 0)
+            if isinstance(price_value, str):
+                price = float(price_value.replace('Rs.', '').replace(',', ''))
+            else:
+                price = float(price_value)
+            
+            # Calculate value with fallback
+            value_from_order = order.get('value')
+            if value_from_order:
+                if isinstance(value_from_order, str):
+                    value = float(value_from_order.replace('Rs.', '').replace(',', ''))
+                else:
+                    value = float(value_from_order)
+            else:
+                value = shares * price
+            
+            execution_time = order.get('execution_time', datetime.now().isoformat())
+            
+            # Validate data
+            if shares <= 0 or price <= 0:
+                self.logger.warning(f"Invalid data for order {order_idx}: shares={shares}, price={price}")
+                return None
+            
+            return symbol, action, shares, price, value, execution_time
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting order data: {e}")
+            return None
+    
+    def _get_or_create_holding(self, holdings: Dict, symbol: str) -> Dict:
+        """Get existing holding or create new one"""
+        if symbol not in holdings:
+            holdings[symbol] = {
+                'total_shares': 0,
+                'total_investment': 0.0,
+                'avg_price': 0.0,
+                'transactions': [],
+                'first_purchase_date': None,
+                'last_transaction_date': None
+            }
+        return holdings[symbol]
+    
+    def _process_transaction(self, holding: Dict, action: str, shares: int, price: float, value: float, execution_time: str) -> float:
+        """Process a single transaction and return cash flow delta"""
+        if action == 'BUY':
+            holding['total_shares'] += shares
+            holding['total_investment'] += value
+            
+            # Calculate new average price
+            if holding['total_shares'] > 0:
+                holding['avg_price'] = holding['total_investment'] / holding['total_shares']
+            
+            # Set first purchase date
+            if holding['first_purchase_date'] is None:
+                holding['first_purchase_date'] = execution_time
+            
+            symbol = next((k for k, v in locals().items() if v is holding), 'UNKNOWN')
+            self.logger.success(f"BUY: now has {holding['total_shares']} shares at avg Rs.{holding['avg_price']:.2f}")
+            
+            return value  # Cash outflow
+            
+        elif action == 'SELL':
+            if holding['total_shares'] >= shares:
+                holding['total_shares'] -= shares
+                
+                if holding['total_shares'] > 0:
+                    # Reduce investment proportionally (maintain avg price)
+                    holding['total_investment'] = holding['total_shares'] * holding['avg_price']
+                else:
+                    # Position closed
+                    holding['total_investment'] = 0.0
+                    holding['avg_price'] = 0.0
+                    self.logger.warning("SELL: position closed")
+            else:
+                self.logger.warning(f"SELL: Insufficient shares (have {holding['total_shares']}, trying to sell {shares})")
+            
+            return -value  # Cash inflow
+        
+        return 0.0
+    
+    def _finalize_holdings(self, holdings: Dict) -> Dict:
+        """Remove positions with zero or negative shares"""
         active_holdings = {}
         for symbol, holding in holdings.items():
             if holding['total_shares'] > 0:
                 active_holdings[symbol] = holding
-                print(f"   [INFO] Active holding: {symbol} - {holding['total_shares']} shares, Rs.{holding['total_investment']:,.2f} invested")
+                self.logger.info(f"Active holding: {symbol} - {holding['total_shares']} shares, Rs.{holding['total_investment']:,.2f} invested")
             else:
-                print(f"   [INFO] Removing zero position: {symbol}")
-        
-        # Determine date range
-        first_order_date = None
-        last_order_date = None
-        
-        if sorted_orders:
-            try:
-                first_order_date = sorted_orders[0].get('execution_time')
-                last_order_date = sorted_orders[-1].get('execution_time')
-            except Exception as e:
-                print(f"   [WARNING] Error getting date range: {e}")
-        
-        construction_result = {
-            'holdings': active_holdings,
-            'order_timeline': order_timeline,
-            'total_cash_outflow': total_cash_flow,
-            'first_order_date': first_order_date,
-            'last_order_date': last_order_date,
-            'total_orders': len(all_orders),
-            'processed_orders': processed_count,
-            'error_orders': error_count
-        }
-        
-        print(f"   [SUCCESS] Portfolio construction complete:")
-        print(f"      Total orders processed: {processed_count}/{len(all_orders)}")
-        print(f"      Errors encountered: {error_count}")
-        print(f"      Active holdings: {len(active_holdings)}")
-        print(f"      Total cash outflow: Rs.{total_cash_flow:,.2f}")
-        print(f"      Date range: {first_order_date} to {last_order_date}")
-        
-        return construction_result
+                self.logger.info(f"Removing zero position: {symbol}")
+        return active_holdings
     
-    def _parse_date_safely(self, date_str: str) -> datetime:
-        """Safely parse date string with multiple format support"""
-        if not date_str:
-            return datetime.now()
+    def _get_date_range(self, successful_orders: List[Dict]) -> tuple:
+        """Get first and last order dates"""
+        if not successful_orders:
+            return None, None
         
         try:
-            # Try ISO format first
-            if 'T' in date_str:
-                return datetime.fromisoformat(date_str.replace('Z', ''))
-            
-            # Try other common formats
-            for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%d/%m/%Y']:
-                try:
-                    return datetime.strptime(date_str, fmt)
-                except ValueError:
-                    continue
-            
-            # If all fail, return current time
-            return datetime.now()
-            
-        except Exception:
-            return datetime.now()
+            sorted_orders = sorted(
+                successful_orders,
+                key=lambda x: DateTimeUtils.safe_parse_date(x.get('execution_time', ''))
+            )
+            first_order_date = sorted_orders[0].get('execution_time')
+            last_order_date = sorted_orders[-1].get('execution_time')
+            return first_order_date, last_order_date
+        except Exception as e:
+            self.logger.warning(f"Error getting date range: {e}")
+            return None, None
+    
+    def _parse_date_safely(self, date_str: str) -> datetime:
+        """Safely parse date string - delegated to DateTimeUtils"""
+        return DateTimeUtils.safe_parse_date(date_str)
     
     def validate_portfolio_construction(self, construction_result: Dict) -> Dict:
         """

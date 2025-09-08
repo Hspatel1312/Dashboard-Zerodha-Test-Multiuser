@@ -7,9 +7,20 @@ import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-class LiveOrderService:
+# Foundation imports
+from .base.base_service import BaseService
+from .base.zerodha_integration_mixin import LiveTradingZerodhaIntegrationMixin
+from .base.file_operations_mixin import UserSpecificFileOperationsMixin
+from .utils.error_handler import ErrorHandler
+from .utils.logger import LoggerFactory
+from .utils.date_time_utils import DateTimeUtils
+
+class LiveOrderService(UserSpecificFileOperationsMixin, LiveTradingZerodhaIntegrationMixin, BaseService):
     def __init__(self, zerodha_auth, user_data_dir=None):
-        self.zerodha_auth = zerodha_auth
+        BaseService.__init__(self, service_name="live_order_service")
+        UserSpecificFileOperationsMixin.__init__(self, user_data_dir or "")
+        LiveTradingZerodhaIntegrationMixin.__init__(self, zerodha_auth)
+        
         self.user_data_dir = user_data_dir or ""
         self.live_orders_file = os.path.join(self.user_data_dir, "live_orders.json") if user_data_dir else "live_orders.json"
         self.order_status_cache = {}
@@ -19,44 +30,22 @@ class LiveOrderService:
     
     def _ensure_files(self):
         """Ensure order tracking files exist"""
-        if not os.path.exists(self.live_orders_file):
-            with open(self.live_orders_file, 'w') as f:
-                json.dump([], f)
+        from .utils.file_manager import FileManager
+        FileManager.initialize_json_files({
+            self.live_orders_file: []
+        })
     
-    def _get_kite_instance(self):
-        """Get authenticated Kite instance"""
-        try:
-            if not self.zerodha_auth or not self.zerodha_auth.is_authenticated():
-                print("[ERROR] Zerodha not authenticated for live trading")
-                return None
-            
-            kite = self.zerodha_auth.get_kite_instance()
-            if not kite:
-                print("[ERROR] No Kite instance available")
-                return None
-            
-            # Test connection
-            try:
-                profile = kite.profile()
-                print(f"[SUCCESS] Kite connection verified for user: {profile.get('user_name', 'Unknown')}")
-                return kite
-            except Exception as e:
-                print(f"[ERROR] Kite connection test failed: {e}")
-                return None
-        except Exception as e:
-            print(f"[ERROR] Error getting Kite instance: {e}")
-            return None
+    # REMOVED: _get_kite_instance - now using LiveTradingZerodhaIntegrationMixin.get_validated_kite_instance()
     
     def place_live_order(self, order_data: Dict) -> Dict:
         """Place a live order on Zerodha and track it"""
-        try:
-            kite = self._get_kite_instance()
+        with self.handle_operation_error("place_live_order"):
+            kite = self.get_validated_kite_instance()
             if not kite:
-                return {
-                    "success": False,
-                    "error": "ZERODHA_CONNECTION_FAILED",
-                    "message": "Cannot connect to Zerodha for live trading"
-                }
+                return ErrorHandler.create_error_response(
+                    "ZERODHA_CONNECTION_FAILED",
+                    "place_live_order"
+                ) | {"message": "Cannot connect to Zerodha for live trading"}
             
             # Prepare order parameters for Zerodha API
             order_params = {
@@ -75,10 +64,10 @@ class LiveOrderService:
                 order_params["order_type"] = "LIMIT"
                 order_params["price"] = order_data["price"]
             
-            print(f"[INFO] Placing live order: {order_params}")
+            self.logger.info(f"Placing live order: {order_params}")
             
-            # Place the order
-            order_id = kite.place_order(**order_params)
+            # Place the order using mixin method
+            order_id = self.place_order_on_zerodha(kite, order_params)
             
             # Create tracking record with retry information
             tracking_record = {
@@ -90,8 +79,8 @@ class LiveOrderService:
                 "order_type": order_params["order_type"],
                 "price": order_data.get("price"),
                 "status": "PLACED",
-                "placed_time": datetime.now().isoformat(),
-                "last_checked": datetime.now().isoformat(),
+                "placed_time": DateTimeUtils.get_current_timestamp(),
+                "last_checked": DateTimeUtils.get_current_timestamp(),
                 "order_params": order_params,
                 "execution_details": None,
                 # Add retry tracking information
@@ -103,7 +92,7 @@ class LiveOrderService:
             # Save to tracking file
             self._save_order_tracking(tracking_record)
             
-            print(f"[SUCCESS] Live order placed: {order_id} for {order_data['symbol']}")
+            self.logger.success(f"Live order placed: {order_id} for {order_data['symbol']}")
             
             return {
                 "success": True,
@@ -112,11 +101,7 @@ class LiveOrderService:
                 "tracking_record": tracking_record
             }
             
-        except Exception as e:
-            error_msg = str(e)
-            print(f"[ERROR] Failed to place live order: {error_msg}")
-            
-            # Create failed tracking record with retry information
+            # Error handling is managed by handle_operation_error context manager
             failed_record = {
                 "system_order_id": order_data.get("system_order_id"),
                 "zerodha_order_id": None,
@@ -124,10 +109,9 @@ class LiveOrderService:
                 "action": order_data["action"],
                 "shares": order_data["shares"],
                 "status": "FAILED_TO_PLACE",
-                "placed_time": datetime.now().isoformat(),
-                "error": error_msg,
+                "placed_time": DateTimeUtils.get_current_timestamp(),
+                "error": "Handled by context manager",
                 "execution_details": None,
-                # Add retry tracking information
                 "parent_order_id": order_data.get("system_order_id"),
                 "is_retry": bool(order_data.get("current_retry_attempt")),
                 "retry_info": order_data.get("current_retry_attempt") if order_data.get("current_retry_attempt") else None
@@ -135,12 +119,10 @@ class LiveOrderService:
             
             self._save_order_tracking(failed_record)
             
-            return {
-                "success": False,
-                "error": "ORDER_PLACEMENT_FAILED",
-                "message": error_msg,
-                "tracking_record": failed_record
-            }
+            return ErrorHandler.create_error_response(
+                "ORDER_PLACEMENT_FAILED",
+                "place_live_order"
+            ) | {"tracking_record": failed_record}
     
     def get_order_status(self, zerodha_order_id: str) -> Dict:
         """Get current status of a specific order"""

@@ -2,18 +2,27 @@
 from typing import Dict, List, Tuple
 import math
 
-class InvestmentCalculator:
+# Foundation imports
+from .base.base_service import BaseService
+from .utils.financial_calculations import FinancialCalculations, InvestmentValidation
+from .utils.error_handler import ErrorHandler
+from .utils.config import InvestmentConfig
+from .utils.logger import LoggerFactory
+
+class InvestmentCalculator(BaseService):
     def __init__(self):
-        # Default allocations (when no GOLDBEES) - Updated to ±2% flexibility
+        BaseService.__init__(self, service_name="investment_calculator")
+        
+        # Use configuration from InvestmentConfig
         self.default_min_allocation_percent = 3.0  # 5% - 2% = 3.0%
-        self.default_target_allocation_percent = 5.0  # 5%
+        self.default_target_allocation_percent = InvestmentConfig.DEFAULT_TARGET_ALLOCATION_PERCENT
         self.default_max_allocation_percent = 7.0  # 5% + 2% = 7.0%
         
         # Flexibility settings
         self.allocation_flexibility_percent = 2.0  # ±2% flexibility
         
         # GOLDBEES allocation settings
-        self.goldbees_allocation_percent = 50.0  # 50% allocation to GOLDBEES
+        self.goldbees_allocation_percent = InvestmentConfig.GOLDBEES_ALLOCATION_PERCENT
         self.goldbees_symbol = "GOLDBEES"
     
     def _detect_goldbees_and_calculate_allocations(self, stocks_data: List[Dict]) -> Dict:
@@ -69,29 +78,20 @@ class InvestmentCalculator:
         - No GOLDBEES scenario: 5% + 2% = 7% max allocation
         STRICT: Only works with REAL price data
         """
-        try:
-            print(f"[INFO] Calculating minimum investment for {len(stocks_data)} stocks...")
+        with self.handle_operation_error("calculate_minimum_investment"):
+            self.logger.info(f"Calculating minimum investment for {len(stocks_data)} stocks...")
             
             if not stocks_data:
                 raise Exception("No stocks data provided")
             
-            # STRICT: Verify all stocks have real prices
-            invalid_stocks = []
-            for stock in stocks_data:
-                price = stock.get('price', 0)
-                price_type = stock.get('price_type', 'UNKNOWN')
-                
-                if price_type != 'LIVE':
-                    invalid_stocks.append(f"{stock.get('symbol', 'UNKNOWN')}: {price_type}")
-                elif not isinstance(price, (int, float)) or price <= 0:
-                    invalid_stocks.append(f"{stock.get('symbol', 'UNKNOWN')}: Invalid price {price}")
-            
+            # Validate stock prices using InvestmentValidation
+            invalid_stocks = InvestmentValidation.validate_stock_prices(stocks_data)
             if invalid_stocks:
                 raise Exception(f"PRICE_DATA_INVALID: Found {len(invalid_stocks)} stocks without valid live prices: {', '.join(invalid_stocks[:5])}")
             
             # Detect GOLDBEES and calculate dynamic allocations
             allocation_info = self._detect_goldbees_and_calculate_allocations(stocks_data)
-            print(f"   Allocation strategy: {allocation_info['allocation_strategy']}")
+            self.logger.info(f"Allocation strategy: {allocation_info['allocation_strategy']}")
             
             # NEW APPROACH: Use MAXIMUM allocation to find minimum investment
             if allocation_info['has_goldbees']:
@@ -186,35 +186,23 @@ class InvestmentCalculator:
             print(f"   Recommended minimum: Rs.{recommended_minimum:,.0f}")
             print(f"   Data quality: HIGH - All live prices")
             
+            self.logger.success(f"Minimum investment calculation complete")
             return result
-            
-        except Exception as e:
-            print(f"[ERROR] Error calculating minimum investment: {e}")
-            raise Exception(f"Failed to calculate minimum investment: {str(e)}")
     
     def calculate_optimal_allocation(self, investment_amount: float, stocks_data: List[Dict]) -> Dict:
         """
         Calculate optimal allocation using sophisticated algorithm
         STRICT: Only works with REAL price data
         """
-        try:
-            print(f"[INFO] Calculating optimal allocation for Rs.{investment_amount:,.0f}")
+        with self.handle_operation_error("calculate_optimal_allocation"):
+            self.logger.info(f"Calculating optimal allocation for Rs.{investment_amount:,.0f}")
             
             # Detect GOLDBEES and calculate dynamic allocations
             allocation_info = self._detect_goldbees_and_calculate_allocations(stocks_data)
             print(f"   {allocation_info['allocation_strategy']}")
             
-            # STRICT: Verify all stocks have real prices
-            invalid_stocks = []
-            for stock in stocks_data:
-                price = stock.get('price', 0)
-                price_type = stock.get('price_type', 'UNKNOWN')
-                
-                if price_type != 'LIVE':
-                    invalid_stocks.append(f"{stock.get('symbol', 'UNKNOWN')}: {price_type}")
-                elif not isinstance(price, (int, float)) or price <= 0:
-                    invalid_stocks.append(f"{stock.get('symbol', 'UNKNOWN')}: Invalid price {price}")
-            
+            # Validate stock prices using InvestmentValidation
+            invalid_stocks = InvestmentValidation.validate_stock_prices(stocks_data)
             if invalid_stocks:
                 raise Exception(f"PRICE_DATA_INVALID: Found {len(invalid_stocks)} stocks without valid live prices: {', '.join(invalid_stocks[:5])}")
             
@@ -318,10 +306,6 @@ class InvestmentCalculator:
             print(f"   Data quality: HIGH - All live prices")
             
             return allocation_summary
-            
-        except Exception as e:
-            print(f"[ERROR] Error calculating optimal allocation: {e}")
-            raise Exception(f"Failed to calculate optimal allocation: {str(e)}")
     
     def _optimize_allocation(self, allocations: List[Dict], remaining_cash: float, total_investment: float) -> float:
         """

@@ -3,7 +3,13 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 import json
 
-class PortfolioComparisonService:
+# Foundation imports
+from .base.base_service import BaseService
+from .utils.financial_calculations import FinancialCalculations
+from .utils.error_handler import ErrorHandler
+from .utils.logger import LoggerFactory
+
+class PortfolioComparisonService(BaseService):
     """
     Service to compare dashboard portfolio with live Zerodha portfolio
     Implements the logic as specified:
@@ -13,6 +19,7 @@ class PortfolioComparisonService:
     """
     
     def __init__(self, portfolio_service, investment_service):
+        BaseService.__init__(self, service_name="portfolio_comparison_service")
         self.portfolio_service = portfolio_service
         self.investment_service = investment_service
     
@@ -29,38 +36,32 @@ class PortfolioComparisonService:
             'recommended_action': str
         }
         """
-        try:
-            print("[INFO] Starting portfolio comparison between dashboard and Zerodha...")
+        with self.handle_operation_error("compare_portfolios"):
+            self.logger.info("Starting portfolio comparison between dashboard and Zerodha...")
             
             # Get dashboard portfolio (from system orders)
             dashboard_status = self.investment_service.get_system_portfolio_status()
             if dashboard_status['status'] != 'active':
-                return {
-                    'comparison_status': 'ERROR',
-                    'error': 'No active dashboard portfolio found',
-                    'dashboard_portfolio': dashboard_status,
-                    'zerodha_portfolio': {},
-                    'comparison_details': {},
-                    'recommended_action': 'Complete initial investment first'
-                }
+                return self._create_error_response(
+                    'No active dashboard portfolio found',
+                    dashboard_status, {},
+                    'Complete initial investment first'
+                )
             
             dashboard_holdings = dashboard_status['holdings']
-            print(f"[INFO] Dashboard portfolio: {len(dashboard_holdings)} stocks")
+            self.logger.info(f"Dashboard portfolio: {len(dashboard_holdings)} stocks")
             
             # Get live Zerodha portfolio
             zerodha_data = self.portfolio_service.get_portfolio_data()
             if 'error' in zerodha_data:
-                return {
-                    'comparison_status': 'ERROR',
-                    'error': f'Cannot fetch Zerodha portfolio: {zerodha_data.get("error_message", "Unknown error")}',
-                    'dashboard_portfolio': dashboard_status,
-                    'zerodha_portfolio': zerodha_data,
-                    'comparison_details': {},
-                    'recommended_action': 'Fix Zerodha connection and retry'
-                }
+                return self._create_error_response(
+                    f'Cannot fetch Zerodha portfolio: {zerodha_data.get("error_message", "Unknown error")}',
+                    dashboard_status, zerodha_data,
+                    'Fix Zerodha connection and retry'
+                )
             
             zerodha_holdings = {holding['symbol']: holding for holding in zerodha_data.get('holdings', [])}
-            print(f"[INFO] Zerodha portfolio: {len(zerodha_holdings)} stocks")
+            self.logger.info(f"Zerodha portfolio: {len(zerodha_holdings)} stocks")
             
             # Perform detailed comparison
             comparison_details = self._perform_detailed_comparison(dashboard_holdings, zerodha_holdings)
@@ -83,19 +84,19 @@ class PortfolioComparisonService:
                 'timestamp': datetime.now().isoformat()
             }
             
-            print(f"[SUCCESS] Portfolio comparison completed: {comparison_status}")
+            self.logger.success(f"Portfolio comparison completed: {comparison_status}")
             return result
-            
-        except Exception as e:
-            print(f"[ERROR] Portfolio comparison failed: {e}")
-            return {
-                'comparison_status': 'ERROR',
-                'error': str(e),
-                'dashboard_portfolio': {},
-                'zerodha_portfolio': {},
-                'comparison_details': {},
-                'recommended_action': 'Check system logs and retry'
-            }
+    
+    def _create_error_response(self, error_message: str, dashboard_portfolio: Dict, zerodha_portfolio: Dict, recommended_action: str) -> Dict:
+        """Create standardized error response"""
+        return {
+            'comparison_status': 'ERROR',
+            'error': error_message,
+            'dashboard_portfolio': dashboard_portfolio,
+            'zerodha_portfolio': zerodha_portfolio,
+            'comparison_details': {},
+            'recommended_action': recommended_action
+        }
     
     def _perform_detailed_comparison(self, dashboard_holdings: Dict, zerodha_holdings: Dict) -> Dict:
         """
@@ -106,7 +107,7 @@ class PortfolioComparisonService:
         - If Zerodha has more, that's fine (user may have bought more)
         - If Zerodha has less, it's modified
         """
-        print("[INFO] Performing detailed portfolio comparison...")
+        self.logger.info("Performing detailed portfolio comparison...")
         
         comparison_details = {
             'matching_stocks': [],
@@ -136,7 +137,7 @@ class PortfolioComparisonService:
                 zerodha_shares = zerodha_holding['quantity']  # Total shares (regular + t1 + collateral)
                 zerodha_price = zerodha_holding['current_price']
                 
-                print(f"   Comparing {symbol}: Dashboard={dashboard_shares}, Zerodha={zerodha_shares}")
+                self.logger.info(f"Comparing {symbol}: Dashboard={dashboard_shares}, Zerodha={zerodha_shares}")
                 
                 if zerodha_shares >= dashboard_shares:
                     if zerodha_shares == dashboard_shares:
@@ -211,12 +212,12 @@ class PortfolioComparisonService:
             'perfect_matches': len(comparison_details['matching_stocks'])
         }
         
-        print(f"[INFO] Comparison details:")
-        print(f"   Perfect matches: {comparison_details['modification_summary']['perfect_matches']}")
-        print(f"   Excess in Zerodha: {comparison_details['modification_summary']['stocks_with_excess']}")
-        print(f"   Deficits in Zerodha: {comparison_details['modification_summary']['stocks_with_deficits']}")
-        print(f"   Missing in Zerodha: {comparison_details['modification_summary']['stocks_missing']}")
-        print(f"   Extra in Zerodha: {comparison_details['modification_summary']['extra_stocks_count']}")
+        self.logger.info("Comparison details:")
+        self.logger.info(f"Perfect matches: {comparison_details['modification_summary']['perfect_matches']}")
+        self.logger.info(f"Excess in Zerodha: {comparison_details['modification_summary']['stocks_with_excess']}")
+        self.logger.info(f"Deficits in Zerodha: {comparison_details['modification_summary']['stocks_with_deficits']}")
+        self.logger.info(f"Missing in Zerodha: {comparison_details['modification_summary']['stocks_missing']}")
+        self.logger.info(f"Extra in Zerodha: {comparison_details['modification_summary']['extra_stocks_count']}")
         
         return comparison_details
     
@@ -243,7 +244,7 @@ class PortfolioComparisonService:
         - We take X=8 and Y=20 (only what dashboard expected)
         - Calculate portfolio value this way
         """
-        print("[INFO] Calculating usable portfolio value for rebalancing...")
+        self.logger.info("Calculating usable portfolio value for rebalancing...")
         
         usable_value = 0
         usable_holdings = {}
@@ -271,7 +272,7 @@ class PortfolioComparisonService:
                 
                 usable_value += usable_stock_value
                 
-                print(f"   {symbol}: Dashboard={dashboard_shares}, Zerodha={zerodha_shares}, Using={usable_shares}")
+                self.logger.info(f"{symbol}: Dashboard={dashboard_shares}, Zerodha={zerodha_shares}, Using={usable_shares}")
             else:
                 # Stock missing in Zerodha - contributes 0 to usable value
                 usable_holdings[symbol] = {
@@ -283,7 +284,7 @@ class PortfolioComparisonService:
                     'using_logic': 'missing_in_zerodha'
                 }
                 
-                print(f"   {symbol}: Missing in Zerodha, contributing 0 to portfolio value")
+                self.logger.info(f"{symbol}: Missing in Zerodha, contributing 0 to portfolio value")
         
         return {
             'usable_portfolio_value': usable_value,
@@ -336,7 +337,7 @@ class PortfolioComparisonService:
             }
             
         except Exception as e:
-            print(f"[ERROR] Failed to get rebalancing portfolio value: {e}")
+            self.logger.error(f"Failed to get rebalancing portfolio value: {e}")
             return {
                 'success': False,
                 'error': str(e),
