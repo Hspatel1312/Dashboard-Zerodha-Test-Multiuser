@@ -28,16 +28,21 @@ git commit -m "Update investment dashboard - automated push" -m "All latest chan
 if %ERRORLEVEL% EQU 0 (
     echo.
     echo [SUCCESS] Changes committed successfully!
-    echo [INFO] Pushing to GitHub...
-    git push origin main
+    echo [INFO] Getting current branch name...
+    for /f %%i in ('git branch --show-current') do set CURRENT_BRANCH=%%i
+    echo [INFO] Current branch: %CURRENT_BRANCH%
+    echo [INFO] Pushing to GitHub branch %CURRENT_BRANCH%...
+    git push origin %CURRENT_BRANCH%
     
     if %ERRORLEVEL% EQU 0 (
         echo.
-        echo [SUCCESS] All changes pushed to GitHub successfully!
+        echo [SUCCESS] All changes pushed to GitHub branch %CURRENT_BRANCH% successfully!
         echo [INFO] Repository is now up to date.
+        echo [INFO] View changes at: https://github.com/Hspatel1312/Dashboard-Zerodha-Test-Multiuser/tree/%CURRENT_BRANCH%
     ) else (
         echo.
         echo [ERROR] Failed to push to GitHub. Check your internet connection.
+        echo [INFO] You may need to set upstream: git push -u origin %CURRENT_BRANCH%
     )
 ) else (
     echo.

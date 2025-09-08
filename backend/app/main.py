@@ -10,8 +10,7 @@ import json
 from .database import get_db, UserService, UserDB
 from .models import UserCreate, LoginRequest, Token, AuthResponse, UserResponse, ZerodhaAuthRequest
 from .auth_multiuser import create_access_token, get_current_user, get_current_admin_user
-from .services.multiuser_zerodha_auth import zerodha_auth_manager
-from .services.multiuser_investment_service import investment_service_manager
+from .services.service_hub import service_hub
 from .config import settings
 
 app = FastAPI(title="Multi-User Investment Rebalancing WebApp", version="3.0.0")
@@ -65,15 +64,20 @@ async def health_check():
     try:
         # Count total users
         users = UserService.list_users(db)
+        
+        # Get service status from ServiceHub
+        service_status = service_hub.get_service_status()
+        
         app_status["total_registrations"] = len(users)
-        app_status["active_users"] = len(zerodha_auth_manager.get_all_authenticated_users())
+        app_status["active_users"] = len(service_status["zerodha_auth"]["authenticated_users"])
         
         return {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
             "database": "connected",
             "multi_user": app_status,
-            "authenticated_users": zerodha_auth_manager.get_all_authenticated_users()
+            "service_hub_status": service_status,
+            "authenticated_users": service_status["zerodha_auth"]["authenticated_users"]
         }
     except Exception as e:
         return {
@@ -210,8 +214,8 @@ async def get_current_user_info(current_user: UserDB = Depends(get_current_user)
 async def get_user_auth_status(current_user: UserDB = Depends(get_current_user)):
     """Get user's Zerodha authentication status with real API validation"""
     try:
-        # Get user's Zerodha auth instance
-        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        # Get user's Zerodha auth instance through ServiceHub
+        zerodha_auth = service_hub.get_zerodha_auth(current_user)
         
         # Always perform real API validation instead of just checking cached state
         is_auth = False
@@ -262,8 +266,8 @@ async def get_user_auth_status(current_user: UserDB = Depends(get_current_user))
 async def get_zerodha_login_url(current_user: UserDB = Depends(get_current_user)):
     """Get Zerodha login URL for current user using their API key"""
     try:
-        # Get user's API key
-        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        # Get user's API key through ServiceHub
+        zerodha_auth = service_hub.get_zerodha_auth(current_user)
         user_api_key = zerodha_auth.api_key
         
         login_url = f"https://kite.zerodha.com/connect/login?api_key={user_api_key}"
@@ -293,8 +297,8 @@ async def exchange_zerodha_token(
 ):
     """Exchange request token for access token (user-specific)"""
     try:
-        # Get user's Zerodha auth instance
-        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        # Get user's Zerodha auth instance through ServiceHub
+        zerodha_auth = service_hub.get_zerodha_auth(current_user)
         
         request_token = request_data.request_token if request_data else None
         
@@ -334,8 +338,8 @@ async def exchange_zerodha_token(
 async def auto_authenticate_zerodha(current_user: UserDB = Depends(get_current_user)):
     """Trigger automatic Zerodha authentication for current user"""
     try:
-        # Get user's Zerodha auth instance
-        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
+        # Get user's Zerodha auth instance through ServiceHub
+        zerodha_auth = service_hub.get_zerodha_auth(current_user)
         
         print(f"[INFO] User {current_user.username} - Starting automatic authentication...")
         kite = zerodha_auth.authenticate()
@@ -371,9 +375,8 @@ async def get_investment_status(current_user: UserDB = Depends(get_current_user)
     """Get user's investment status"""
     try:
         print(f"[DEBUG] API ENDPOINT - get_investment_status called for user {current_user.username}")
-        # Get user-specific services
-        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        investment_service = service_hub.get_investment_service(current_user)
         
         print(f"[DEBUG] API ENDPOINT - About to call investment_service.get_investment_status()")
         result = investment_service.get_investment_status()
@@ -390,9 +393,8 @@ async def get_investment_status(current_user: UserDB = Depends(get_current_user)
 async def get_portfolio_status(current_user: UserDB = Depends(get_current_user)):
     """Get user's portfolio status for dashboard"""
     try:
-        # Get user-specific services
-        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        investment_service = service_hub.get_investment_service(current_user)
         
         return investment_service.get_portfolio_status()
     except Exception as e:
@@ -406,9 +408,8 @@ async def get_portfolio_status(current_user: UserDB = Depends(get_current_user))
 async def get_system_orders(current_user: UserDB = Depends(get_current_user)):
     """Get user's system orders"""
     try:
-        # Get user-specific services
-        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        investment_service = service_hub.get_investment_service(current_user)
         
         return investment_service.get_system_orders()
     except Exception as e:
@@ -422,9 +423,8 @@ async def get_system_orders(current_user: UserDB = Depends(get_current_user)):
 async def reset_system_orders(current_user: UserDB = Depends(get_current_user)):
     """Reset user's system orders (for testing purposes)"""
     try:
-        # Get user-specific services
-        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        investment_service = service_hub.get_investment_service(current_user)
         
         # Reset user's orders by saving empty array
         user_orders_file = investment_service.orders_file
@@ -450,9 +450,8 @@ async def reset_system_orders(current_user: UserDB = Depends(get_current_user)):
 async def get_csv_stocks(current_user: UserDB = Depends(get_current_user)):
     """Get CSV stocks with current prices (shared data but user-specific pricing)"""
     try:
-        # Get user-specific services
-        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        investment_service = service_hub.get_investment_service(current_user)
         
         return investment_service.get_csv_stocks()
     except Exception as e:
@@ -466,9 +465,8 @@ async def get_csv_stocks(current_user: UserDB = Depends(get_current_user)):
 async def get_live_orders(current_user: UserDB = Depends(get_current_user)):
     """Get user's live orders"""
     try:
-        # Get user-specific services
-        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        investment_service = service_hub.get_investment_service(current_user)
         
         return investment_service.get_live_orders()
     except Exception as e:
@@ -482,9 +480,8 @@ async def get_live_orders(current_user: UserDB = Depends(get_current_user)):
 async def get_failed_orders(current_user: UserDB = Depends(get_current_user)):
     """Get user's failed orders"""
     try:
-        # Get user-specific services
-        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        investment_service = service_hub.get_investment_service(current_user)
         
         return investment_service.get_failed_orders()
     except Exception as e:
@@ -500,9 +497,8 @@ async def execute_live_orders(current_user: UserDB = Depends(get_current_user)):
     try:
         print(f"[INFO] User {current_user.username} - Executing live orders...")
         
-        # Get user-specific services
-        zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        investment_service = investment_service_manager.get_user_service(current_user, zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        investment_service = service_hub.get_investment_service(current_user)
         
         if not investment_service:
             raise HTTPException(
@@ -556,9 +552,8 @@ async def get_investment_requirements(
     try:
         print(f"[INFO] User {current_user.username} - Getting investment requirements...")
         
-        # Get user's zerodha auth instance
-        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        user_service = service_hub.get_investment_service(current_user)
         if not user_service:
             raise HTTPException(
                 status_code=500, 
@@ -587,9 +582,8 @@ async def get_orders_with_retry_history(
     try:
         print(f"[INFO] User {current_user.username} - Getting orders with retry history...")
         
-        # Get user's zerodha auth instance
-        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        user_service = service_hub.get_investment_service(current_user)
         if not user_service:
             raise HTTPException(
                 status_code=500, 
@@ -630,9 +624,8 @@ async def get_monitoring_status(
     try:
         print(f"[INFO] User {current_user.username} - Getting monitoring status...")
         
-        # Get user's zerodha auth instance
-        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        user_service = service_hub.get_investment_service(current_user)
         if not user_service:
             raise HTTPException(
                 status_code=500, 
@@ -679,9 +672,8 @@ async def calculate_investment_plan(
             
         print(f"[INFO] User {current_user.username} - Calculating investment plan for amount: {investment_amount}")
         
-        # Get user's zerodha auth instance
-        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        user_service = service_hub.get_investment_service(current_user)
         if not user_service:
             raise HTTPException(
                 status_code=500, 
@@ -715,9 +707,8 @@ async def execute_initial_investment(
             
         print(f"[INFO] User {current_user.username} - Executing initial investment for amount: {investment_amount}")
         
-        # Get user's zerodha auth instance
-        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        user_service = service_hub.get_investment_service(current_user)
         if not user_service:
             raise HTTPException(
                 status_code=500, 
@@ -748,9 +739,8 @@ async def calculate_rebalancing(
         additional_investment = request.get("additional_investment", 0)
         print(f"[INFO] User {current_user.username} - Calculating rebalancing with additional investment: {additional_investment}")
         
-        # Get user's zerodha auth instance
-        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        user_service = service_hub.get_investment_service(current_user)
         if not user_service:
             raise HTTPException(
                 status_code=500, 
@@ -781,9 +771,8 @@ async def execute_rebalancing(
         additional_investment = request.get("additional_investment", 0)
         print(f"[INFO] User {current_user.username} - Executing rebalancing with additional investment: {additional_investment}")
         
-        # Get user's zerodha auth instance
-        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        user_service = service_hub.get_investment_service(current_user)
         if not user_service:
             raise HTTPException(
                 status_code=500, 
@@ -812,9 +801,8 @@ async def force_csv_refresh(
     try:
         print(f"[INFO] User {current_user.username} - Forcing CSV refresh...")
         
-        # Get user's zerodha auth instance
-        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        user_service = service_hub.get_investment_service(current_user)
         if not user_service:
             raise HTTPException(
                 status_code=500, 
@@ -851,9 +839,8 @@ async def retry_failed_orders(
         order_ids = request.get("order_ids", None)
         print(f"[INFO] User {current_user.username} - Retrying failed orders: {order_ids}")
         
-        # Get user's zerodha auth instance
-        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        user_service = service_hub.get_investment_service(current_user)
         if not user_service:
             raise HTTPException(
                 status_code=500, 
@@ -889,9 +876,8 @@ async def start_order_monitoring(
     try:
         print(f"[INFO] User {current_user.username} - Starting order monitoring...")
         
-        # Get user's zerodha auth instance
-        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        user_service = service_hub.get_investment_service(current_user)
         if not user_service:
             raise HTTPException(
                 status_code=500, 
@@ -922,9 +908,8 @@ async def stop_order_monitoring(
     try:
         print(f"[INFO] User {current_user.username} - Stopping order monitoring...")
         
-        # Get user's zerodha auth instance
-        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        user_service = service_hub.get_investment_service(current_user)
         if not user_service:
             raise HTTPException(
                 status_code=500, 
@@ -957,9 +942,8 @@ async def update_order_status_from_zerodha(
         zerodha_order_id = request.get("zerodha_order_id", None)
         print(f"[INFO] User {current_user.username} - Updating order status from Zerodha: {zerodha_order_id}")
         
-        # Get user's zerodha auth instance
-        user_zerodha_auth = zerodha_auth_manager.get_user_auth(current_user)
-        user_service = investment_service_manager.get_user_service(current_user, user_zerodha_auth)
+        # Get user-specific investment service through ServiceHub
+        user_service = service_hub.get_investment_service(current_user)
         if not user_service:
             raise HTTPException(
                 status_code=500, 
@@ -1012,11 +996,15 @@ async def list_all_users(
 @app.get("/api/admin/system-status")
 async def get_system_status(current_admin: UserDB = Depends(get_current_admin_user)):
     """Get detailed system status (admin only)"""
+    # Get comprehensive system status from ServiceHub
+    service_status = service_hub.get_service_status()
+    
     return {
         "success": True,
         "system_status": app_status,
-        "authenticated_users": zerodha_auth_manager.get_all_authenticated_users(),
-        "active_services": len(investment_service_manager._user_services),
+        "service_hub_status": service_status,
+        "authenticated_users": service_status["zerodha_auth"]["authenticated_users"],
+        "active_services": service_status["investment_services"]["active_services_count"],
         "timestamp": datetime.now().isoformat()
     }
 
