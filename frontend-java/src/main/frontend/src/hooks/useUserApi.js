@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { useUser } from '../contexts/UserContext';
 
 // Configure axios defaults
-axios.defaults.baseURL = 'http://localhost:8002/api';
+axios.defaults.baseURL = 'http://localhost:8000/api';
 axios.defaults.timeout = 30000;
 
 // Add request interceptor to include auth token
